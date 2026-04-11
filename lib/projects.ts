@@ -15,7 +15,7 @@ export const projects: ProjectCardProps[] = [
       "Describe what you want in plain English. Get valid SQL, an explanation, and safe execution on sample data.",
     tags: ["LLM", "SQL", "Sandbox"],
     href: "/projects/sql-generator",
-    status: "coming-soon",
+    status: "live",
   },
   {
     title: "Receipt Expense Tracker",
