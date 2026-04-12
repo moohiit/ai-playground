@@ -1,8 +1,9 @@
 import mongoose, { Schema, type Model, type Types } from "mongoose";
 
 export type MemberDoc = {
-  id: string;
+  userId: string;
   name: string;
+  email: string;
   isActive: boolean;
 };
 
@@ -10,6 +11,7 @@ export type GroupDoc = {
   _id: Types.ObjectId;
   name: string;
   description: string;
+  createdBy: string;
   members: MemberDoc[];
   createdAt: Date;
   updatedAt: Date;
@@ -17,8 +19,9 @@ export type GroupDoc = {
 
 const memberSchema = new Schema<MemberDoc>(
   {
-    id: { type: String, required: true },
+    userId: { type: String, required: true },
     name: { type: String, required: true },
+    email: { type: String, required: true },
     isActive: { type: Boolean, default: true },
   },
   { _id: false }
@@ -28,10 +31,13 @@ const groupSchema = new Schema<GroupDoc>(
   {
     name: { type: String, required: true },
     description: { type: String, default: "" },
+    createdBy: { type: String, required: true, index: true },
     members: { type: [memberSchema], default: [] },
   },
   { timestamps: true }
 );
+
+groupSchema.index({ "members.userId": 1 });
 
 export const Group: Model<GroupDoc> =
   (mongoose.models.Group as Model<GroupDoc>) ||
@@ -53,6 +59,7 @@ export type ExpenseDoc = {
   _id: Types.ObjectId;
   type: "personal" | "group";
   groupId: Types.ObjectId | null;
+  createdBy: string;
   paidBy: { id: string; name: string };
   amount: number;
   description: string;
@@ -94,6 +101,7 @@ const expenseSchema = new Schema<ExpenseDoc>(
       default: null,
       index: true,
     },
+    createdBy: { type: String, required: true, index: true },
     paidBy: {
       id: { type: String, required: true },
       name: { type: String, required: true },

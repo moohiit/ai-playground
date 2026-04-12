@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/authContext";
 import { AddExpenseModal } from "./AddExpenseModal";
 
-type Member = { id: string; name: string; isActive: boolean };
+type Member = { userId: string; email: string; name: string; isActive: boolean };
 type Group = { _id: string; name: string; description: string; members: Member[] };
 type Balance = {
   memberId: string;
@@ -32,6 +33,7 @@ type Expense = {
 type Props = { groupId: string; onBack: () => void };
 
 export function GroupDetail({ groupId, onBack }: Props) {
+  const { authFetch, user } = useAuth();
   const [group, setGroup] = useState<Group | null>(null);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
@@ -44,9 +46,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [gRes, bRes, eRes] = await Promise.all([
-      fetch(`/api/projects/expense-tracker/groups/${groupId}`),
-      fetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
-      fetch(`/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=50`),
+      authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
+      authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
+      authFetch(`/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=50`),
     ]);
     const [gData, bData, eData] = await Promise.all([
       gRes.json(),
@@ -67,10 +69,10 @@ export function GroupDetail({ groupId, onBack }: Props) {
   async function handleAddMember() {
     if (!newMember.trim()) return;
     setAddingMember(true);
-    await fetch(`/api/projects/expense-tracker/groups/${groupId}/members`, {
+    await authFetch(`/api/projects/expense-tracker/groups/${groupId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newMember.trim() }),
+      body: JSON.stringify({ email: newMember.trim() }),
     });
     setNewMember("");
     setAddingMember(false);
@@ -79,7 +81,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
 
   async function handleDeleteExpense(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await fetch(`/api/projects/expense-tracker/expenses/${id}`, {
+    await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
       method: "DELETE",
     });
     fetchAll();
@@ -88,7 +90,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   async function handleDeleteGroup() {
     if (!confirm("Delete this group and all its expenses? This cannot be undone."))
       return;
-    await fetch(`/api/projects/expense-tracker/groups/${groupId}`, {
+    await authFetch(`/api/projects/expense-tracker/groups/${groupId}`, {
       method: "DELETE",
     });
     onBack();
@@ -133,10 +135,10 @@ export function GroupDetail({ groupId, onBack }: Props) {
         <h3 className="mb-3 text-sm font-semibold">Members</h3>
         <div className="mb-3 flex flex-wrap gap-2">
           {group.members.map((m) => {
-            const bal = balances.find((b) => b.memberId === m.id);
+            const bal = balances.find((b) => b.memberId === m.userId);
             return (
               <div
-                key={m.id}
+                key={m.userId}
                 className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2"
               >
                 <span className="text-sm text-zinc-200">{m.name}</span>
@@ -164,7 +166,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
             type="text"
             value={newMember}
             onChange={(e) => setNewMember(e.target.value)}
-            placeholder="New member name"
+            placeholder="Member email"
             className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600"
             onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
           />

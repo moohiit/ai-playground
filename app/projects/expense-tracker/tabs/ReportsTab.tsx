@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "@/lib/authContext";
+import { ExportPdfButton } from "../components/ExportPdf";
 import {
   PieChart,
   Pie,
@@ -42,6 +44,7 @@ const MONTH_NAMES = [
 ];
 
 export function ReportsTab() {
+  const { authFetch } = useAuth();
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -52,7 +55,7 @@ export function ReportsTab() {
     const params = new URLSearchParams();
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
-    const res = await fetch(
+    const res = await authFetch(
       `/api/projects/expense-tracker/reports/summary?${params}`
     );
     const data = await res.json();
@@ -95,6 +98,13 @@ export function ReportsTab() {
           >
             Clear filter
           </button>
+        )}
+        {summary && summary.totalCount > 0 && (
+          <ExportPdfButton
+            summary={summary}
+            dateFrom={dateFrom || undefined}
+            dateTo={dateTo || undefined}
+          />
         )}
       </div>
 

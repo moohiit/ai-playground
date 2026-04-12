@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/authContext";
 import { AddExpenseModal } from "../components/AddExpenseModal";
 import { CATEGORIES } from "@/modules/expense-tracker/schemas";
 
@@ -19,6 +20,7 @@ type Expense = {
 type ViewMode = "all" | "personal" | "group";
 
 export function Dashboard() {
+  const { authFetch, user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,7 @@ export function Dashboard() {
     setLoading(true);
     const params = new URLSearchParams({ limit: "50" });
     if (view !== "all") params.set("type", view);
-    const res = await fetch(
+    const res = await authFetch(
       `/api/projects/expense-tracker/expenses?${params}`
     );
     const data = await res.json();
@@ -44,7 +46,7 @@ export function Dashboard() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await fetch(`/api/projects/expense-tracker/expenses/${id}`, {
+    await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
       method: "DELETE",
     });
     fetchExpenses();

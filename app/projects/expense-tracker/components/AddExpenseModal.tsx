@@ -2,12 +2,13 @@
 
 import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/authContext";
 import { CATEGORIES } from "@/modules/expense-tracker/schemas";
 
 type Group = {
   _id: string;
   name: string;
-  members: { id: string; name: string; isActive: boolean }[];
+  members: { userId: string; name: string; email: string; isActive: boolean }[];
 };
 
 type Props = {
@@ -17,13 +18,14 @@ type Props = {
 };
 
 export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props) {
+  const { authFetch, user } = useAuth();
   const [type, setType] = useState<"personal" | "group">(
     preselectedGroupId ? "group" : "personal"
   );
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState(preselectedGroupId ?? "");
   const [paidByName, setPaidByName] = useState("");
-  const [paidById, setPaidById] = useState("");
+  const [paidById, setPaidById] = useState(user?.userId ?? "");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -34,7 +36,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/projects/expense-tracker/groups")
+    authFetch("/api/projects/expense-tracker/groups")
       .then((r) => r.json())
       .then((d) => setGroups(d.groups ?? []));
   }, []);
@@ -44,11 +46,11 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
   useEffect(() => {
     if (selectedGroup) {
       const ids = new Set(
-        selectedGroup.members.filter((m) => m.isActive).map((m) => m.id)
+        selectedGroup.members.filter((m) => m.isActive).map((m) => m.userId)
       );
       setPresentMembers(ids);
       if (!paidById && selectedGroup.members.length > 0) {
-        setPaidById(selectedGroup.members[0].id);
+        setPaidById(selectedGroup.members[0].userId);
         setPaidByName(selectedGroup.members[0].name);
       }
     }
@@ -71,7 +73,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/projects/expense-tracker/scan", {
+      const res = await authFetch("/api/projects/expense-tracker/scan", {
         method: "POST",
         body: form,
       });
@@ -98,8 +100,8 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
       const splitAmong =
         type === "group" && selectedGroup
           ? selectedGroup.members
-              .filter((m) => presentMembers.has(m.id))
-              .map((m) => ({ memberId: m.id, name: m.name }))
+              .filter((m) => presentMembers.has(m.userId))
+              .map((m) => ({ memberId: m.userId, name: m.name }))
           : undefined;
 
       const payer =
@@ -107,12 +109,12 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
           ? {
               id: paidById,
               name:
-                selectedGroup.members.find((m) => m.id === paidById)?.name ??
+                selectedGroup.members.find((m) => m.userId === paidById)?.name ??
                 paidByName,
             }
-          : { id: "personal", name: paidByName || "Me" };
+          : { id: user.userId, name: user.name || paidByName || "Me" };
 
-      const res = await fetch("/api/projects/expense-tracker/expenses", {
+      const res = await authFetch("/api/projects/expense-tracker/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -194,14 +196,14 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
                         setPaidById(e.target.value);
                         setPaidByName(
                           selectedGroup.members.find(
-                            (m) => m.id === e.target.value
+                            (m) => m.userId === e.target.value
                           )?.name ?? ""
                         );
                       }}
                       className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
                     >
                       {selectedGroup.members.map((m) => (
-                        <option key={m.id} value={m.id}>
+                        <option key={m.userId} value={m.userId}>
                           {m.name}
                         </option>
                       ))}
@@ -217,18 +219,18 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
                         .filter((m) => m.isActive)
                         .map((m) => (
                           <label
-                            key={m.id}
+                            key={m.userId}
                             className={cn(
                               "flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs",
-                              presentMembers.has(m.id)
+                              presentMembers.has(m.userId)
                                 ? "border-brand-500 bg-brand-500/10 text-brand-500"
                                 : "border-zinc-800 text-zinc-500"
                             )}
                           >
                             <input
                               type="checkbox"
-                              checked={presentMembers.has(m.id)}
-                              onChange={() => toggleMember(m.id)}
+                              checked={presentMembers.has(m.userId)}
+                              onChange={() => toggleMember(m.userId)}
                               className="sr-only"
                             />
                             {m.name}

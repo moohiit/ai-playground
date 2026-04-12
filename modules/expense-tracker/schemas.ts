@@ -17,13 +17,9 @@ export const CATEGORIES = [
 export const createGroupSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).default(""),
-  members: z
-    .array(
-      z.object({
-        name: z.string().min(1).max(100),
-      })
-    )
-    .min(2, "A group needs at least 2 members"),
+  memberEmails: z
+    .array(z.string().email())
+    .min(1, "Add at least 1 other member by email"),
 });
 
 export type CreateGroupInput = z.infer<typeof createGroupSchema>;
@@ -34,7 +30,7 @@ export const updateGroupSchema = z.object({
 });
 
 export const addMemberSchema = z.object({
-  name: z.string().min(1).max(100),
+  email: z.string().email(),
 });
 
 export const createExpenseSchema = z.object({

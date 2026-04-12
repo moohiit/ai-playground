@@ -2,16 +2,18 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/authContext";
 import { GroupDetail } from "../components/GroupDetail";
 
 type Group = {
   _id: string;
   name: string;
   description: string;
-  members: { id: string; name: string; isActive: boolean }[];
+  members: { userId: string; email: string; name: string; isActive: boolean }[];
 };
 
 export function GroupsTab() {
+  const { authFetch } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -19,7 +21,7 @@ export function GroupsTab() {
 
   async function fetchGroups() {
     setLoading(true);
-    const res = await fetch("/api/projects/expense-tracker/groups");
+    const res = await authFetch("/api/projects/expense-tracker/groups");
     const data = await res.json();
     setGroups(data.groups ?? []);
     setLoading(false);
@@ -86,7 +88,7 @@ export function GroupsTab() {
               <div className="flex flex-wrap gap-1.5">
                 {g.members.map((m) => (
                   <span
-                    key={m.id}
+                    key={m.userId}
                     className="rounded-md bg-zinc-800/80 px-2 py-0.5 text-[11px] text-zinc-400"
                   >
                     {m.name}
@@ -108,29 +110,29 @@ function CreateGroupForm({
   onCreated: () => void;
   onCancel: () => void;
 }) {
+  const { authFetch } = useAuth();
   const [name, setName] = useState("");
-  const [memberNames, setMemberNames] = useState(["", ""]);
+  const [memberEmails, setMemberEmails] = useState(["", ""]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function addMemberField() {
-    setMemberNames([...memberNames, ""]);
+    setMemberEmails([...memberEmails, ""]);
   }
 
   function updateMember(i: number, value: string) {
-    const next = [...memberNames];
+    const next = [...memberEmails];
     next[i] = value;
-    setMemberNames(next);
+    setMemberEmails(next);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const members = memberNames
+    const emails = memberEmails
       .map((n) => n.trim())
-      .filter(Boolean)
-      .map((n) => ({ name: n }));
+      .filter(Boolean);
 
-    if (members.length < 2) {
+    if (emails.length < 2) {
       setError("At least 2 members required");
       return;
     }
@@ -139,10 +141,10 @@ function CreateGroupForm({
     setError(null);
 
     try {
-      const res = await fetch("/api/projects/expense-tracker/groups", {
+      const res = await authFetch("/api/projects/expense-tracker/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, members }),
+        body: JSON.stringify({ name, memberEmails: emails }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
@@ -170,15 +172,15 @@ function CreateGroupForm({
         />
 
         <div>
-          <label className="mb-1 block text-xs text-zinc-500">Members</label>
+          <label className="mb-1 block text-xs text-zinc-500">Add members by email (they must be registered)</label>
           <div className="flex flex-col gap-2">
-            {memberNames.map((m, i) => (
+            {memberEmails.map((m, i) => (
               <input
                 key={i}
-                type="text"
+                type="email"
                 value={m}
                 onChange={(e) => updateMember(i, e.target.value)}
-                placeholder={`Member ${i + 1}`}
+                placeholder={`Member ${i + 1} email`}
                 className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600"
               />
             ))}
