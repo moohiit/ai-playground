@@ -1,6 +1,5 @@
 import {
   GoogleGenerativeAI,
-  GenerativeModel,
   SchemaType,
   type Schema,
 } from "@google/generative-ai";
@@ -13,9 +12,11 @@ if (!GEMINI_API_KEY) {
 
 const client = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-const DEFAULT_TEXT_MODEL = "gemini-2.0-flash";
-const DEFAULT_VISION_MODEL = "gemini-2.0-flash";
+const DEFAULT_TEXT_MODEL = "gemini-2.5-flash-lite";
+const DEFAULT_VISION_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_EMBED_MODEL = "text-embedding-004";
+
+const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 type CompleteOptions = {
   system?: string;
@@ -25,23 +26,56 @@ type CompleteOptions = {
   model?: string;
 };
 
-function getModel(name: string, system?: string): GenerativeModel {
-  return client.getGenerativeModel({
-    model: name,
-    ...(system ? { systemInstruction: system } : {}),
+async function callGeminiRaw(
+  model: string,
+  body: Record<string, unknown>
+): Promise<string> {
+  const url = `${API_BASE}/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini API error (${res.status}): ${err}`);
+  }
+
+  const data = await res.json();
+  const candidate = data?.candidates?.[0];
+  if (!candidate?.content?.parts) {
+    const reason = candidate?.finishReason ?? "unknown";
+    throw new Error(`Gemini returned no content (finishReason: ${reason})`);
+  }
+
+  if (data.usageMetadata) {
+    console.log(
+      `[gemini] tokens — prompt: ${data.usageMetadata.promptTokenCount}, ` +
+        `thinking: ${data.usageMetadata.thoughtsTokenCount ?? 0}, ` +
+        `output: ${data.usageMetadata.candidatesTokenCount}, ` +
+        `finish: ${candidate.finishReason}`
+    );
+  }
+
+  const textPart = candidate.content.parts.find(
+    (p: { text?: string }) => p.text !== undefined
+  );
+  if (!textPart) {
+    throw new Error("No text in Gemini response");
+  }
+  return textPart.text;
 }
 
 export async function complete(
   prompt: string,
   opts: CompleteOptions = {}
 ): Promise<string> {
-  const model = getModel(opts.model ?? DEFAULT_TEXT_MODEL, opts.system);
-
-  const result = await model.generateContent({
+  const modelName = opts.model ?? DEFAULT_TEXT_MODEL;
+  const body: Record<string, unknown> = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
-      maxOutputTokens: opts.maxOutputTokens ?? 1024,
+      maxOutputTokens: opts.maxOutputTokens ?? 65536,
       temperature: opts.temperature ?? 0.3,
       ...(opts.responseSchema
         ? {
@@ -50,9 +84,28 @@ export async function complete(
           }
         : {}),
     },
-  });
+  };
 
-  return result.response.text();
+  if (opts.system) {
+    body.systemInstruction = { parts: [{ text: opts.system }] };
+  }
+
+  return callGeminiRaw(modelName, body);
+}
+
+function extractJSON(raw: string): string {
+  let text = raw.trim();
+
+  const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (fenced) text = fenced[1].trim();
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    text = text.slice(start, end + 1);
+  }
+
+  return text;
 }
 
 export async function completeJSON<T>(
@@ -60,8 +113,14 @@ export async function completeJSON<T>(
   schema: Schema,
   opts: Omit<CompleteOptions, "responseSchema"> = {}
 ): Promise<T> {
-  const raw = await complete(prompt, { ...opts, responseSchema: schema });
-  return JSON.parse(raw) as T;
+  const raw = await complete(prompt, {
+    ...opts,
+    maxOutputTokens: opts.maxOutputTokens ?? 65536,
+    responseSchema: schema,
+  });
+
+  const cleaned = extractJSON(raw);
+  return JSON.parse(cleaned) as T;
 }
 
 type VisionInput = {
@@ -74,9 +133,7 @@ type VisionInput = {
 };
 
 export async function vision(input: VisionInput): Promise<string> {
-  const model = getModel(DEFAULT_VISION_MODEL, input.system);
-
-  const result = await model.generateContent({
+  const body: Record<string, unknown> = {
     contents: [
       {
         role: "user",
@@ -92,7 +149,7 @@ export async function vision(input: VisionInput): Promise<string> {
       },
     ],
     generationConfig: {
-      maxOutputTokens: input.maxOutputTokens ?? 1024,
+      maxOutputTokens: input.maxOutputTokens ?? 65536,
       temperature: 0.2,
       ...(input.responseSchema
         ? {
@@ -101,9 +158,13 @@ export async function vision(input: VisionInput): Promise<string> {
           }
         : {}),
     },
-  });
+  };
 
-  return result.response.text();
+  if (input.system) {
+    body.systemInstruction = { parts: [{ text: input.system }] };
+  }
+
+  return callGeminiRaw(DEFAULT_VISION_MODEL, body);
 }
 
 export async function embed(text: string): Promise<number[]> {
