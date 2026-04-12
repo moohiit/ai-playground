@@ -44,9 +44,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [gRes, bRes, eRes] = await Promise.all([
-      fetch(`/api/projects/expense-tracker/groups/₹{groupId}`),
-      fetch(`/api/projects/expense-tracker/reports/balances/₹{groupId}`),
-      fetch(`/api/projects/expense-tracker/expenses?groupId=₹{groupId}&limit=50`),
+      fetch(`/api/projects/expense-tracker/groups/${groupId}`),
+      fetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
+      fetch(`/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=50`),
     ]);
     const [gData, bData, eData] = await Promise.all([
       gRes.json(),
@@ -67,7 +67,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   async function handleAddMember() {
     if (!newMember.trim()) return;
     setAddingMember(true);
-    await fetch(`/api/projects/expense-tracker/groups/₹{groupId}/members`, {
+    await fetch(`/api/projects/expense-tracker/groups/${groupId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newMember.trim() }),
@@ -79,7 +79,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
 
   async function handleDeleteExpense(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await fetch(`/api/projects/expense-tracker/expenses/₹{id}`, {
+    await fetch(`/api/projects/expense-tracker/expenses/${id}`, {
       method: "DELETE",
     });
     fetchAll();
@@ -88,7 +88,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   async function handleDeleteGroup() {
     if (!confirm("Delete this group and all its expenses? This cannot be undone."))
       return;
-    await fetch(`/api/projects/expense-tracker/groups/₹{groupId}`, {
+    await fetch(`/api/projects/expense-tracker/groups/${groupId}`, {
       method: "DELETE",
     });
     onBack();

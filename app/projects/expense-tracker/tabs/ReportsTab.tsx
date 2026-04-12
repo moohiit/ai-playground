@@ -53,7 +53,7 @@ export function ReportsTab() {
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
     const res = await fetch(
-      `/api/projects/expense-tracker/reports/summary?₹{params}`
+      `/api/projects/expense-tracker/reports/summary?${params}`
     );
     const data = await res.json();
     setSummary(data);
@@ -111,7 +111,7 @@ export function ReportsTab() {
           <div className="grid gap-4 sm:grid-cols-2">
             <StatCard
               label="Total Expenses"
-              value={`$₹{summary.totalAmount.toFixed(2)}`}
+              value={`₹${summary.totalAmount.toFixed(2)}`}
             />
             <StatCard
               label="Number of Entries"
@@ -150,7 +150,7 @@ export function ReportsTab() {
                           borderRadius: 8,
                           fontSize: 12,
                         }}
-                        formatter={(val: number) => `₹₹{val.toFixed(2)}`}
+                        formatter={(val: number) => `₹${val.toFixed(2)}`}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -183,7 +183,7 @@ export function ReportsTab() {
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart
                     data={summary.byMonth.map((m) => ({
-                      label: `₹{MONTH_NAMES[m.month - 1]} ₹{m.year}`,
+                      label: `${MONTH_NAMES[m.month - 1]} ${m.year}`,
                       total: m.total,
                     }))}
                   >
@@ -197,7 +197,7 @@ export function ReportsTab() {
                       tick={{ fill: "#71717a", fontSize: 11 }}
                       axisLine={false}
                       tickLine={false}
-                      tickFormatter={(v) => `₹₹{v}`}
+                      tickFormatter={(v) => `₹${v}`}
                     />
                     <Tooltip
                       contentStyle={{
@@ -206,7 +206,7 @@ export function ReportsTab() {
                         borderRadius: 8,
                         fontSize: 12,
                       }}
-                      formatter={(val: number) => `₹₹{val.toFixed(2)}`}
+                      formatter={(val: number) => `₹${val.toFixed(2)}`}
                     />
                     <Bar
                       dataKey="total"

@@ -30,7 +30,7 @@ export function Dashboard() {
     const params = new URLSearchParams({ limit: "50" });
     if (view !== "all") params.set("type", view);
     const res = await fetch(
-      `/api/projects/expense-tracker/expenses?₹{params}`
+      `/api/projects/expense-tracker/expenses?${params}`
     );
     const data = await res.json();
     setExpenses(data.expenses ?? []);
@@ -44,7 +44,7 @@ export function Dashboard() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await fetch(`/api/projects/expense-tracker/expenses/₹{id}`, {
+    await fetch(`/api/projects/expense-tracker/expenses/${id}`, {
       method: "DELETE",
     });
     fetchExpenses();
