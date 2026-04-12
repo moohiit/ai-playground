@@ -44,9 +44,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [gRes, bRes, eRes] = await Promise.all([
-      fetch(`/api/projects/expense-tracker/groups/${groupId}`),
-      fetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
-      fetch(`/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=50`),
+      fetch(`/api/projects/expense-tracker/groups/₹{groupId}`),
+      fetch(`/api/projects/expense-tracker/reports/balances/₹{groupId}`),
+      fetch(`/api/projects/expense-tracker/expenses?groupId=₹{groupId}&limit=50`),
     ]);
     const [gData, bData, eData] = await Promise.all([
       gRes.json(),
@@ -67,7 +67,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   async function handleAddMember() {
     if (!newMember.trim()) return;
     setAddingMember(true);
-    await fetch(`/api/projects/expense-tracker/groups/${groupId}/members`, {
+    await fetch(`/api/projects/expense-tracker/groups/₹{groupId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newMember.trim() }),
@@ -79,7 +79,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
 
   async function handleDeleteExpense(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await fetch(`/api/projects/expense-tracker/expenses/${id}`, {
+    await fetch(`/api/projects/expense-tracker/expenses/₹{id}`, {
       method: "DELETE",
     });
     fetchAll();
@@ -88,7 +88,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   async function handleDeleteGroup() {
     if (!confirm("Delete this group and all its expenses? This cannot be undone."))
       return;
-    await fetch(`/api/projects/expense-tracker/groups/${groupId}`, {
+    await fetch(`/api/projects/expense-tracker/groups/₹{groupId}`, {
       method: "DELETE",
     });
     onBack();
@@ -152,7 +152,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                     )}
                   >
                     {bal.netBalance > 0 ? "+" : ""}
-                    ${bal.netBalance.toFixed(2)}
+                    ₹{bal.netBalance.toFixed(2)}
                   </span>
                 )}
               </div>
@@ -191,7 +191,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 <span className="text-zinc-500">pays</span>
                 <span className="font-medium text-emerald-400">{s.to.name}</span>
                 <span className="ml-auto font-mono tabular-nums text-zinc-200">
-                  ${s.amount.toFixed(2)}
+                  ₹{s.amount.toFixed(2)}
                 </span>
               </div>
             ))}
@@ -224,7 +224,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-sm tabular-nums text-zinc-100">
-                    ${e.amount.toFixed(2)}
+                    ₹{e.amount.toFixed(2)}
                   </span>
                   <button
                     onClick={() => handleDeleteExpense(e._id)}

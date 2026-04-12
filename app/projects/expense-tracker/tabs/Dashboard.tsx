@@ -30,7 +30,7 @@ export function Dashboard() {
     const params = new URLSearchParams({ limit: "50" });
     if (view !== "all") params.set("type", view);
     const res = await fetch(
-      `/api/projects/expense-tracker/expenses?${params}`
+      `/api/projects/expense-tracker/expenses?₹{params}`
     );
     const data = await res.json();
     setExpenses(data.expenses ?? []);
@@ -44,7 +44,7 @@ export function Dashboard() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await fetch(`/api/projects/expense-tracker/expenses/${id}`, {
+    await fetch(`/api/projects/expense-tracker/expenses/₹{id}`, {
       method: "DELETE",
     });
     fetchExpenses();
@@ -76,7 +76,7 @@ export function Dashboard() {
           <div className="text-right">
             <div className="text-xs text-zinc-500">Total ({total} entries)</div>
             <div className="text-lg font-semibold tabular-nums text-zinc-100">
-              ${totalAmount.toFixed(2)}
+              ₹{totalAmount.toFixed(2)}
             </div>
           </div>
           <button
@@ -139,7 +139,7 @@ export function Dashboard() {
                   </td>
                   <td className="px-4 py-3 text-zinc-300">{e.paidBy.name}</td>
                   <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-100">
-                    ${e.amount.toFixed(2)}
+                    ₹{e.amount.toFixed(2)}
                   </td>
                   <td className="px-4 py-3">
                     <span
