@@ -18,11 +18,11 @@ export const projects: ProjectCardProps[] = [
     status: "live",
   },
   {
-    title: "Receipt Expense Tracker",
+    title: "Expense Tracker",
     description:
-      "Drop a receipt photo. Gemini Vision extracts vendor, items, total, and auto-categorizes it.",
-    tags: ["Vision", "Multimodal", "Dashboard"],
-    href: "/projects/receipt-tracker",
-    status: "coming-soon",
+      "Track personal and group expenses, scan receipts with AI, smart splitting, and monthly reports with charts.",
+    tags: ["Vision", "Groups", "Reports", "Splitting"],
+    href: "/projects/expense-tracker",
+    status: "live",
   },
 ];
