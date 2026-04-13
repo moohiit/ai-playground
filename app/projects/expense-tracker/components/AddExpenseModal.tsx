@@ -132,7 +132,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 selectedGroup.members.find((m) => m.userId === paidById)?.name ??
                 paidByName,
             }
-          : { id: user.userId, name: user.name || paidByName || "Me" };
+          : { id: user?.userId, name: user?.name || paidByName || "Me" };
 
       const url = isEdit
         ? `/api/projects/expense-tracker/expenses/${editExpense._id}`
