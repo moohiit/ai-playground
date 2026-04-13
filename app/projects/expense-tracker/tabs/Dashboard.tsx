@@ -9,11 +9,13 @@ import { CATEGORIES } from "@/modules/expense-tracker/schemas";
 type Expense = {
   _id: string;
   type: "personal" | "group";
+  groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;
   description: string;
   category: string;
   date: string;
+  splitAmong?: { memberId: string; name: string }[];
   splits: { memberId: string; name: string; amount: number }[];
 };
 
@@ -26,6 +28,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
@@ -119,6 +122,9 @@ export function Dashboard() {
                   Amount
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-zinc-400">
+                  Split among
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-zinc-400">
                   Type
                 </th>
                 <th className="px-4 py-3" />
@@ -143,6 +149,11 @@ export function Dashboard() {
                   <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-100">
                     ₹{e.amount.toFixed(2)}
                   </td>
+                  <td className="px-4 py-3 text-xs text-zinc-500">
+                    {e.splitAmong && e.splitAmong.length > 0
+                      ? e.splitAmong.map((m) => m.name).join(", ")
+                      : "—"}
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={cn(
@@ -155,7 +166,13 @@ export function Dashboard() {
                       {e.type}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 flex gap-2">
+                    <button
+                      onClick={() => setEditingExpense(e)}
+                      className="text-xs text-zinc-600 hover:text-brand-400"
+                    >
+                      Edit
+                    </button>
                     <button
                       onClick={() => handleDelete(e._id)}
                       className="text-xs text-zinc-600 hover:text-red-400"
@@ -175,6 +192,17 @@ export function Dashboard() {
           onClose={() => setShowAdd(false)}
           onSaved={() => {
             setShowAdd(false);
+            fetchExpenses();
+          }}
+        />
+      )}
+
+      {editingExpense && (
+        <AddExpenseModal
+          editExpense={editingExpense}
+          onClose={() => setEditingExpense(null)}
+          onSaved={() => {
+            setEditingExpense(null);
             fetchExpenses();
           }}
         />

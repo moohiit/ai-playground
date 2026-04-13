@@ -257,6 +257,49 @@ export async function listExpenses(
   };
 }
 
+export async function updateExpense(
+  id: string,
+  input: Partial<CreateExpenseInput>,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const expense = await Expense.findById(id);
+  if (!expense) throw new Error("Expense not found");
+
+  if (expense.type === "group" && expense.groupId) {
+    const group = await Group.findById(expense.groupId).lean();
+    if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+      throw new Error("Access denied");
+    }
+
+    // Recalculate splits if splitAmong changed
+    if (input.splitAmong) {
+      const amount = input.amount ?? expense.amount;
+      expense.splits = calculateSplits(amount, input.splitAmong);
+      expense.splitAmong = input.splitAmong as typeof expense.splitAmong;
+    } else if (input.amount && input.amount !== expense.amount) {
+      // Amount changed but splitAmong didn't — recalculate with existing splitAmong
+      expense.splits = calculateSplits(
+        input.amount,
+        expense.splitAmong as { memberId: string; name: string }[]
+      );
+    }
+  } else if (expense.createdBy !== auth.userId) {
+    throw new Error("Access denied");
+  }
+
+  if (input.amount !== undefined) expense.amount = input.amount;
+  if (input.description !== undefined) expense.description = input.description;
+  if (input.category !== undefined) expense.category = input.category;
+  if (input.date !== undefined) expense.date = new Date(input.date);
+  if (input.paidBy !== undefined) expense.paidBy = input.paidBy;
+  if (input.type !== undefined) expense.type = input.type;
+  if (input.groupId !== undefined) expense.groupId = input.groupId ?? null;
+
+  await expense.save();
+  return expense.toObject();
+}
+
 export async function deleteExpense(id: string, auth: JWTPayload) {
   await connectDB();
   const expense = await Expense.findById(id);

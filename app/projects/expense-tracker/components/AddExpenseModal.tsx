@@ -11,26 +11,44 @@ type Group = {
   members: { userId: string; name: string; email: string; isActive: boolean }[];
 };
 
+type EditExpense = {
+  _id: string;
+  type: "personal" | "group";
+  groupId?: string;
+  paidBy: { id: string; name: string };
+  amount: number;
+  description: string;
+  category: string;
+  date: string;
+  splitAmong?: { memberId: string; name: string }[];
+};
+
 type Props = {
   onClose: () => void;
   onSaved: () => void;
   preselectedGroupId?: string;
+  editExpense?: EditExpense;
 };
 
-export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props) {
+export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpense }: Props) {
   const { authFetch, user } = useAuth();
+  const isEdit = !!editExpense;
   const [type, setType] = useState<"personal" | "group">(
-    preselectedGroupId ? "group" : "personal"
+    editExpense?.type ?? (preselectedGroupId ? "group" : "personal")
   );
   const [groups, setGroups] = useState<Group[]>([]);
-  const [groupId, setGroupId] = useState(preselectedGroupId ?? "");
-  const [paidByName, setPaidByName] = useState("");
-  const [paidById, setPaidById] = useState(user?.userId ?? "");
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [presentMembers, setPresentMembers] = useState<Set<string>>(new Set());
+  const [groupId, setGroupId] = useState(editExpense?.groupId ?? preselectedGroupId ?? "");
+  const [paidByName, setPaidByName] = useState(editExpense?.paidBy?.name ?? "");
+  const [paidById, setPaidById] = useState(editExpense?.paidBy?.id ?? user?.userId ?? "");
+  const [amount, setAmount] = useState(editExpense ? String(editExpense.amount) : "");
+  const [description, setDescription] = useState(editExpense?.description ?? "");
+  const [category, setCategory] = useState(editExpense?.category ?? CATEGORIES[0]);
+  const [date, setDate] = useState(
+    editExpense ? new Date(editExpense.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+  );
+  const [presentMembers, setPresentMembers] = useState<Set<string>>(
+    () => new Set(editExpense?.splitAmong?.map((m) => m.memberId) ?? [])
+  );
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,10 +63,12 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
 
   useEffect(() => {
     if (selectedGroup) {
-      const ids = new Set(
-        selectedGroup.members.filter((m) => m.isActive).map((m) => m.userId)
-      );
-      setPresentMembers(ids);
+      if (!isEdit || presentMembers.size === 0) {
+        const ids = new Set(
+          selectedGroup.members.filter((m) => m.isActive).map((m) => m.userId)
+        );
+        setPresentMembers(ids);
+      }
       if (!paidById && selectedGroup.members.length > 0) {
         setPaidById(selectedGroup.members[0].userId);
         setPaidByName(selectedGroup.members[0].name);
@@ -114,8 +134,12 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
             }
           : { id: user.userId, name: user.name || paidByName || "Me" };
 
-      const res = await authFetch("/api/projects/expense-tracker/expenses", {
-        method: "POST",
+      const url = isEdit
+        ? `/api/projects/expense-tracker/expenses/${editExpense._id}`
+        : "/api/projects/expense-tracker/expenses";
+
+      const res = await authFetch(url, {
+        method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type,
@@ -141,7 +165,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-950 p-6">
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Add Expense</h2>
+          <h2 className="text-lg font-semibold">{isEdit ? "Edit Expense" : "Add Expense"}</h2>
           <button
             onClick={onClose}
             className="text-sm text-zinc-500 hover:text-zinc-300"
@@ -329,7 +353,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId }: Props)
               disabled={saving || !amount || !description}
               className="rounded-lg bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
-              {saving ? "Saving..." : "Save Expense"}
+              {saving ? "Saving..." : isEdit ? "Update Expense" : "Save Expense"}
             </button>
           </div>
         </form>

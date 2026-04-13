@@ -40,6 +40,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [newMember, setNewMember] = useState("");
   const [addingMember, setAddingMember] = useState(false);
 
@@ -223,11 +224,20 @@ export function GroupDetail({ groupId, onBack }: Props) {
                     Paid by {e.paidBy.name} · Split {e.splitAmong.length} ways ·{" "}
                     {new Date(e.date).toLocaleDateString()}
                   </span>
+                  <span className="text-[11px] text-zinc-600">
+                    Split among: {e.splitAmong.map((m) => m.name).join(", ")}
+                  </span>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-sm tabular-nums text-zinc-100">
                     ₹{e.amount.toFixed(2)}
                   </span>
+                  <button
+                    onClick={() => setEditingExpense(e)}
+                    className="text-[11px] text-zinc-600 hover:text-brand-400"
+                  >
+                    Edit
+                  </button>
                   <button
                     onClick={() => handleDeleteExpense(e._id)}
                     className="text-[11px] text-zinc-600 hover:text-red-400"
@@ -247,6 +257,17 @@ export function GroupDetail({ groupId, onBack }: Props) {
           onClose={() => setShowAdd(false)}
           onSaved={() => {
             setShowAdd(false);
+            fetchAll();
+          }}
+        />
+      )}
+
+      {editingExpense && (
+        <AddExpenseModal
+          editExpense={{ ...editingExpense, type: "group", groupId }}
+          onClose={() => setEditingExpense(null)}
+          onSaved={() => {
+            setEditingExpense(null);
             fetchAll();
           }}
         />
