@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useMemo, type FormEvent } from "react";
-import { useAuth } from "@/lib/authContext";
-import { cn } from "@/lib/utils";
+import { useAuth } from "../../lib/authContext";
+import { cn } from "../../lib/utils";
 
 type Mode = "login" | "register";
 
