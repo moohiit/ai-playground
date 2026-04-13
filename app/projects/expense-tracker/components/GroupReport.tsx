@@ -101,6 +101,8 @@ export function GroupReport({ groupId, groupName }: Props) {
             summary={summary}
             dateFrom={dateFrom || undefined}
             dateTo={dateTo || undefined}
+            groupId={groupId}
+            groupName={groupName}
           />
         )}
       </div>

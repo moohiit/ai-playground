@@ -17,6 +17,8 @@ type Props = {
   summary: Summary;
   dateFrom?: string;
   dateTo?: string;
+  groupId?: string;
+  groupName?: string;
 };
 
 const MONTH_NAMES = [
@@ -24,9 +26,10 @@ const MONTH_NAMES = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
+export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName }: Props) {
   const { authFetch, user } = useAuth();
   const [exporting, setExporting] = useState(false);
+  const isGroupReport = Boolean(groupId);
 
   async function handleExport() {
     setExporting(true);
@@ -39,9 +42,13 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
       const pageWidth = doc.internal.pageSize.getWidth();
       let y = 20;
 
+      // Title
+      const title = isGroupReport
+        ? `Group Report: ${groupName}`
+        : "Expense Report";
       doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.text("Expense Report", pageWidth / 2, y, { align: "center" });
+      doc.text(title, pageWidth / 2, y, { align: "center" });
       y += 10;
 
       doc.setFontSize(10);
@@ -61,6 +68,7 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
       );
       y += 12;
 
+      // Summary
       doc.setTextColor(0);
       doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
@@ -74,6 +82,7 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
       doc.text(`Number of Entries: ${summary.totalCount}`, 14, y);
       y += 12;
 
+      // Category breakdown
       if (summary.byCategory.length > 0) {
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
@@ -93,10 +102,10 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
           headStyles: { fillColor: [99, 102, 241] },
           alternateRowStyles: { fillColor: [245, 245, 250] },
         });
-
         y = (doc as any).lastAutoTable.finalY + 12;
       }
 
+      // Monthly trend
       if (summary.byMonth.length > 0) {
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
@@ -115,213 +124,22 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
           headStyles: { fillColor: [99, 102, 241] },
           alternateRowStyles: { fillColor: [245, 245, 250] },
         });
-
         y = (doc as any).lastAutoTable.finalY + 12;
       }
 
-      // Fetch expenses for the full list (include all settled + unsettled)
-      const params = new URLSearchParams({ limit: "200", settled: "all" });
-      if (dateFrom) params.set("dateFrom", dateFrom);
-      if (dateTo) params.set("dateTo", dateTo);
-      const expRes = await authFetch(
-        `/api/projects/expense-tracker/expenses?${params}`
-      );
-      const expData = await expRes.json();
-      console.log("[pdf] expenses fetched:", expData.total ?? 0);
-      const expenses = expData.expenses ?? [];
-
-      if (expenses.length > 0) {
-        if (y > 240) {
-          doc.addPage();
-          y = 20;
-        }
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "bold");
-        doc.text("All Expenses", 14, y);
-        y += 4;
-
-        (doc as any).autoTable({
-          startY: y,
-          head: [["Date", "Description", "Category", "Paid By", "Split Among", "Amount (Rs.)", "Type"]],
-          body: expenses.map((e: any) => [
-            new Date(e.date).toLocaleDateString(),
-            e.description,
-            e.category,
-            e.paidBy?.name ?? "-",
-            e.splitAmong?.length > 0
-              ? e.splitAmong.map((m: any) => m.name).join(", ")
-              : "-",
-            `Rs.${e.amount.toFixed(2)}`,
-            e.type,
-          ]),
-          styles: { fontSize: 7, cellPadding: 2 },
-          headStyles: { fillColor: [99, 102, 241] },
-          alternateRowStyles: { fillColor: [245, 245, 250] },
-          columnStyles: {
-            5: { halign: "right" },
-          },
-        });
-
-        y = (doc as any).lastAutoTable.finalY + 12;
+      if (isGroupReport) {
+        // ─── GROUP-SPECIFIC REPORT ───
+        y = await renderGroupSection(doc, y, groupId!, authFetch);
+      } else {
+        // ─── FULL REPORT (all expenses + all groups) ───
+        y = await renderAllExpenses(doc, y, dateFrom, dateTo, authFetch);
+        y = await renderAllGroups(doc, y, authFetch);
       }
 
-      // Fetch group details with settlements
-      const groupsRes = await authFetch("/api/projects/expense-tracker/groups");
-      const groupsData = await groupsRes.json();
-      const groups = groupsData.groups ?? [];
-      console.log("[pdf] groups fetched:", groups.length, groups.map((g: any) => g.name));
-
-      for (const group of groups) {
-        let balData: any = { balances: [], settlements: [] };
-        let grpExpData: any = { expenses: [] };
-
-        try {
-          const [balRes, grpExpRes] = await Promise.all([
-            authFetch(`/api/projects/expense-tracker/reports/balances/${group._id}`),
-            authFetch(`/api/projects/expense-tracker/expenses?groupId=${group._id}&limit=200&settled=all`),
-          ]);
-          balData = await balRes.json();
-          grpExpData = await grpExpRes.json();
-        } catch (err) {
-          console.error("[pdf] failed to fetch group data for", group.name, err);
-        }
-
-        console.log("[pdf] group", group.name, "expenses:", grpExpData.expenses?.length ?? 0);
-
-        const { balances, settlements } = balData;
-        const groupExpenses = grpExpData.expenses ?? [];
-
-        if (groupExpenses.length === 0) continue;
-
-        if (y > 220) {
-          doc.addPage();
-          y = 20;
-        }
-
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "bold");
-        doc.text(`Group: ${group.name}`, 14, y);
-        y += 4;
-
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100);
-        doc.text(
-          `Members: ${group.members.map((m: any) => m.name).join(", ")}`,
-          14,
-          y + 4
-        );
-        doc.setTextColor(0);
-        y += 12;
-
-        // Per-member spending summary
-        const memberSpend = new Map<string, { name: string; paid: number; owes: number }>();
-        for (const e of groupExpenses) {
-          const payerId = e.paidBy?.id ?? e.paidBy?.name;
-          const payerName = e.paidBy?.name ?? "-";
-          if (!memberSpend.has(payerId)) {
-            memberSpend.set(payerId, { name: payerName, paid: 0, owes: 0 });
-          }
-          memberSpend.get(payerId)!.paid += e.amount;
-
-          for (const s of e.splits ?? []) {
-            if (!memberSpend.has(s.memberId)) {
-              memberSpend.set(s.memberId, { name: s.name, paid: 0, owes: 0 });
-            }
-            memberSpend.get(s.memberId)!.owes += s.amount;
-          }
-        }
-
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "bold");
-        doc.text("Member Spending Summary", 14, y);
-        y += 4;
-
-        (doc as any).autoTable({
-          startY: y,
-          head: [["Member", "Total Paid", "Total Share", "Net"]],
-          body: Array.from(memberSpend.values()).map((m) => {
-            const net = m.paid - m.owes;
-            return [
-              m.name,
-              `Rs.${m.paid.toFixed(2)}`,
-              `Rs.${m.owes.toFixed(2)}`,
-              `${net > 0 ? "+" : ""}Rs.${net.toFixed(2)}`,
-            ];
-          }),
-          styles: { fontSize: 9, cellPadding: 3 },
-          headStyles: { fillColor: [99, 102, 241] },
-          alternateRowStyles: { fillColor: [245, 245, 250] },
-        });
-        y = (doc as any).lastAutoTable.finalY + 8;
-
-        // Settlement plan
-        if (settlements && settlements.length > 0) {
-          if (y > 250) {
-            doc.addPage();
-            y = 20;
-          }
-
-          doc.setFontSize(11);
-          doc.setFont("helvetica", "bold");
-          doc.text("Settlement Plan", 14, y);
-          y += 4;
-
-          (doc as any).autoTable({
-            startY: y,
-            head: [["From", "Pays To", "Amount (Rs.)"]],
-            body: settlements.map((s: any) => [
-              s.from.name,
-              s.to.name,
-              `Rs.${s.amount.toFixed(2)}`,
-            ]),
-            styles: { fontSize: 9, cellPadding: 3 },
-            headStyles: { fillColor: [245, 158, 11] },
-            alternateRowStyles: { fillColor: [255, 251, 235] },
-          });
-          y = (doc as any).lastAutoTable.finalY + 8;
-        } else if (balances && balances.length > 0) {
-          doc.setFontSize(9);
-          doc.setFont("helvetica", "italic");
-          doc.setTextColor(34, 197, 94);
-          doc.text("All settled — no pending payments.", 14, y);
-          doc.setTextColor(0);
-          y += 8;
-        }
-
-        // Group expenses detail
-        if (y > 240) {
-          doc.addPage();
-          y = 20;
-        }
-
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "bold");
-        doc.text(`Expense Details (${groupExpenses.length} entries)`, 14, y);
-        y += 4;
-
-        (doc as any).autoTable({
-          startY: y,
-          head: [["Date", "Description", "Paid By", "Split Among", "Amount (Rs.)"]],
-          body: groupExpenses.map((e: any) => [
-            new Date(e.date).toLocaleDateString(),
-            e.description,
-            e.paidBy?.name ?? "-",
-            e.splitAmong?.map((m: any) => m.name).join(", ") ?? "-",
-            `Rs.${e.amount.toFixed(2)}`,
-          ]),
-          styles: { fontSize: 8, cellPadding: 2 },
-          headStyles: { fillColor: [99, 102, 241] },
-          alternateRowStyles: { fillColor: [245, 245, 250] },
-          columnStyles: {
-            4: { halign: "right" },
-          },
-        });
-
-        y = (doc as any).lastAutoTable.finalY + 14;
-      }
-
-      const fileName = `expense-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+      const prefix = isGroupReport
+        ? `group-report-${groupName?.replace(/\s+/g, "-").toLowerCase()}`
+        : "expense-report";
+      const fileName = `${prefix}-${new Date().toISOString().slice(0, 10)}.pdf`;
       doc.save(fileName);
     } catch (err) {
       console.error("PDF export failed:", err);
@@ -340,4 +158,224 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
       {exporting ? "Generating PDF..." : "Export PDF"}
     </button>
   );
+}
+
+// ─── Render helpers ────────────────────────────────
+
+async function renderAllExpenses(
+  doc: any,
+  y: number,
+  dateFrom: string | undefined,
+  dateTo: string | undefined,
+  authFetch: (url: string, opts?: RequestInit) => Promise<Response>
+): Promise<number> {
+  const params = new URLSearchParams({ limit: "200", settled: "all" });
+  if (dateFrom) params.set("dateFrom", dateFrom);
+  if (dateTo) params.set("dateTo", dateTo);
+  const res = await authFetch(`/api/projects/expense-tracker/expenses?${params}`);
+  const data = await res.json();
+  const expenses = data.expenses ?? [];
+
+  if (expenses.length === 0) return y;
+
+  if (y > 240) { doc.addPage(); y = 20; }
+
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("All Expenses", 14, y);
+  y += 4;
+
+  (doc as any).autoTable({
+    startY: y,
+    head: [["Date", "Description", "Category", "Paid By", "Split Among", "Amount (Rs.)", "Type"]],
+    body: expenses.map((e: any) => [
+      new Date(e.date).toLocaleDateString(),
+      e.description,
+      e.category,
+      e.paidBy?.name ?? "-",
+      e.splitAmong?.length > 0 ? e.splitAmong.map((m: any) => m.name).join(", ") : "-",
+      `Rs.${e.amount.toFixed(2)}`,
+      e.type,
+    ]),
+    styles: { fontSize: 7, cellPadding: 2 },
+    headStyles: { fillColor: [99, 102, 241] },
+    alternateRowStyles: { fillColor: [245, 245, 250] },
+    columnStyles: { 5: { halign: "right" } },
+  });
+
+  return (doc as any).lastAutoTable.finalY + 12;
+}
+
+async function renderAllGroups(
+  doc: any,
+  y: number,
+  authFetch: (url: string, opts?: RequestInit) => Promise<Response>
+): Promise<number> {
+  const res = await authFetch("/api/projects/expense-tracker/groups");
+  const data = await res.json();
+  const groups = data.groups ?? [];
+
+  for (const group of groups) {
+    y = await renderGroupSection(doc, y, group._id, authFetch, group);
+  }
+
+  return y;
+}
+
+async function renderGroupSection(
+  doc: any,
+  y: number,
+  groupId: string,
+  authFetch: (url: string, opts?: RequestInit) => Promise<Response>,
+  groupData?: any
+): Promise<number> {
+  let group = groupData;
+  let balData: any = { balances: [], settlements: [] };
+  let grpExpData: any = { expenses: [] };
+
+  try {
+    const fetches: Promise<Response>[] = [
+      authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
+      authFetch(`/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=200&settled=all`),
+    ];
+    if (!group) {
+      fetches.push(authFetch(`/api/projects/expense-tracker/groups/${groupId}`));
+    }
+
+    const responses = await Promise.all(fetches);
+    balData = await responses[0].json();
+    grpExpData = await responses[1].json();
+    if (!group) {
+      const gData = await responses[2].json();
+      group = gData.group;
+    }
+  } catch (err) {
+    console.error("[pdf] failed to fetch group data", err);
+    return y;
+  }
+
+  const { balances, settlements } = balData;
+  const groupExpenses = grpExpData.expenses ?? [];
+
+  if (groupExpenses.length === 0 && !balances?.length) return y;
+
+  if (y > 220) { doc.addPage(); y = 20; }
+
+  // Group header
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text(`Group: ${group?.name ?? "Unknown"}`, 14, y);
+  y += 4;
+
+  if (group?.members?.length) {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100);
+    doc.text(`Members: ${group.members.map((m: any) => m.name).join(", ")}`, 14, y + 4);
+    doc.setTextColor(0);
+    y += 12;
+  }
+
+  // Per-member spending summary
+  if (groupExpenses.length > 0) {
+    const memberSpend = new Map<string, { name: string; paid: number; owes: number }>();
+    for (const e of groupExpenses) {
+      const payerId = e.paidBy?.id ?? e.paidBy?.name;
+      const payerName = e.paidBy?.name ?? "-";
+      if (!memberSpend.has(payerId)) {
+        memberSpend.set(payerId, { name: payerName, paid: 0, owes: 0 });
+      }
+      memberSpend.get(payerId)!.paid += e.amount;
+
+      for (const s of e.splits ?? []) {
+        if (!memberSpend.has(s.memberId)) {
+          memberSpend.set(s.memberId, { name: s.name, paid: 0, owes: 0 });
+        }
+        memberSpend.get(s.memberId)!.owes += s.amount;
+      }
+    }
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Member Spending Summary", 14, y);
+    y += 4;
+
+    (doc as any).autoTable({
+      startY: y,
+      head: [["Member", "Total Paid", "Total Share", "Net"]],
+      body: Array.from(memberSpend.values()).map((m) => {
+        const net = m.paid - m.owes;
+        return [
+          m.name,
+          `Rs.${m.paid.toFixed(2)}`,
+          `Rs.${m.owes.toFixed(2)}`,
+          `${net > 0 ? "+" : ""}Rs.${net.toFixed(2)}`,
+        ];
+      }),
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [99, 102, 241] },
+      alternateRowStyles: { fillColor: [245, 245, 250] },
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // Settlement plan
+  if (settlements && settlements.length > 0) {
+    if (y > 250) { doc.addPage(); y = 20; }
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Settlement Plan", 14, y);
+    y += 4;
+
+    (doc as any).autoTable({
+      startY: y,
+      head: [["From", "Pays To", "Amount (Rs.)"]],
+      body: settlements.map((s: any) => [
+        s.from.name,
+        s.to.name,
+        `Rs.${s.amount.toFixed(2)}`,
+      ]),
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [245, 158, 11] },
+      alternateRowStyles: { fillColor: [255, 251, 235] },
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+  } else {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(34, 197, 94);
+    doc.text("All settled - no pending payments.", 14, y);
+    doc.setTextColor(0);
+    y += 8;
+  }
+
+  // Group expense details
+  if (groupExpenses.length > 0) {
+    if (y > 240) { doc.addPage(); y = 20; }
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Expense Details (${groupExpenses.length} entries)`, 14, y);
+    y += 4;
+
+    (doc as any).autoTable({
+      startY: y,
+      head: [["Date", "Description", "Paid By", "Split Among", "Amount (Rs.)"]],
+      body: groupExpenses.map((e: any) => [
+        new Date(e.date).toLocaleDateString(),
+        e.description,
+        e.paidBy?.name ?? "-",
+        e.splitAmong?.map((m: any) => m.name).join(", ") ?? "-",
+        `Rs.${e.amount.toFixed(2)}`,
+      ]),
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [99, 102, 241] },
+      alternateRowStyles: { fillColor: [245, 245, 250] },
+      columnStyles: { 4: { halign: "right" } },
+    });
+    y = (doc as any).lastAutoTable.finalY + 14;
+  }
+
+  return y;
 }
