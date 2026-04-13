@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAuth } from "@/lib/authContext";
+import { useAuth } from "../../../../lib/authContext";
 
 type CategoryEntry = { category: string; total: number; count: number };
 type MonthEntry = { year: number; month: number; total: number; count: number };

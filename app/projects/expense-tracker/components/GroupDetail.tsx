@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { cn } from "@/lib/utils";
-import { useAuth } from "@/lib/authContext";
+import { cn } from "../../../../lib/utils";
+import { useAuth } from "../../../../lib/authContext";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
 

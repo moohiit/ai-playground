@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { cn } from "@/lib/utils";
-import { useAuth } from "@/lib/authContext";
+import { cn } from "../../../../lib/utils";
+import { useAuth } from "../../../../lib/authContext";
 import { GroupDetail } from "../components/GroupDetail";
 
 type Group = {

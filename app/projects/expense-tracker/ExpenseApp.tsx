@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@/lib/utils";
-import { useAuth } from "@/lib/authContext";
+import { cn } from "../../../lib/utils";
+import { useAuth } from "../../../lib/authContext";
 import { Dashboard } from "./tabs/Dashboard";
 import { GroupsTab } from "./tabs/GroupsTab";
 import { ReportsTab } from "./tabs/ReportsTab";

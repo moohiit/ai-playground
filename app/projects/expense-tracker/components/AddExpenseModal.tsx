@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
-import { cn } from "@/lib/utils";
-import { useAuth } from "@/lib/authContext";
-import { CATEGORIES } from "@/modules/expense-tracker/schemas";
+import { cn } from "../../../../lib/utils";
+import { useAuth } from "../../../../lib/authContext";
+import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 
 type Group = {
   _id: string;
