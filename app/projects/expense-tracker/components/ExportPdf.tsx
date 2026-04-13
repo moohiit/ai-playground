@@ -69,7 +69,7 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
 
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text(`Total Expenses: ₹${summary.totalAmount.toFixed(2)}`, 14, y);
+      doc.text(`Total Expenses: Rs.${summary.totalAmount.toFixed(2)}`, 14, y);
       y += 6;
       doc.text(`Number of Entries: ${summary.totalCount}`, 14, y);
       y += 12;
@@ -82,11 +82,11 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
 
         (doc as any).autoTable({
           startY: y,
-          head: [["Category", "Count", "Total (₹)", "% of Total"]],
+          head: [["Category", "Count", "Total (Rs.)", "% of Total"]],
           body: summary.byCategory.map((c) => [
             c.category,
             c.count.toString(),
-            `₹${c.total.toFixed(2)}`,
+            `Rs.${c.total.toFixed(2)}`,
             `${((c.total / summary.totalAmount) * 100).toFixed(1)}%`,
           ]),
           styles: { fontSize: 9, cellPadding: 3 },
@@ -105,11 +105,11 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
 
         (doc as any).autoTable({
           startY: y,
-          head: [["Month", "Count", "Total (₹)"]],
+          head: [["Month", "Count", "Total (Rs.)"]],
           body: summary.byMonth.map((m) => [
             `${MONTH_NAMES[m.month - 1]} ${m.year}`,
             m.count.toString(),
-            `₹${m.total.toFixed(2)}`,
+            `Rs.${m.total.toFixed(2)}`,
           ]),
           styles: { fontSize: 9, cellPadding: 3 },
           headStyles: { fillColor: [99, 102, 241] },
@@ -141,13 +141,13 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
 
         (doc as any).autoTable({
           startY: y,
-          head: [["Date", "Description", "Category", "Paid By", "Amount (₹)", "Type"]],
+          head: [["Date", "Description", "Category", "Paid By", "Amount (Rs.)", "Type"]],
           body: expenses.map((e: any) => [
             new Date(e.date).toLocaleDateString(),
             e.description,
             e.category,
             e.paidBy?.name ?? "-",
-            `₹${e.amount.toFixed(2)}`,
+            `Rs.${e.amount.toFixed(2)}`,
             e.type,
           ]),
           styles: { fontSize: 8, cellPadding: 2 },
@@ -190,9 +190,9 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
               head: [["Member", "Paid", "Owes", "Net Balance"]],
               body: balances.map((b: any) => [
                 b.name,
-                `₹${b.totalPaid.toFixed(2)}`,
-                `₹${b.totalOwed.toFixed(2)}`,
-                `${b.netBalance > 0 ? "+" : ""}₹${b.netBalance.toFixed(2)}`,
+                `Rs.${b.totalPaid.toFixed(2)}`,
+                `Rs.${b.totalOwed.toFixed(2)}`,
+                `${b.netBalance > 0 ? "+" : ""}Rs.${b.netBalance.toFixed(2)}`,
               ]),
               styles: { fontSize: 9, cellPadding: 3 },
               headStyles: { fillColor: [99, 102, 241] },
@@ -203,11 +203,11 @@ export function ExportPdfButton({ summary, dateFrom, dateTo }: Props) {
 
           (doc as any).autoTable({
             startY: y,
-            head: [["From", "To", "Amount (₹)"]],
+            head: [["From", "To", "Amount (Rs.)"]],
             body: settlements.map((s: any) => [
               s.from.name,
               s.to.name,
-              `₹${s.amount.toFixed(2)}`,
+              `Rs.${s.amount.toFixed(2)}`,
             ]),
             styles: { fontSize: 9, cellPadding: 3 },
             headStyles: { fillColor: [245, 158, 11] },

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:reset": "npx tsx scripts/reset-db.ts"
   },
   "dependencies": {
     "next": "14.2.5",
@@ -19,6 +20,7 @@
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.3",
     "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.4.5",
     "mongoose": "^8.5.1",
     "recharts": "^2.12.7",
     "unpdf": "^0.12.1",
@@ -38,6 +40,7 @@
     "postcss": "^8.4.41",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.0",
-    "eslint-config-next": "14.2.5"
+    "eslint-config-next": "14.2.5",
+    "tsx": "^4.16.5"
   }
 }

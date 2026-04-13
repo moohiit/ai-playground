@@ -71,6 +71,7 @@ export const expenseFilterSchema = z.object({
   category: z.string().optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
+  settled: z.enum(["true", "false", "all"]).optional().default("false"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });

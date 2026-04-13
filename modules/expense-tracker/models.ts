@@ -70,6 +70,8 @@ export type ExpenseDoc = {
   items: ExpenseItem[];
   receiptUrl: string | null;
   rawExtraction: Record<string, unknown> | null;
+  settledAt: Date | null;
+  settlementId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -121,6 +123,8 @@ const expenseSchema = new Schema<ExpenseDoc>(
     items: { type: [expenseItemSchema], default: [] },
     receiptUrl: { type: String, default: null },
     rawExtraction: { type: Schema.Types.Mixed, default: null },
+    settledAt: { type: Date, default: null, index: true },
+    settlementId: { type: String, default: null },
   },
   { timestamps: true }
 );

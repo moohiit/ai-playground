@@ -2,6 +2,7 @@ import { connectDB } from "@/lib/db";
 import { vision } from "@/lib/llm";
 import type { JWTPayload } from "@/lib/auth";
 import { User } from "@/models/User";
+import mongoose from "mongoose";
 import { Group, Expense, type ExpenseDoc } from "./models";
 import {
   type CreateGroupInput,
@@ -230,6 +231,15 @@ export async function listExpenses(
     ];
   }
 
+  if (filter.settled === "true") {
+    query.settledAt = { $ne: null, $exists: true };
+  } else if (filter.settled === "false") {
+    query.$and = [
+      ...(Array.isArray(query.$and) ? query.$and : []),
+      { $or: [{ settledAt: null }, { settledAt: { $exists: false } }] },
+    ];
+  }
+
   if (filter.category) query.category = filter.category;
   if (filter.dateFrom || filter.dateTo) {
     query.date = {};
@@ -294,7 +304,7 @@ export async function updateExpense(
   if (input.date !== undefined) expense.date = new Date(input.date);
   if (input.paidBy !== undefined) expense.paidBy = input.paidBy;
   if (input.type !== undefined) expense.type = input.type;
-  if (input.groupId !== undefined) expense.groupId = input.groupId ?? null;
+  if (input.groupId !== undefined) expense.groupId = input.groupId ? new mongoose.Types.ObjectId(input.groupId) : null;
 
   await expense.save();
   return expense.toObject();
@@ -443,9 +453,97 @@ export async function getGroupBalances(
     throw new Error("Group not found or access denied");
   }
 
-  const expenses = await Expense.find({ groupId, type: "group" }).lean();
+  const oid = new mongoose.Types.ObjectId(groupId);
+  const expenses = await Expense.find({
+    groupId: oid,
+    type: "group",
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  }).lean();
   const balances = calculateBalances(expenses as ExpenseDoc[]);
   const settlements = calculateSettlements(balances);
 
   return { balances, settlements };
+}
+
+export async function settleGroup(groupId: string, auth: JWTPayload) {
+  await connectDB();
+
+  const group = await Group.findById(groupId).lean();
+  if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+    throw new Error("Group not found or access denied");
+  }
+
+  const oid = new mongoose.Types.ObjectId(groupId);
+  const unsettledFilter = {
+    groupId: oid,
+    type: "group",
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  };
+
+  const unsettled = await Expense.find(unsettledFilter).lean();
+
+  console.log("[settle] groupId:", groupId, "oid:", oid.toString(), "unsettled count:", unsettled.length);
+
+  if (unsettled.length === 0) {
+    throw new Error("No unsettled expenses in this group");
+  }
+
+  const settlementId = `settle_${Date.now()}`;
+  const now = new Date();
+
+  const balances = calculateBalances(unsettled as ExpenseDoc[]);
+  const settlementPlan = calculateSettlements(balances);
+
+  const updateResult = await Expense.updateMany(unsettledFilter, {
+    $set: { settledAt: now, settlementId },
+  });
+
+  console.log("[settle] updateMany result:", JSON.stringify(updateResult));
+
+  return {
+    settlementId,
+    settledAt: now,
+    expenseCount: unsettled.length,
+    updatedCount: updateResult.modifiedCount,
+    balances,
+    settlements: settlementPlan,
+  };
+}
+
+export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
+  await connectDB();
+
+  const group = await Group.findById(groupId).lean();
+  if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+    throw new Error("Group not found or access denied");
+  }
+
+  const oid = new mongoose.Types.ObjectId(groupId);
+
+  const settled = await Expense.find({
+    groupId: oid,
+    type: "group",
+    settledAt: { $ne: null },
+  })
+    .sort({ settledAt: -1, date: -1 })
+    .lean();
+
+  const grouped = new Map<
+    string,
+    { settlementId: string; settledAt: Date; expenses: typeof settled }
+  >();
+
+  for (const exp of settled) {
+    const sid = exp.settlementId ?? "unknown";
+    if (!grouped.has(sid)) {
+      grouped.set(sid, {
+        settlementId: sid,
+        settledAt: exp.settledAt!,
+        expenses: [],
+      });
+    }
+    grouped.get(sid)!.expenses.push(exp);
+  }
+
+  return Array.from(grouped.values());
 }
