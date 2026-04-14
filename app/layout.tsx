@@ -25,7 +25,7 @@ export default function RootLayout({
               </a>
               <nav className="flex items-center gap-4 text-sm text-zinc-400">
                 <a
-                  href="https://github.com"
+                  href="https://github.com/moohiit/ai-playground"
                   target="_blank"
                   rel="noreferrer"
                   className="hover:text-zinc-100"

@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useRef } from "react";
 import { cn } from "@/lib/utils";
 
 export type ProjectCardProps = {
@@ -17,51 +20,82 @@ export function ProjectCard({
   status,
 }: ProjectCardProps) {
   const isLive = status === "live";
+  const ref = useRef<HTMLDivElement>(null);
+
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty("--mx", `${e.clientX - rect.left}px`);
+    el.style.setProperty("--my", `${e.clientY - rect.top}px`);
+  }
 
   const content = (
     <div
+      ref={ref}
+      onMouseMove={handleMouseMove}
       className={cn(
-        "group flex h-full flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 transition",
+        "card-spotlight group relative flex h-full flex-col overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-6 backdrop-blur-sm transition-all duration-300",
         isLive
-          ? "hover:border-brand-500 hover:bg-zinc-900/70"
+          ? "hover:-translate-y-1 hover:border-brand-500/60 hover:shadow-[0_20px_60px_-15px_rgba(99,102,241,0.35)]"
           : "opacity-60"
       )}
     >
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <h3 className="text-base font-semibold text-zinc-100">{title}</h3>
+      <div className="pointer-events-none absolute inset-x-0 -top-px h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+
+      <div className="relative mb-3 flex items-start justify-between gap-3">
+        <h3 className="text-base font-semibold text-zinc-100 transition-colors group-hover:text-white">
+          {title}
+        </h3>
         <span
           className={cn(
-            "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+            "relative flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
             isLive
-              ? "bg-brand-500/15 text-brand-500"
+              ? "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30"
               : "bg-zinc-800 text-zinc-400"
           )}
         >
+          {isLive && (
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 animate-pulse-ring" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            </span>
+          )}
           {isLive ? "Live" : "Soon"}
         </span>
       </div>
-      <p className="mb-4 flex-1 text-sm leading-relaxed text-zinc-400">
+
+      <p className="relative mb-4 flex-1 text-sm leading-relaxed text-zinc-400">
         {description}
       </p>
-      <div className="mb-4 flex flex-wrap gap-1.5">
+
+      <div className="relative mb-4 flex flex-wrap gap-1.5">
         {tags.map((tag) => (
           <span
             key={tag}
-            className="rounded-md bg-zinc-800/80 px-2 py-0.5 text-[11px] text-zinc-400"
+            className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[11px] text-zinc-400 transition-colors group-hover:border-brand-500/30 group-hover:text-zinc-300"
           >
             {tag}
           </span>
         ))}
       </div>
+
       <span
         className={cn(
-          "text-sm font-medium",
-          isLive
-            ? "text-brand-500 group-hover:text-brand-500"
-            : "text-zinc-600"
+          "relative inline-flex items-center gap-1 text-sm font-medium",
+          isLive ? "text-brand-500" : "text-zinc-600"
         )}
       >
-        {isLive ? "Try it →" : "Coming soon"}
+        {isLive ? (
+          <>
+            Try it
+            <span className="transition-transform duration-300 group-hover:translate-x-1">
+              →
+            </span>
+          </>
+        ) : (
+          "Coming soon"
+        )}
       </span>
     </div>
   );
