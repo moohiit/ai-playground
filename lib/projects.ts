@@ -25,4 +25,12 @@ export const projects: ProjectCardProps[] = [
     href: "/projects/expense-tracker",
     status: "live",
   },
+  {
+    title: "AI Content Generator",
+    description:
+      "Turn a short brief into a streamed blog post, with an editable outline, SEO metadata, and ready-to-post social blurbs.",
+    tags: ["LLM", "Streaming", "Markdown", "SEO"],
+    href: "/projects/content-generator",
+    status: "live",
+  },
 ];
