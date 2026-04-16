@@ -18,13 +18,43 @@ import {
 
 type CategoryEntry = { category: string; total: number; count: number };
 type MonthEntry = { year: number; month: number; total: number; count: number };
+type DayEntry = { day: number; total: number; count: number };
+type PayerEntry = { id: string; name: string; total: number; count: number };
+type Largest = {
+  description: string;
+  amount: number;
+  date: string;
+  paidBy: string;
+  category: string;
+} | null;
 
 type Summary = {
   totalAmount: number;
   totalCount: number;
+  myShare: number;
+  paidByMe: number;
+  paidByOthers: number;
+  personalTotal: number;
+  groupTotal: number;
+  averagePerDay: number;
+  averagePerTransaction: number;
+  daysCovered: number;
+  largest: Largest;
   byCategory: CategoryEntry[];
   byMonth: MonthEntry[];
+  byDayOfWeek: DayEntry[];
+  topPayers: PayerEntry[];
 };
+
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const fmt = (n: number) =>
+  `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function pct(part: number, total: number) {
+  if (total <= 0) return "0%";
+  return `${Math.round((part / total) * 100)}%`;
+}
 
 const CHART_COLORS = [
   "#818cf8", "#34d399", "#fbbf24", "#f87171", "#a78bfa",
@@ -286,18 +316,162 @@ export function GroupReport({ groupId, groupName }: Props) {
         <EmptyState scope={scope} groupName={groupName} />
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <StatCard
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <HeroStat
               label={`Total · ${scopeLabel}`}
-              value={`₹${summary.totalAmount.toFixed(2)}`}
+              value={fmt(summary.totalAmount)}
+              hint={`${summary.totalCount} entries`}
               accent="from-brand-500/40"
             />
-            <StatCard
-              label="Number of Entries"
-              value={String(summary.totalCount)}
+            <HeroStat
+              label="My Share"
+              value={fmt(summary.myShare)}
+              hint={`${pct(summary.myShare, summary.totalAmount)} of total`}
               accent="from-fuchsia-500/40"
+              emphasized
+            />
+            <HeroStat
+              label="Paid by Me"
+              value={fmt(summary.paidByMe)}
+              hint={`${pct(summary.paidByMe, summary.totalAmount)} of total`}
+              accent="from-emerald-500/40"
+            />
+            <HeroStat
+              label="Paid by Others"
+              value={fmt(summary.paidByOthers)}
+              hint={`${pct(summary.paidByOthers, summary.totalAmount)} of total`}
+              accent="from-amber-500/40"
             />
           </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <MiniStat
+              label="Avg / Day"
+              value={fmt(summary.averagePerDay)}
+              hint={`${summary.daysCovered} days covered`}
+            />
+            <MiniStat
+              label="Avg / Transaction"
+              value={fmt(summary.averagePerTransaction)}
+              hint="Across all entries"
+            />
+            <MiniStat
+              label="Largest Single Expense"
+              value={summary.largest ? fmt(summary.largest.amount) : "—"}
+              hint={
+                summary.largest
+                  ? `${summary.largest.description} · ${new Date(
+                      summary.largest.date
+                    ).toLocaleDateString()}`
+                  : "No data"
+              }
+            />
+          </div>
+
+          {summary.topPayers.length > 0 && (
+            <ChartPanel title="Top Payers in this Group" accent="from-emerald-500/40">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
+                      <th className="pb-2 text-left font-semibold">Member</th>
+                      <th className="pb-2 text-right font-semibold">Entries</th>
+                      <th className="pb-2 text-right font-semibold">Total Paid</th>
+                      <th className="pb-2 pl-4 text-left font-semibold">Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.topPayers.map((p, i) => {
+                      const pctPaid = (p.total / summary.totalAmount) * 100;
+                      return (
+                        <tr
+                          key={p.id}
+                          className="animate-fade-up border-t border-zinc-800/60"
+                          style={{ animationDelay: `${i * 40}ms` }}
+                        >
+                          <td className="py-2.5 text-zinc-200">{p.name}</td>
+                          <td className="py-2.5 text-right tabular-nums text-zinc-400">
+                            {p.count}
+                          </td>
+                          <td className="py-2.5 text-right font-mono tabular-nums text-zinc-100">
+                            {fmt(p.total)}
+                          </td>
+                          <td className="w-1/3 py-2.5 pl-4">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800/80">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-brand-500"
+                                  style={{ width: `${pctPaid}%` }}
+                                />
+                              </div>
+                              <span className="text-[11px] tabular-nums text-zinc-500">
+                                {pctPaid.toFixed(0)}%
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </ChartPanel>
+          )}
+
+          <ChartPanel title="Spending by Day of Week" accent="from-cyan-500/40">
+            {summary.byDayOfWeek.some((d) => d.total > 0) ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart
+                  data={summary.byDayOfWeek.map((d) => ({
+                    label: DOW[d.day],
+                    total: d.total,
+                  }))}
+                >
+                  <defs>
+                    <linearGradient
+                      id="grpDowGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.95} />
+                      <stop offset="100%" stopColor="#0891b2" stopOpacity={0.6} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fill: "#71717a", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "#71717a", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => `₹${v}`}
+                  />
+                  <Tooltip
+                    cursor={{ fill: "rgba(34,211,238,0.08)" }}
+                    contentStyle={{
+                      backgroundColor: "#09090b",
+                      border: "1px solid #27272a",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                    formatter={(val: number) => fmt(val)}
+                  />
+                  <Bar
+                    dataKey="total"
+                    fill="url(#grpDowGradient)"
+                    radius={[6, 6, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-xs text-zinc-500">No data</p>
+            )}
+          </ChartPanel>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <ChartPanel title="By Category" accent="from-brand-500/40">
@@ -494,17 +668,28 @@ function EmptyState({ scope, groupName }: { scope: Scope; groupName: string }) {
   );
 }
 
-function StatCard({
+function HeroStat({
   label,
   value,
+  hint,
   accent,
+  emphasized,
 }: {
   label: string;
   value: string;
+  hint?: string;
   accent?: string;
+  emphasized?: boolean;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5 backdrop-blur-sm">
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-xl border bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5",
+        emphasized
+          ? "border-fuchsia-500/40 shadow-[0_15px_40px_-15px_rgba(232,121,249,0.4)]"
+          : "border-zinc-800/80"
+      )}
+    >
       <div
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r to-transparent",
@@ -514,9 +699,39 @@ function StatCard({
       <div className="text-[11px] uppercase tracking-wider text-zinc-500">
         {label}
       </div>
-      <div className="mt-1 text-2xl font-bold tabular-nums text-gradient-brand">
+      <div
+        className={cn(
+          "mt-1 text-2xl font-bold tabular-nums",
+          emphasized ? "text-gradient-brand" : "text-zinc-100"
+        )}
+      >
         {value}
       </div>
+      {hint && <div className="mt-0.5 text-xs text-zinc-500">{hint}</div>}
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4 backdrop-blur-sm">
+      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+        {label}
+      </div>
+      <div className="mt-1 font-mono text-base font-semibold tabular-nums text-zinc-100">
+        {value}
+      </div>
+      {hint && (
+        <div className="mt-1 line-clamp-1 text-[11px] text-zinc-500">{hint}</div>
+      )}
     </div>
   );
 }

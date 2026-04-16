@@ -357,6 +357,7 @@ export async function getSummary(
   await connectDB();
 
   const match: Record<string, unknown> = {};
+  const groupNameById = new Map<string, string>();
 
   if (filter.groupId) {
     const group = await Group.findById(filter.groupId).lean();
@@ -364,11 +365,13 @@ export async function getSummary(
       throw new Error("Group not found or access denied");
     }
     match.groupId = group._id;
+    groupNameById.set(group._id.toString(), group.name);
   } else {
     const userGroups = await Group.find(
       { "members.userId": auth.userId },
-      { _id: 1 }
+      { _id: 1, name: 1 }
     ).lean();
+    for (const g of userGroups) groupNameById.set(g._id.toString(), g.name);
     match.$or = [
       { createdBy: auth.userId, type: "personal" },
       { groupId: { $in: userGroups.map((g) => g._id) } },
@@ -392,62 +395,187 @@ export async function getSummary(
     ];
   }
 
-  const [byCategory, byMonth] = await Promise.all([
-    Expense.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: "$category",
-          total: { $sum: "$amount" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { total: -1 } },
-    ]),
-    Expense.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: { year: { $year: "$date" }, month: { $month: "$date" } },
-          total: { $sum: "$amount" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.year": 1, "_id.month": 1 } },
-    ]),
-  ]);
+  const expenses = await Expense.find(match).lean();
+  const userId = auth.userId;
+  const round = (n: number) => Math.round(n * 100) / 100;
 
-  const totalAmount = byCategory.reduce(
-    (sum: number, c: { total: number }) => sum + c.total,
-    0
-  );
-  const totalCount = byCategory.reduce(
-    (sum: number, c: { count: number }) => sum + c.count,
-    0
-  );
+  let totalAmount = 0;
+  let myShare = 0;
+  let paidByMe = 0;
+  let personalTotal = 0;
+  let groupTotal = 0;
+  let largest: {
+    description: string;
+    amount: number;
+    date: string;
+    paidBy: string;
+    category: string;
+  } | null = null;
+
+  const byCategoryMap = new Map<
+    string,
+    { category: string; total: number; count: number }
+  >();
+  const byMonthMap = new Map<
+    string,
+    { year: number; month: number; total: number; count: number }
+  >();
+  const byDayOfWeek = Array.from({ length: 7 }, (_, i) => ({
+    day: i,
+    total: 0,
+    count: 0,
+  }));
+  const byGroupMap = new Map<
+    string,
+    {
+      groupId: string;
+      groupName: string;
+      total: number;
+      myShare: number;
+      count: number;
+    }
+  >();
+  const topPayersMap = new Map<
+    string,
+    { id: string; name: string; total: number; count: number }
+  >();
+
+  let minDate = Infinity;
+  let maxDate = -Infinity;
+
+  for (const e of expenses) {
+    totalAmount += e.amount;
+
+    if (e.paidBy?.id === userId) paidByMe += e.amount;
+
+    if (e.type === "personal") {
+      personalTotal += e.amount;
+      myShare += e.amount;
+    } else {
+      groupTotal += e.amount;
+      const myPart = (e.splits ?? []).find((s) => s.memberId === userId);
+      if (myPart) myShare += myPart.amount;
+    }
+
+    if (!largest || e.amount > largest.amount) {
+      largest = {
+        description: e.description,
+        amount: e.amount,
+        date: new Date(e.date).toISOString(),
+        paidBy: e.paidBy?.name ?? "-",
+        category: e.category,
+      };
+    }
+
+    const cat = byCategoryMap.get(e.category) ?? {
+      category: e.category,
+      total: 0,
+      count: 0,
+    };
+    cat.total += e.amount;
+    cat.count += 1;
+    byCategoryMap.set(e.category, cat);
+
+    const d = new Date(e.date);
+    const t = d.getTime();
+    if (t < minDate) minDate = t;
+    if (t > maxDate) maxDate = t;
+
+    const monthKey = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`;
+    const m = byMonthMap.get(monthKey) ?? {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      total: 0,
+      count: 0,
+    };
+    m.total += e.amount;
+    m.count += 1;
+    byMonthMap.set(monthKey, m);
+
+    byDayOfWeek[d.getUTCDay()].total += e.amount;
+    byDayOfWeek[d.getUTCDay()].count += 1;
+
+    if (e.type === "group" && e.groupId && !filter.groupId) {
+      const gid = e.groupId.toString();
+      const gname = groupNameById.get(gid) ?? "Unknown";
+      const g = byGroupMap.get(gid) ?? {
+        groupId: gid,
+        groupName: gname,
+        total: 0,
+        myShare: 0,
+        count: 0,
+      };
+      g.total += e.amount;
+      const myPart = (e.splits ?? []).find((s) => s.memberId === userId);
+      if (myPart) g.myShare += myPart.amount;
+      g.count += 1;
+      byGroupMap.set(gid, g);
+    }
+
+    if (filter.groupId && e.paidBy) {
+      const pid = e.paidBy.id;
+      const p = topPayersMap.get(pid) ?? {
+        id: pid,
+        name: e.paidBy.name,
+        total: 0,
+        count: 0,
+      };
+      p.total += e.amount;
+      p.count += 1;
+      topPayersMap.set(pid, p);
+    }
+  }
+
+  let days = 1;
+  if (filter.dateFrom && filter.dateTo) {
+    days = Math.max(
+      1,
+      Math.round(
+        (new Date(filter.dateTo).getTime() -
+          new Date(filter.dateFrom).getTime()) /
+          86400000
+      ) + 1
+    );
+  } else if (expenses.length > 0 && isFinite(minDate) && isFinite(maxDate)) {
+    days = Math.max(1, Math.round((maxDate - minDate) / 86400000) + 1);
+  }
+
+  const totalCount = expenses.length;
+  const paidByOthers = totalAmount - paidByMe;
+  const averagePerTransaction = totalCount > 0 ? totalAmount / totalCount : 0;
+  const averagePerDay = days > 0 ? totalAmount / days : 0;
 
   return {
-    totalAmount: Math.round(totalAmount * 100) / 100,
+    totalAmount: round(totalAmount),
     totalCount,
-    byCategory: byCategory.map(
-      (c: { _id: string; total: number; count: number }) => ({
-        category: c._id,
-        total: Math.round(c.total * 100) / 100,
-        count: c.count,
-      })
-    ),
-    byMonth: byMonth.map(
-      (m: {
-        _id: { year: number; month: number };
-        total: number;
-        count: number;
-      }) => ({
-        year: m._id.year,
-        month: m._id.month,
-        total: Math.round(m.total * 100) / 100,
-        count: m.count,
-      })
-    ),
+    myShare: round(myShare),
+    paidByMe: round(paidByMe),
+    paidByOthers: round(paidByOthers),
+    personalTotal: round(personalTotal),
+    groupTotal: round(groupTotal),
+    averagePerDay: round(averagePerDay),
+    averagePerTransaction: round(averagePerTransaction),
+    daysCovered: days,
+    largest: largest
+      ? { ...largest, amount: round(largest.amount) }
+      : null,
+    byCategory: Array.from(byCategoryMap.values())
+      .sort((a, b) => b.total - a.total)
+      .map((c) => ({ ...c, total: round(c.total) })),
+    byMonth: Array.from(byMonthMap.values())
+      .sort((a, b) => a.year - b.year || a.month - b.month)
+      .map((m) => ({ ...m, total: round(m.total) })),
+    byDayOfWeek: byDayOfWeek.map((d) => ({ ...d, total: round(d.total) })),
+    byGroup: Array.from(byGroupMap.values())
+      .sort((a, b) => b.total - a.total)
+      .map((g) => ({
+        ...g,
+        total: round(g.total),
+        myShare: round(g.myShare),
+      })),
+    topPayers: Array.from(topPayersMap.values())
+      .sort((a, b) => b.total - a.total)
+      .map((p) => ({ ...p, total: round(p.total) })),
   };
 }
 

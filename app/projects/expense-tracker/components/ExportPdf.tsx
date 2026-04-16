@@ -5,12 +5,37 @@ import { useAuth } from "../../../../lib/authContext";
 
 type CategoryEntry = { category: string; total: number; count: number };
 type MonthEntry = { year: number; month: number; total: number; count: number };
+type GroupEntry = {
+  groupId: string;
+  groupName: string;
+  total: number;
+  myShare: number;
+  count: number;
+};
+type PayerEntry = { id: string; name: string; total: number; count: number };
 
 type Summary = {
   totalAmount: number;
   totalCount: number;
+  myShare?: number;
+  paidByMe?: number;
+  paidByOthers?: number;
+  personalTotal?: number;
+  groupTotal?: number;
+  averagePerDay?: number;
+  averagePerTransaction?: number;
+  daysCovered?: number;
+  largest?: {
+    description: string;
+    amount: number;
+    date: string;
+    paidBy: string;
+    category: string;
+  } | null;
   byCategory: CategoryEntry[];
   byMonth: MonthEntry[];
+  byGroup?: GroupEntry[];
+  topPayers?: PayerEntry[];
 };
 
 type Props = {
@@ -80,7 +105,78 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
       doc.text(`Total Expenses: Rs.${summary.totalAmount.toFixed(2)}`, 14, y);
       y += 6;
       doc.text(`Number of Entries: ${summary.totalCount}`, 14, y);
-      y += 12;
+      y += 6;
+      if (typeof summary.myShare === "number") {
+        doc.text(`My Share: Rs.${summary.myShare.toFixed(2)}`, 14, y);
+        y += 6;
+      }
+      if (typeof summary.paidByMe === "number") {
+        doc.text(
+          `Paid by Me: Rs.${summary.paidByMe.toFixed(2)}  ·  Paid by Others: Rs.${(summary.paidByOthers ?? 0).toFixed(2)}`,
+          14,
+          y
+        );
+        y += 6;
+      }
+      if (typeof summary.averagePerDay === "number") {
+        doc.text(
+          `Avg/Day: Rs.${summary.averagePerDay.toFixed(2)}  ·  Avg/Txn: Rs.${(summary.averagePerTransaction ?? 0).toFixed(2)}  ·  Days: ${summary.daysCovered ?? 0}`,
+          14,
+          y
+        );
+        y += 6;
+      }
+      if (summary.largest) {
+        doc.text(
+          `Largest: ${summary.largest.description} - Rs.${summary.largest.amount.toFixed(2)} (${new Date(summary.largest.date).toLocaleDateString()})`,
+          14,
+          y
+        );
+        y += 6;
+      }
+      y += 6;
+
+      if (!isGroupReport && summary.byGroup && summary.byGroup.length > 0) {
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("Top Groups", 14, y);
+        y += 4;
+        (doc as any).autoTable({
+          startY: y,
+          head: [["Group", "Entries", "Total (Rs.)", "My Share (Rs.)"]],
+          body: summary.byGroup.map((g) => [
+            g.groupName,
+            g.count.toString(),
+            `Rs.${g.total.toFixed(2)}`,
+            `Rs.${g.myShare.toFixed(2)}`,
+          ]),
+          styles: { fontSize: 9, cellPadding: 3 },
+          headStyles: { fillColor: [99, 102, 241] },
+          alternateRowStyles: { fillColor: [245, 245, 250] },
+        });
+        y = (doc as any).lastAutoTable.finalY + 12;
+      }
+
+      if (isGroupReport && summary.topPayers && summary.topPayers.length > 0) {
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text("Top Payers", 14, y);
+        y += 4;
+        (doc as any).autoTable({
+          startY: y,
+          head: [["Member", "Entries", "Total Paid (Rs.)", "Share"]],
+          body: summary.topPayers.map((p) => [
+            p.name,
+            p.count.toString(),
+            `Rs.${p.total.toFixed(2)}`,
+            `${((p.total / summary.totalAmount) * 100).toFixed(1)}%`,
+          ]),
+          styles: { fontSize: 9, cellPadding: 3 },
+          headStyles: { fillColor: [16, 185, 129] },
+          alternateRowStyles: { fillColor: [240, 253, 244] },
+        });
+        y = (doc as any).lastAutoTable.finalY + 12;
+      }
 
       // Category breakdown
       if (summary.byCategory.length > 0) {
