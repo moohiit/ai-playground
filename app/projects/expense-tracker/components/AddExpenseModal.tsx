@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
@@ -58,6 +59,19 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
       .then((r) => r.json())
       .then((d) => setGroups(d.groups ?? []));
   }, []);
+
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
 
   const selectedGroup = groups.find((g) => g._id === groupId);
 
@@ -161,170 +175,251 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-950 p-6">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">{isEdit ? "Edit Expense" : "Add Expense"}</h2>
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950 shadow-2xl shadow-brand-500/10"
+      >
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent" />
+
+        <div className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/95 px-6 py-4 backdrop-blur">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-brand-500/90">
+              {isEdit ? "Update" : "Quick add"}
+            </div>
+            <h2 className="text-lg font-semibold text-zinc-100">
+              {isEdit ? "Edit Expense" : "Add Expense"}
+            </h2>
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-sm text-zinc-500 hover:text-zinc-300"
+            aria-label="Close"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
           >
-            Close
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex gap-2">
-            {(["personal", "group"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setType(t)}
-                className={cn(
-                  "rounded-md border px-3 py-1.5 text-xs font-medium capitalize",
-                  type === t
-                    ? "border-brand-500 bg-brand-500/10 text-brand-500"
-                    : "border-zinc-800 text-zinc-400"
-                )}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+        <form
+          id="expense-form"
+          onSubmit={handleSubmit}
+          className="max-h-[calc(100vh-15rem)] overflow-y-auto px-6 py-5"
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex gap-2">
+              {(["personal", "group"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setType(t)}
+                  className={cn(
+                    "flex-1 rounded-lg border px-3 py-2 text-xs font-medium capitalize transition-all",
+                    type === t
+                      ? "border-brand-500/60 bg-brand-500/15 text-brand-500 shadow-[0_0_20px_-5px_rgba(99,102,241,0.5)]"
+                      : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
 
-          {type === "group" && (
-            <>
+            {type === "group" && (
+              <>
+                <div>
+                  <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                    Group
+                  </label>
+                  <select
+                    value={groupId}
+                    onChange={(e) => setGroupId(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                  >
+                    <option value="">Select group...</option>
+                    {groups.map((g) => (
+                      <option key={g._id} value={g._id}>
+                        {g.name} ({g.members.length} members)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedGroup && (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                        Paid by
+                      </label>
+                      <select
+                        value={paidById}
+                        onChange={(e) => {
+                          setPaidById(e.target.value);
+                          setPaidByName(
+                            selectedGroup.members.find(
+                              (m) => m.userId === e.target.value
+                            )?.name ?? ""
+                          );
+                        }}
+                        className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                      >
+                        {selectedGroup.members.map((m) => (
+                          <option key={m.userId} value={m.userId}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                        Split among
+                        <span className="ml-1 normal-case text-zinc-600">
+                          (uncheck absent members)
+                        </span>
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedGroup.members
+                          .filter((m) => m.isActive)
+                          .map((m) => {
+                            const on = presentMembers.has(m.userId);
+                            return (
+                              <label
+                                key={m.userId}
+                                className={cn(
+                                  "inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-all",
+                                  on
+                                    ? "border-brand-500/60 bg-brand-500/15 text-brand-500"
+                                    : "border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={on}
+                                  onChange={() => toggleMember(m.userId)}
+                                  className="sr-only"
+                                />
+                                <span
+                                  className={cn(
+                                    "inline-flex h-3 w-3 items-center justify-center rounded-sm border",
+                                    on
+                                      ? "border-brand-500 bg-brand-500 text-white"
+                                      : "border-zinc-600"
+                                  )}
+                                >
+                                  {on && (
+                                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M20 6 9 17l-5-5" />
+                                    </svg>
+                                  )}
+                                </span>
+                                {m.name}
+                              </label>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {type === "personal" && (
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                  Your name <span className="normal-case text-zinc-600">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={paidByName}
+                  onChange={(e) => setPaidByName(e.target.value)}
+                  placeholder="e.g. Mohit"
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                  Amount
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
+                    ₹
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    required
+                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 pl-7 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                Description
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g. Groceries"
+                required
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                Category
+              </label>
               <select
-                value={groupId}
-                onChange={(e) => setGroupId(e.target.value)}
-                className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
               >
-                <option value="">Select group...</option>
-                {groups.map((g) => (
-                  <option key={g._id} value={g._id}>
-                    {g.name} ({g.members.length} members)
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
                   </option>
                 ))}
               </select>
+            </div>
 
-              {selectedGroup && (
-                <>
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-500">
-                      Paid by
-                    </label>
-                    <select
-                      value={paidById}
-                      onChange={(e) => {
-                        setPaidById(e.target.value);
-                        setPaidByName(
-                          selectedGroup.members.find(
-                            (m) => m.userId === e.target.value
-                          )?.name ?? ""
-                        );
-                      }}
-                      className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
-                    >
-                      {selectedGroup.members.map((m) => (
-                        <option key={m.userId} value={m.userId}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-xs text-zinc-500">
-                      Split among (uncheck absent members)
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedGroup.members
-                        .filter((m) => m.isActive)
-                        .map((m) => (
-                          <label
-                            key={m.userId}
-                            className={cn(
-                              "flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs",
-                              presentMembers.has(m.userId)
-                                ? "border-brand-500 bg-brand-500/10 text-brand-500"
-                                : "border-zinc-800 text-zinc-500"
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={presentMembers.has(m.userId)}
-                              onChange={() => toggleMember(m.userId)}
-                              className="sr-only"
-                            />
-                            {m.name}
-                          </label>
-                        ))}
-                    </div>
-                  </div>
-                </>
+            <label
+              className={cn(
+                "group relative flex cursor-pointer flex-col items-center gap-2 overflow-hidden rounded-lg border border-dashed border-zinc-700 bg-zinc-900/40 p-4 text-center transition-colors hover:border-brand-500/60 hover:bg-brand-500/5",
+                scanning && "pointer-events-none opacity-70"
               )}
-            </>
-          )}
-
-          {type === "personal" && (
-            <input
-              type="text"
-              value={paidByName}
-              onChange={(e) => setPaidByName(e.target.value)}
-              placeholder="Your name (optional)"
-              className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600"
-            />
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs text-zinc-500">Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                required
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-zinc-500">Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
-              />
-            </div>
-          </div>
-
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description (e.g. Groceries)"
-            required
-            className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600"
-          />
-
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-
-          <div className="rounded-lg border border-dashed border-zinc-700 p-3 text-center">
-            <label className="cursor-pointer text-xs text-brand-500 hover:underline">
+            >
               <input
                 type="file"
                 accept="image/*"
@@ -332,32 +427,57 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 onChange={handleScan}
                 disabled={scanning}
               />
-              {scanning
-                ? "Scanning receipt..."
-                : "Upload receipt image (auto-fill with AI)"}
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500/10 text-brand-500 ring-1 ring-brand-500/30 transition-transform group-hover:scale-110">
+                {scanning ? (
+                  <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+                    <path d="M22 12a10 10 0 0 0-10-10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                )}
+              </div>
+              <div className="text-xs font-medium text-zinc-300">
+                {scanning ? "Scanning receipt..." : "Upload receipt image"}
+              </div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                Auto-fill with Gemini Vision
+              </div>
             </label>
-          </div>
 
-          {error && <p className="text-xs text-red-400">{error}</p>}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-zinc-800 px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !amount || !description}
-              className="rounded-lg bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : isEdit ? "Update Expense" : "Save Expense"}
-            </button>
+            {error && (
+              <p className="rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400">
+                {error}
+              </p>
+            )}
           </div>
         </form>
+
+        <div className="flex items-center justify-end gap-3 border-t border-zinc-800/80 bg-zinc-950/95 px-6 py-4 backdrop-blur">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-zinc-800 px-4 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="expense-form"
+            disabled={saving || !amount || !description}
+            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-r from-brand-600 via-brand-500 to-fuchsia-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-500/30 transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+          >
+            <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+            <span className="relative">
+              {saving ? "Saving..." : isEdit ? "Update Expense" : "Save Expense"}
+            </span>
+          </button>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

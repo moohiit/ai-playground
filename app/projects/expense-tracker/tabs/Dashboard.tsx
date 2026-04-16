@@ -20,18 +20,24 @@ type Expense = {
 
 type ViewMode = "all" | "personal" | "group";
 
+const PAGE_SIZE = 25;
+
 export function Dashboard() {
   const { authFetch } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("all");
+  const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ limit: "50" });
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      page: String(page),
+    });
     if (view !== "all") params.set("type", view);
     const res = await authFetch(
       `/api/projects/expense-tracker/expenses?${params}`
@@ -40,11 +46,15 @@ export function Dashboard() {
     setExpenses(data.expenses ?? []);
     setTotal(data.total ?? 0);
     setLoading(false);
-  }, [view]);
+  }, [view, page]);
 
   useEffect(() => {
     fetchExpenses();
   }, [fetchExpenses]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [view]);
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this expense?")) return;
@@ -54,6 +64,11 @@ export function Dashboard() {
     fetchExpenses();
   }
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const showPagination = total > PAGE_SIZE;
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(total, page * PAGE_SIZE);
+
   const totalAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
 
   return (
@@ -62,13 +77,17 @@ export function Dashboard() {
         <StatCard
           label="Showing"
           value={`₹${totalAmount.toFixed(2)}`}
-          hint={`${expenses.length} of ${total} entries`}
+          hint={
+            total === 0
+              ? "0 entries"
+              : `${rangeStart}–${rangeEnd} of ${total} entries`
+          }
           accent="from-brand-500/40"
         />
         <StatCard
-          label="View"
+          label={showPagination ? `Page ${page} of ${totalPages}` : "View"}
           value={view.charAt(0).toUpperCase() + view.slice(1)}
-          hint="Filter mode"
+          hint={showPagination ? "Filter mode" : "Filter mode"}
           accent="from-fuchsia-500/40"
         />
         <button
@@ -208,6 +227,17 @@ export function Dashboard() {
         </div>
       )}
 
+      {!loading && showPagination && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          total={total}
+          onChange={setPage}
+        />
+      )}
+
       {showAdd && (
         <AddExpenseModal
           onClose={() => setShowAdd(false)}
@@ -260,6 +290,119 @@ function StatCard({
       {hint && <div className="mt-0.5 text-xs text-zinc-500">{hint}</div>}
     </div>
   );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  rangeStart,
+  rangeEnd,
+  total,
+  onChange,
+}: {
+  page: number;
+  totalPages: number;
+  rangeStart: number;
+  rangeEnd: number;
+  total: number;
+  onChange: (p: number) => void;
+}) {
+  const pages = pageNumbers(page, totalPages);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 px-4 py-3 backdrop-blur-sm">
+      <div className="text-xs text-zinc-500">
+        Showing{" "}
+        <span className="font-mono text-zinc-300">
+          {rangeStart}–{rangeEnd}
+        </span>{" "}
+        of <span className="font-mono text-zinc-300">{total}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <PageBtn
+          disabled={page === 1}
+          onClick={() => onChange(page - 1)}
+          aria-label="Previous page"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </PageBtn>
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span
+              key={`ellipsis-${i}`}
+              className="px-2 text-xs text-zinc-600"
+            >
+              …
+            </span>
+          ) : (
+            <PageBtn
+              key={p}
+              active={p === page}
+              onClick={() => onChange(p)}
+            >
+              {p}
+            </PageBtn>
+          )
+        )}
+        <PageBtn
+          disabled={page === totalPages}
+          onClick={() => onChange(page + 1)}
+          aria-label="Next page"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </PageBtn>
+      </div>
+    </div>
+  );
+}
+
+function PageBtn({
+  active,
+  disabled,
+  onClick,
+  children,
+  ...rest
+}: {
+  active?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-medium transition-all",
+        active
+          ? "border-brand-500/60 bg-brand-500/15 text-brand-500 shadow-[0_0_15px_-5px_rgba(99,102,241,0.6)]"
+          : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200",
+        disabled && "cursor-not-allowed opacity-40 hover:border-zinc-800 hover:text-zinc-400"
+      )}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+function pageNumbers(current: number, total: number): (number | "…")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const pages: (number | "…")[] = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) pages.push("…");
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (end < total - 1) pages.push("…");
+  pages.push(total);
+  return pages;
 }
 
 function EmptyState() {
