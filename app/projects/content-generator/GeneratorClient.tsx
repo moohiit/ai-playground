@@ -8,6 +8,7 @@ import {
   LENGTH_WORDS,
   TONES,
   type BriefInput,
+  type Derivatives,
   type Outline,
 } from "@/modules/content-generator/schemas";
 
@@ -18,6 +19,8 @@ type Status =
   | "drafting"
   | "draft-ready"
   | "error";
+
+type Tab = "article" | "seo" | "social";
 
 export function GeneratorClient() {
   const [topic, setTopic] = useState("");
@@ -31,6 +34,12 @@ export function GeneratorClient() {
   const [error, setError] = useState<string | null>(null);
   const [outline, setOutline] = useState<Outline | null>(null);
   const [article, setArticle] = useState("");
+  const [tab, setTab] = useState<Tab>("article");
+  const [derivatives, setDerivatives] = useState<Derivatives | null>(null);
+  const [derivativesStatus, setDerivativesStatus] = useState<
+    "idle" | "loading" | "error"
+  >("idle");
+  const [derivativesError, setDerivativesError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const keywords = useMemo(
@@ -129,6 +138,10 @@ export function GeneratorClient() {
     setStatus("drafting");
     setError(null);
     setArticle("");
+    setDerivatives(null);
+    setDerivativesError(null);
+    setDerivativesStatus("idle");
+    setTab("article");
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -164,6 +177,7 @@ export function GeneratorClient() {
         setArticle(text);
       }
       setStatus("draft-ready");
+      fetchDerivatives(text).catch(() => {});
     } catch (err) {
       if ((err as Error).name === "AbortError") {
         setStatus(article ? "draft-ready" : "outline-ready");
@@ -178,6 +192,34 @@ export function GeneratorClient() {
 
   function cancelDraft() {
     abortRef.current?.abort();
+  }
+
+  async function fetchDerivatives(articleText: string) {
+    const trimmed = articleText.trim();
+    if (trimmed.length < 100) return;
+
+    setDerivativesStatus("loading");
+    setDerivativesError(null);
+
+    try {
+      const res = await fetch(
+        "/api/projects/content-generator/derivatives",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ article: trimmed }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Derivatives failed");
+      setDerivatives(data.derivatives);
+      setDerivativesStatus("idle");
+    } catch (err) {
+      setDerivativesError(
+        err instanceof Error ? err.message : "Derivatives failed"
+      );
+      setDerivativesStatus("error");
+    }
   }
 
   const canSubmit = topic.trim().length >= 5 && status !== "outlining";
@@ -312,9 +354,15 @@ export function GeneratorClient() {
       )}
 
       {(article || status === "drafting") && (
-        <DraftPreview
+        <OutputTabs
           article={article}
           isStreaming={status === "drafting"}
+          tab={tab}
+          onTab={setTab}
+          derivatives={derivatives}
+          derivativesStatus={derivativesStatus}
+          derivativesError={derivativesError}
+          onRetryDerivatives={() => fetchDerivatives(article)}
         />
       )}
 
@@ -453,43 +501,284 @@ function OutlineEditor({
   );
 }
 
-function DraftPreview({
+function OutputTabs({
   article,
   isStreaming,
+  tab,
+  onTab,
+  derivatives,
+  derivativesStatus,
+  derivativesError,
+  onRetryDerivatives,
 }: {
   article: string;
   isStreaming: boolean;
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  derivatives: Derivatives | null;
+  derivativesStatus: "idle" | "loading" | "error";
+  derivativesError: string | null;
+  onRetryDerivatives: () => void;
 }) {
+  const derivativesReady = !!derivatives;
+  const derivativesBusy = derivativesStatus === "loading";
+
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-6 backdrop-blur-sm animate-fade-up">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-brand-500/90">
-          Article · Markdown preview
-          {isStreaming && (
-            <span className="inline-flex items-center gap-1.5 text-[10px] normal-case tracking-normal text-emerald-400">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 animate-pulse-ring" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              </span>
-              streaming
-            </span>
-          )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 p-1">
+          <TabButton active={tab === "article"} onClick={() => onTab("article")}>
+            Article
+            {isStreaming && <LiveDot />}
+          </TabButton>
+          <TabButton
+            active={tab === "seo"}
+            onClick={() => onTab("seo")}
+            disabled={!derivativesReady && !derivativesBusy}
+          >
+            SEO
+            {derivativesBusy && <Spinner />}
+          </TabButton>
+          <TabButton
+            active={tab === "social"}
+            onClick={() => onTab("social")}
+            disabled={!derivativesReady && !derivativesBusy}
+          >
+            Social
+            {derivativesBusy && <Spinner />}
+          </TabButton>
         </div>
         <span className="text-[11px] text-zinc-500">
-          {wordCount(article)} words
+          {tab === "article" ? `${wordCount(article)} words` : ""}
         </span>
       </div>
 
-      <div className="min-h-[200px] rounded-lg border border-zinc-800 bg-zinc-950/60 px-6 py-5">
-        {article ? (
-          <MarkdownPreview source={article} />
-        ) : (
-          <div className="flex items-center justify-center py-16 text-sm text-zinc-500">
-            <Spinner />
-            <span className="ml-2">Waiting for first tokens…</span>
-          </div>
-        )}
+      {tab === "article" && (
+        <div className="min-h-[200px] rounded-lg border border-zinc-800 bg-zinc-950/60 px-6 py-5">
+          {article ? (
+            <MarkdownPreview source={article} />
+          ) : (
+            <div className="flex items-center justify-center py-16 text-sm text-zinc-500">
+              <Spinner />
+              <span className="ml-2">Waiting for first tokens…</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "seo" && (
+        <SeoPanel
+          derivatives={derivatives}
+          status={derivativesStatus}
+          error={derivativesError}
+          onRetry={onRetryDerivatives}
+        />
+      )}
+
+      {tab === "social" && (
+        <SocialPanel
+          derivatives={derivatives}
+          status={derivativesStatus}
+          error={derivativesError}
+          onRetry={onRetryDerivatives}
+        />
+      )}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  disabled,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition",
+        active
+          ? "bg-brand-500/15 text-brand-300 ring-1 ring-brand-500/30"
+          : "text-zinc-400 hover:text-zinc-200",
+        disabled && "cursor-not-allowed opacity-40 hover:text-zinc-400"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LiveDot() {
+  return (
+    <span className="relative flex h-1.5 w-1.5">
+      <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 animate-pulse-ring" />
+      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+    </span>
+  );
+}
+
+function SeoPanel({
+  derivatives,
+  status,
+  error,
+  onRetry,
+}: {
+  derivatives: Derivatives | null;
+  status: "idle" | "loading" | "error";
+  error: string | null;
+  onRetry: () => void;
+}) {
+  if (status === "loading" && !derivatives) {
+    return <PanelSpinner label="Generating SEO metadata…" />;
+  }
+  if (status === "error" && !derivatives) {
+    return <PanelError message={error} onRetry={onRetry} />;
+  }
+  if (!derivatives) return null;
+
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-zinc-800 bg-zinc-950/60 p-5">
+      <SeoField label="Meta title" hint={`${derivatives.metaTitle.length} chars`}>
+        <div className="rounded-md bg-zinc-900/60 px-3 py-2 text-sm text-zinc-100">
+          {derivatives.metaTitle}
+        </div>
+      </SeoField>
+      <SeoField
+        label="Meta description"
+        hint={`${derivatives.metaDescription.length} chars`}
+      >
+        <div className="rounded-md bg-zinc-900/60 px-3 py-2 text-sm text-zinc-300">
+          {derivatives.metaDescription}
+        </div>
+      </SeoField>
+      <SeoField label="Slug">
+        <code className="block rounded-md bg-zinc-900/60 px-3 py-2 text-sm text-brand-300">
+          {derivatives.slug}
+        </code>
+      </SeoField>
+      <SeoField label="Tags">
+        <div className="flex flex-wrap gap-1.5">
+          {derivatives.tags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[11px] text-zinc-300"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      </SeoField>
+    </div>
+  );
+}
+
+function SeoField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-zinc-500">
+        <span>{label}</span>
+        {hint && <span className="normal-case tracking-normal">{hint}</span>}
       </div>
+      {children}
+    </div>
+  );
+}
+
+function SocialPanel({
+  derivatives,
+  status,
+  error,
+  onRetry,
+}: {
+  derivatives: Derivatives | null;
+  status: "idle" | "loading" | "error";
+  error: string | null;
+  onRetry: () => void;
+}) {
+  if (status === "loading" && !derivatives) {
+    return <PanelSpinner label="Generating social variants…" />;
+  }
+  if (status === "error" && !derivatives) {
+    return <PanelError message={error} onRetry={onRetry} />;
+  }
+  if (!derivatives) return null;
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="flex flex-col gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-5">
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500">
+          Twitter thread · {derivatives.twitterThread.length} tweets
+        </div>
+        <ol className="flex flex-col gap-3">
+          {derivatives.twitterThread.map((tweet, i) => (
+            <li
+              key={i}
+              className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3 text-sm text-zinc-200"
+            >
+              <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500">
+                <span>Tweet {i + 1}</span>
+                <span>{tweet.length} / 280</span>
+              </div>
+              {tweet}
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-5">
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500">
+          LinkedIn post
+        </div>
+        <div className="whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-900/60 p-3 text-sm text-zinc-200">
+          {derivatives.linkedinPost}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PanelSpinner({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 py-16 text-sm text-zinc-500">
+      <Spinner />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function PanelError({
+  message,
+  onRetry,
+}: {
+  message: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-red-500/30 bg-red-500/5 py-10 text-center text-sm text-red-400">
+      <span>{message ?? "Something went wrong"}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded-md border border-red-500/40 px-3 py-1 text-xs text-red-300 transition hover:border-red-400 hover:text-red-200"
+      >
+        Retry
+      </button>
     </div>
   );
 }

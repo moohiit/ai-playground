@@ -1,15 +1,20 @@
 import { completeJSON, streamText } from "@/lib/llm";
 import {
   LENGTH_WORDS,
+  derivativesSchema,
+  geminiDerivativesSchema,
   geminiOutlineSchema,
   outlineSchema,
   type BriefInput,
+  type Derivatives,
   type DraftInput,
   type Outline,
 } from "./schemas";
 import {
+  DERIVATIVES_SYSTEM_PROMPT,
   DRAFT_SYSTEM_PROMPT,
   OUTLINE_SYSTEM_PROMPT,
+  buildDerivativesPrompt,
   buildDraftPrompt,
   buildOutlinePrompt,
 } from "./prompts";
@@ -46,4 +51,26 @@ export async function* streamDraft(
   })) {
     yield chunk;
   }
+}
+
+export async function generateDerivatives(
+  article: string
+): Promise<Derivatives> {
+  const raw = await completeJSON<unknown>(
+    buildDerivativesPrompt(article),
+    geminiDerivativesSchema,
+    {
+      system: DERIVATIVES_SYSTEM_PROMPT,
+      maxOutputTokens: 2048,
+      temperature: 0.5,
+    }
+  );
+
+  const parsed = derivativesSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      `Model returned invalid derivatives: ${parsed.error.message}`
+    );
+  }
+  return parsed.data;
 }
