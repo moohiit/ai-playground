@@ -33,4 +33,52 @@ export const projects: ProjectCardProps[] = [
     href: "/projects/content-generator",
     status: "live",
   },
+  {
+    title: "PDF Chat (RAG)",
+    description:
+      "Upload a PDF and ask grounded questions about it. Answers come with citations to the exact pages they're drawn from.",
+    tags: ["RAG", "Embeddings", "Vector Search"],
+    href: "/projects/pdf-chat",
+    status: "coming-soon",
+  },
+  {
+    title: "YouTube Video Q&A",
+    description:
+      "Paste a YouTube URL, ask questions about the video. RAG over the transcript with timestamped citations jumping to the exact moment.",
+    tags: ["RAG", "Transcripts", "Citations"],
+    href: "/projects/youtube-qa",
+    status: "coming-soon",
+  },
+  {
+    title: "GitHub Repo Explainer",
+    description:
+      "Point it at a public repo. Get a plain-English tour of the architecture, key files, and how data flows through the code.",
+    tags: ["Code", "Tree-sitter", "RAG"],
+    href: "/projects/repo-explainer",
+    status: "coming-soon",
+  },
+  {
+    title: "Web Scraping Agent",
+    description:
+      "Describe the data you want in plain English. The agent browses the page with tool use and returns clean structured JSON.",
+    tags: ["Agents", "Tool Use", "Playwright"],
+    href: "/projects/web-agent",
+    status: "coming-soon",
+  },
+  {
+    title: "Voice Assistant",
+    description:
+      "Talk to a Gemini-powered assistant in the browser. Whisper for speech-to-text, Gemini for reasoning, TTS for the reply.",
+    tags: ["Voice", "Whisper", "TTS"],
+    href: "/projects/voice-assistant",
+    status: "coming-soon",
+  },
+  {
+    title: "LLM Eval Harness",
+    description:
+      "LLM-as-judge evaluation framework running test suites across every project, with pass-rate tracking and regression alerts.",
+    tags: ["Evals", "LLM-as-judge", "Quality"],
+    href: "/projects/eval-harness",
+    status: "coming-soon",
+  },
 ];
