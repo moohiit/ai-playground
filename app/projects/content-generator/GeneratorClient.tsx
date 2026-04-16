@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
 import { MarkdownPreview } from "@/components/shared/MarkdownPreview";
+import { CopyButton } from "@/components/shared/CopyButton";
 import {
   LENGTHS,
   LENGTH_WORDS,
@@ -548,9 +549,29 @@ function OutputTabs({
             {derivativesBusy && <Spinner />}
           </TabButton>
         </div>
-        <span className="text-[11px] text-zinc-500">
-          {tab === "article" ? `${wordCount(article)} words` : ""}
-        </span>
+        <div className="flex items-center gap-2">
+          {tab === "article" && (
+            <>
+              <span className="text-[11px] text-zinc-500">
+                {wordCount(article)} words
+              </span>
+              {article && !isStreaming && (
+                <>
+                  <CopyButton value={article} label="Copy .md" />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadMarkdown(article, derivatives?.slug)
+                    }
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-2.5 text-xs font-medium uppercase tracking-wider text-zinc-400 transition hover:border-brand-500/40 hover:text-brand-300"
+                  >
+                    Download
+                  </button>
+                </>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {tab === "article" && (
@@ -646,7 +667,11 @@ function SeoPanel({
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-zinc-800 bg-zinc-950/60 p-5">
-      <SeoField label="Meta title" hint={`${derivatives.metaTitle.length} chars`}>
+      <SeoField
+        label="Meta title"
+        hint={`${derivatives.metaTitle.length} chars`}
+        copyValue={derivatives.metaTitle}
+      >
         <div className="rounded-md bg-zinc-900/60 px-3 py-2 text-sm text-zinc-100">
           {derivatives.metaTitle}
         </div>
@@ -654,17 +679,18 @@ function SeoPanel({
       <SeoField
         label="Meta description"
         hint={`${derivatives.metaDescription.length} chars`}
+        copyValue={derivatives.metaDescription}
       >
         <div className="rounded-md bg-zinc-900/60 px-3 py-2 text-sm text-zinc-300">
           {derivatives.metaDescription}
         </div>
       </SeoField>
-      <SeoField label="Slug">
+      <SeoField label="Slug" copyValue={derivatives.slug}>
         <code className="block rounded-md bg-zinc-900/60 px-3 py-2 text-sm text-brand-300">
           {derivatives.slug}
         </code>
       </SeoField>
-      <SeoField label="Tags">
+      <SeoField label="Tags" copyValue={derivatives.tags.join(", ")}>
         <div className="flex flex-wrap gap-1.5">
           {derivatives.tags.map((tag) => (
             <span
@@ -683,17 +709,22 @@ function SeoPanel({
 function SeoField({
   label,
   hint,
+  copyValue,
   children,
 }: {
   label: string;
   hint?: string;
+  copyValue?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-zinc-500">
+      <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wider text-zinc-500">
         <span>{label}</span>
-        {hint && <span className="normal-case tracking-normal">{hint}</span>}
+        <div className="flex items-center gap-2">
+          {hint && <span className="normal-case tracking-normal">{hint}</span>}
+          {copyValue && <CopyButton value={copyValue} size="xs" />}
+        </div>
       </div>
       {children}
     </div>
@@ -719,11 +750,16 @@ function SocialPanel({
   }
   if (!derivatives) return null;
 
+  const threadJoined = derivatives.twitterThread.join("\n\n---\n\n");
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="flex flex-col gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-5">
-        <div className="text-[11px] uppercase tracking-wider text-zinc-500">
-          Twitter thread · {derivatives.twitterThread.length} tweets
+        <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-zinc-500">
+          <span>
+            Twitter thread · {derivatives.twitterThread.length} tweets
+          </span>
+          <CopyButton value={threadJoined} size="xs" label="Copy all" />
         </div>
         <ol className="flex flex-col gap-3">
           {derivatives.twitterThread.map((tweet, i) => (
@@ -731,9 +767,21 @@ function SocialPanel({
               key={i}
               className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3 text-sm text-zinc-200"
             >
-              <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500">
+              <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-zinc-500">
                 <span>Tweet {i + 1}</span>
-                <span>{tweet.length} / 280</span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      tweet.length > 280 && "text-red-400",
+                      tweet.length > 270 &&
+                        tweet.length <= 280 &&
+                        "text-amber-400"
+                    )}
+                  >
+                    {tweet.length} / 280
+                  </span>
+                  <CopyButton value={tweet} size="xs" />
+                </div>
               </div>
               {tweet}
             </li>
@@ -742,8 +790,9 @@ function SocialPanel({
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-5">
-        <div className="text-[11px] uppercase tracking-wider text-zinc-500">
-          LinkedIn post
+        <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-zinc-500">
+          <span>LinkedIn post</span>
+          <CopyButton value={derivatives.linkedinPost} size="xs" />
         </div>
         <div className="whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-900/60 p-3 text-sm text-zinc-200">
           {derivatives.linkedinPost}
@@ -788,6 +837,31 @@ function wordCount(text: string): number {
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/[#*_`>\-]/g, " ");
   return cleaned.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function slugifyTitle(text: string): string {
+  const firstHeading = text.match(/^#\s+(.+)$/m)?.[1] ?? "article";
+  return (
+    firstHeading
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .slice(0, 60) || "article"
+  );
+}
+
+function downloadMarkdown(article: string, slugHint?: string) {
+  const slug = slugHint || slugifyTitle(article);
+  const blob = new Blob([article], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${slug}.md`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function Field({
