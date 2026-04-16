@@ -383,6 +383,15 @@ export async function getSummary(
       (match.date as Record<string, unknown>).$lte = new Date(filter.dateTo);
   }
 
+  if (filter.settled === "true") {
+    match.settledAt = { $ne: null, $exists: true };
+  } else if (filter.settled === "false") {
+    match.$and = [
+      ...((match.$and as unknown[]) ?? []),
+      { $or: [{ settledAt: null }, { settledAt: { $exists: false } }] },
+    ];
+  }
+
   const [byCategory, byMonth] = await Promise.all([
     Expense.aggregate([
       { $match: match },
