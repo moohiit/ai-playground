@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
+import { MarkdownPreview } from "@/components/shared/MarkdownPreview";
 import {
   LENGTHS,
   LENGTH_WORDS,
@@ -10,7 +11,13 @@ import {
   type Outline,
 } from "@/modules/content-generator/schemas";
 
-type Status = "idle" | "outlining" | "outline-ready" | "error";
+type Status =
+  | "idle"
+  | "outlining"
+  | "outline-ready"
+  | "drafting"
+  | "draft-ready"
+  | "error";
 
 export function GeneratorClient() {
   const [topic, setTopic] = useState("");
@@ -23,6 +30,8 @@ export function GeneratorClient() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [outline, setOutline] = useState<Outline | null>(null);
+  const [article, setArticle] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
 
   const keywords = useMemo(
     () =>
@@ -41,6 +50,7 @@ export function GeneratorClient() {
     setStatus("outlining");
     setError(null);
     setOutline(null);
+    setArticle("");
 
     try {
       const res = await fetch(
@@ -111,6 +121,63 @@ export function GeneratorClient() {
         { heading: "New section", summary: "Describe what it covers." },
       ],
     });
+  }
+
+  async function handleDraft() {
+    if (!outline) return;
+
+    setStatus("drafting");
+    setError(null);
+    setArticle("");
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const res = await fetch("/api/projects/content-generator/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: topic.trim(),
+          audience: audience.trim(),
+          tone,
+          length,
+          keywords,
+          notes: notes.trim(),
+          outline,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Draft failed (${res.status})`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        setArticle(text);
+      }
+      setStatus("draft-ready");
+    } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        setStatus(article ? "draft-ready" : "outline-ready");
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Draft failed");
+      setStatus("error");
+    } finally {
+      abortRef.current = null;
+    }
+  }
+
+  function cancelDraft() {
+    abortRef.current?.abort();
   }
 
   const canSubmit = topic.trim().length >= 5 && status !== "outlining";
@@ -231,18 +298,29 @@ export function GeneratorClient() {
       {outline && (
         <OutlineEditor
           outline={outline}
+          isDrafting={status === "drafting"}
+          hasDraft={article.length > 0}
           onTitle={updateOutlineTitle}
           onHook={updateOutlineHook}
           onHeading={updateSectionHeading}
           onSummary={updateSectionSummary}
           onRemove={removeSection}
           onAdd={addSection}
+          onDraft={handleDraft}
+          onCancel={cancelDraft}
+        />
+      )}
+
+      {(article || status === "drafting") && (
+        <DraftPreview
+          article={article}
+          isStreaming={status === "drafting"}
         />
       )}
 
       {!outline && !isOutlining && !error && (
         <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 p-10 text-center text-sm text-zinc-500">
-          Outline will appear here. Step 3 adds the full article draft.
+          Outline will appear here, then a full article will stream in below.
         </div>
       )}
     </div>
@@ -251,20 +329,28 @@ export function GeneratorClient() {
 
 function OutlineEditor({
   outline,
+  isDrafting,
+  hasDraft,
   onTitle,
   onHook,
   onHeading,
   onSummary,
   onRemove,
   onAdd,
+  onDraft,
+  onCancel,
 }: {
   outline: Outline;
+  isDrafting: boolean;
+  hasDraft: boolean;
   onTitle: (v: string) => void;
   onHook: (v: string) => void;
   onHeading: (idx: number, v: string) => void;
   onSummary: (idx: number, v: string) => void;
   onRemove: (idx: number) => void;
   onAdd: () => void;
+  onDraft: () => void;
+  onCancel: () => void;
 }) {
   return (
     <div className="flex flex-col gap-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-6 backdrop-blur-sm animate-fade-up">
@@ -336,21 +422,83 @@ function OutlineEditor({
         ))}
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800/70 pt-4">
         <button
           type="button"
           onClick={onAdd}
-          disabled={outline.sections.length >= 10}
+          disabled={outline.sections.length >= 10 || isDrafting}
           className="text-xs text-brand-400 transition hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
         >
           + Add section
         </button>
-        <span className="text-[11px] text-zinc-500">
-          Step 3 will draft the article from this outline.
-        </span>
+        {isDrafting ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900/60 px-4 py-2 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:text-white"
+          >
+            <Spinner /> Stop streaming
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onDraft}
+            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-brand-600 via-brand-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-500/30 transition hover:scale-[1.02]"
+          >
+            {hasDraft ? "Regenerate article" : "Generate article"} →
+          </button>
+        )}
       </div>
     </div>
   );
+}
+
+function DraftPreview({
+  article,
+  isStreaming,
+}: {
+  article: string;
+  isStreaming: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-6 backdrop-blur-sm animate-fade-up">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-brand-500/90">
+          Article · Markdown preview
+          {isStreaming && (
+            <span className="inline-flex items-center gap-1.5 text-[10px] normal-case tracking-normal text-emerald-400">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 animate-pulse-ring" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              </span>
+              streaming
+            </span>
+          )}
+        </div>
+        <span className="text-[11px] text-zinc-500">
+          {wordCount(article)} words
+        </span>
+      </div>
+
+      <div className="min-h-[200px] rounded-lg border border-zinc-800 bg-zinc-950/60 px-6 py-5">
+        {article ? (
+          <MarkdownPreview source={article} />
+        ) : (
+          <div className="flex items-center justify-center py-16 text-sm text-zinc-500">
+            <Spinner />
+            <span className="ml-2">Waiting for first tokens…</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function wordCount(text: string): number {
+  const cleaned = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#*_`>\-]/g, " ");
+  return cleaned.trim().split(/\s+/).filter(Boolean).length;
 }
 
 function Field({

@@ -108,6 +108,64 @@ function extractJSON(raw: string): string {
   return text;
 }
 
+export async function* streamText(
+  prompt: string,
+  opts: Omit<CompleteOptions, "responseSchema"> = {}
+): AsyncGenerator<string> {
+  const modelName = opts.model ?? DEFAULT_TEXT_MODEL;
+  const body: Record<string, unknown> = {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      maxOutputTokens: opts.maxOutputTokens ?? 65536,
+      temperature: opts.temperature ?? 0.3,
+    },
+  };
+  if (opts.system) {
+    body.systemInstruction = { parts: [{ text: opts.system }] };
+  }
+
+  const url = `${API_BASE}/${modelName}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok || !res.body) {
+    const err = await res.text().catch(() => "unknown");
+    throw new Error(`Gemini stream error (${res.status}): ${err}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (!payload) continue;
+      try {
+        const parsed = JSON.parse(payload);
+        const parts: Array<{ text?: string }> =
+          parsed?.candidates?.[0]?.content?.parts ?? [];
+        for (const part of parts) {
+          if (part.text) yield part.text;
+        }
+      } catch {
+        // partial JSON — skip, next chunk will complete it
+      }
+    }
+  }
+}
+
 export async function completeJSON<T>(
   prompt: string,
   schema: Schema,
