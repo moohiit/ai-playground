@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SchemaType, type Schema } from "@google/generative-ai";
 
 export const TONES = [
   "professional",
@@ -56,3 +57,62 @@ export const derivativesSchema = z.object({
 });
 
 export type Derivatives = z.infer<typeof derivativesSchema>;
+
+export const geminiOutlineSchema: Schema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    title: {
+      type: SchemaType.STRING,
+      description: "Compelling blog post title reflecting the topic and tone",
+    },
+    hook: {
+      type: SchemaType.STRING,
+      description: "One-sentence hook that sets up the article",
+    },
+    sections: {
+      type: SchemaType.ARRAY,
+      description: "3-6 H2 sections that structure the article",
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          heading: {
+            type: SchemaType.STRING,
+            description: "Concrete H2 heading (no generic 'Introduction')",
+          },
+          summary: {
+            type: SchemaType.STRING,
+            description: "One-sentence summary of what this section covers",
+          },
+        },
+        required: ["heading", "summary"],
+      },
+    },
+  },
+  required: ["title", "hook", "sections"],
+};
+
+export const geminiDerivativesSchema: Schema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    metaTitle: { type: SchemaType.STRING },
+    metaDescription: { type: SchemaType.STRING },
+    slug: { type: SchemaType.STRING },
+    tags: {
+      type: SchemaType.ARRAY,
+      items: { type: SchemaType.STRING },
+    },
+    twitterThread: {
+      type: SchemaType.ARRAY,
+      items: { type: SchemaType.STRING },
+    },
+    linkedinPost: { type: SchemaType.STRING },
+  },
+  required: [
+    "metaTitle",
+    "metaDescription",
+    "slug",
+    "tags",
+    "twitterThread",
+    "linkedinPost",
+  ],
+};
