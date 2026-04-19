@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthApiError, useAuth } from "../../lib/authContext";
 import { cn } from "../../lib/utils";
@@ -206,6 +207,15 @@ function LoginContent() {
               ? "Sign in"
               : "Create account"}
           </button>
+
+          {mode === "login" && (
+            <Link
+              href="/forgot-password"
+              className="text-center text-xs text-zinc-500 hover:text-brand-400"
+            >
+              Forgot password?
+            </Link>
+          )}
         </form>
       </div>
     </div>
