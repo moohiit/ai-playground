@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/authContext";
+import { downloadMarkdownAsPdf } from "@/lib/markdownToPdf";
 import { MarkdownPreview } from "@/components/shared/MarkdownPreview";
 import { CopyButton } from "@/components/shared/CopyButton";
 import {
@@ -571,7 +572,19 @@ function OutputTabs({
                     }
                     className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-2.5 text-xs font-medium uppercase tracking-wider text-zinc-400 transition hover:border-brand-500/40 hover:text-brand-300"
                   >
-                    Download
+                    .md
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadMarkdownAsPdf(
+                        article,
+                        derivatives?.slug || slugifyTitle(article)
+                      )
+                    }
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-2.5 text-xs font-medium uppercase tracking-wider text-zinc-400 transition hover:border-brand-500/40 hover:text-brand-300"
+                  >
+                    .pdf
                   </button>
                 </>
               )}
