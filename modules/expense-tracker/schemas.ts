@@ -83,6 +83,7 @@ export const reportFilterSchema = z.object({
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   settled: z.enum(["true", "false", "all"]).optional().default("all"),
+  scope: z.enum(["all", "personal", "group"]).optional().default("all"),
 });
 
 export type ReportFilter = z.infer<typeof reportFilterSchema>;

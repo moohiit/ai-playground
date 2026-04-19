@@ -372,10 +372,18 @@ export async function getSummary(
       { _id: 1, name: 1 }
     ).lean();
     for (const g of userGroups) groupNameById.set(g._id.toString(), g.name);
-    match.$or = [
-      { createdBy: auth.userId, type: "personal" },
-      { groupId: { $in: userGroups.map((g) => g._id) } },
-    ];
+
+    if (filter.scope === "personal") {
+      match.createdBy = auth.userId;
+      match.type = "personal";
+    } else if (filter.scope === "group") {
+      match.groupId = { $in: userGroups.map((g) => g._id) };
+    } else {
+      match.$or = [
+        { createdBy: auth.userId, type: "personal" },
+        { groupId: { $in: userGroups.map((g) => g._id) } },
+      ];
+    }
   }
 
   if (filter.dateFrom || filter.dateTo) {

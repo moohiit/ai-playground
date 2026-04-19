@@ -74,6 +74,14 @@ const QUICK_RANGES: { id: QuickRange; label: string }[] = [
   { id: "this-year", label: "This year" },
 ];
 
+type Scope = "all" | "personal" | "group";
+
+const SCOPES: { id: Scope; label: string }[] = [
+  { id: "all", label: "All expenses" },
+  { id: "personal", label: "Personal only" },
+  { id: "group", label: "Groups only" },
+];
+
 function quickRangeToDates(r: QuickRange): { from: string; to: string } {
   if (r === "all") return { from: "", to: "" };
   const now = new Date();
@@ -94,6 +102,7 @@ export function ReportsTab() {
   const [quickRange, setQuickRange] = useState<QuickRange>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [scope, setScope] = useState<Scope>("all");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -112,7 +121,7 @@ export function ReportsTab() {
 
   const fetchSummary = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ settled: "all" });
+    const params = new URLSearchParams({ settled: "all", scope });
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
     const res = await authFetch(
@@ -121,7 +130,7 @@ export function ReportsTab() {
     const data = await res.json();
     setSummary(data);
     setLoading(false);
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, scope]);
 
   useEffect(() => {
     fetchSummary();
@@ -152,6 +161,8 @@ export function ReportsTab() {
         }}
         clearDates={clearDates}
         rangeLabel={rangeLabel}
+        scope={scope}
+        setScope={setScope}
         right={
           summary && summary.totalCount > 0 ? (
             <ExportPdfButton
@@ -173,11 +184,17 @@ export function ReportsTab() {
           <InsightsRow summary={summary} />
 
           <div className="grid gap-6 lg:grid-cols-2">
-            <PersonalVsGroupCard summary={summary} />
+            {scope === "all" ? (
+              <PersonalVsGroupCard summary={summary} />
+            ) : (
+              <ScopeBadgeCard scope={scope} summary={summary} />
+            )}
             <DayOfWeekCard summary={summary} />
           </div>
 
-          {summary.byGroup.length > 0 && <TopGroupsCard summary={summary} />}
+          {scope !== "personal" && summary.byGroup.length > 0 && (
+            <TopGroupsCard summary={summary} />
+          )}
 
           <div className="grid gap-6 lg:grid-cols-2">
             <CategoryPieCard summary={summary} />
@@ -200,6 +217,8 @@ function FilterBar({
   setDateTo,
   clearDates,
   rangeLabel,
+  scope,
+  setScope,
   right,
 }: {
   quickRange: QuickRange;
@@ -210,6 +229,8 @@ function FilterBar({
   setDateTo: (v: string) => void;
   clearDates: () => void;
   rangeLabel: string;
+  scope: Scope;
+  setScope: (s: Scope) => void;
   right?: React.ReactNode;
 }) {
   return (
@@ -223,6 +244,23 @@ function FilterBar({
           <div className="text-xs text-zinc-500">{rangeLabel}</div>
         </div>
         {right}
+      </div>
+      <div className="mb-3 inline-flex rounded-lg border border-zinc-800 bg-zinc-950/40 p-1">
+        {SCOPES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setScope(s.id)}
+            className={cn(
+              "rounded-md px-3 py-1 text-xs font-medium transition",
+              scope === s.id
+                ? "bg-fuchsia-500/15 text-fuchsia-300 ring-1 ring-fuchsia-500/30"
+                : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
       <div className="mb-3 flex flex-wrap gap-2">
         {QUICK_RANGES.map((q) => (
@@ -420,6 +458,40 @@ function PersonalVsGroupCard({ summary }: { summary: Summary }) {
       ) : (
         <p className="text-xs text-zinc-500">No data</p>
       )}
+    </ChartPanel>
+  );
+}
+
+function ScopeBadgeCard({
+  scope,
+  summary,
+}: {
+  scope: Scope;
+  summary: Summary;
+}) {
+  const isPersonal = scope === "personal";
+  const total = isPersonal ? summary.personalTotal : summary.groupTotal;
+  const label = isPersonal ? "Personal only" : "Groups only";
+  const accent = isPersonal ? "from-emerald-500/40" : "from-brand-500/40";
+  const dotColor = isPersonal ? "#34d399" : "#818cf8";
+
+  return (
+    <ChartPanel title={label} accent={accent}>
+      <div className="flex h-[180px] flex-col items-center justify-center gap-3">
+        <span
+          className="h-3 w-3 rounded-full"
+          style={{ backgroundColor: dotColor }}
+        />
+        <div className="font-mono text-3xl font-bold tabular-nums text-zinc-100">
+          {fmt(total)}
+        </div>
+        <div className="text-xs text-zinc-500">
+          {summary.totalCount} {isPersonal ? "personal" : "group"} entries
+          {isPersonal
+            ? ""
+            : ` · your share ${fmt(summary.myShare)}`}
+        </div>
+      </div>
     </ChartPanel>
   );
 }
