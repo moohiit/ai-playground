@@ -23,6 +23,7 @@
     "autoprefixer": "^10.4.20",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.1.2",
+    "cloudinary": "^2.9.0",
     "clsx": "^2.1.1",
     "dotenv": "^16.4.5",
     "jsonwebtoken": "^9.0.2",
