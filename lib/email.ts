@@ -1,36 +1,21 @@
-import nodemailer, { type Transporter } from "nodemailer";
+import { Resend } from "resend";
 
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const EMAIL_FROM =
-  process.env.EMAIL_FROM ||
-  (EMAIL_USER ? `AI Playground <${EMAIL_USER}>` : undefined);
-const SMTP_HOST = process.env.SMTP_HOST;
-const SMTP_PORT = process.env.SMTP_PORT
-  ? Number(process.env.SMTP_PORT)
-  : undefined;
+  process.env.EMAIL_FROM ?? "AI Playground <onboarding@resend.dev>";
 
 const RAW_APP_URL = process.env.APP_URL || "http://localhost:3000";
 export const APP_URL = RAW_APP_URL.startsWith("http")
   ? RAW_APP_URL.replace(/\/$/, "")
   : `https://${RAW_APP_URL.replace(/\/$/, "")}`;
 
-let cachedTransporter: Transporter | null = null;
+let cachedClient: Resend | null = null;
 
-function getTransporter(): Transporter | null {
-  if (cachedTransporter) return cachedTransporter;
-  if (!EMAIL_USER || !EMAIL_PASS) return null;
-
-  const host = SMTP_HOST ?? "smtp.gmail.com";
-  const port = SMTP_PORT ?? 465;
-
-  cachedTransporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
-  });
-  return cachedTransporter;
+function getClient(): Resend | null {
+  if (cachedClient) return cachedClient;
+  if (!RESEND_API_KEY) return null;
+  cachedClient = new Resend(RESEND_API_KEY);
+  return cachedClient;
 }
 
 export type SendEmailInput = {
@@ -41,16 +26,14 @@ export type SendEmailInput = {
 };
 
 export async function sendEmail(input: SendEmailInput): Promise<void> {
-  const transporter = getTransporter();
+  const client = getClient();
 
-  if (!transporter) {
+  if (!client) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error(
-        "Email is not configured: EMAIL_USER and EMAIL_PASS must be set"
-      );
+      throw new Error("Email is not configured: RESEND_API_KEY must be set");
     }
     console.warn(
-      "[email] SMTP not configured — logging email instead of sending",
+      "[email] RESEND_API_KEY not set — logging email instead of sending",
       {
         to: input.to,
         subject: input.subject,
@@ -60,17 +43,19 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
     return;
   }
 
-  if (!EMAIL_FROM) {
-    throw new Error("EMAIL_FROM could not be resolved from env");
-  }
-
-  await transporter.sendMail({
+  const { error } = await client.emails.send({
     from: EMAIL_FROM,
-    to: input.to,
+    to: [input.to],
     subject: input.subject,
     html: input.html,
     text: input.text ?? stripHtml(input.html),
   });
+
+  if (error) {
+    throw new Error(
+      `Resend send failed: ${error.name ?? ""} ${error.message ?? ""}`.trim()
+    );
+  }
 }
 
 function stripHtml(html: string): string {
