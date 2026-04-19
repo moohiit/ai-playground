@@ -2,10 +2,15 @@
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "../../lib/authContext";
+import { AuthApiError, useAuth } from "../../lib/authContext";
 import { cn } from "../../lib/utils";
 
 type Mode = "login" | "register";
+
+type VerificationPrompt = {
+  email: string;
+  message: string;
+};
 
 function LoginContent() {
   const { login, register, user } = useAuth();
@@ -22,27 +27,114 @@ function LoginContent() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [prompt, setPrompt] = useState<VerificationPrompt | null>(null);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">(
+    "idle"
+  );
 
   useEffect(() => {
     if (user) router.replace(redirectTo);
   }, [user, redirectTo, router]);
 
+  async function handleResend(targetEmail: string) {
+    setResendState("sending");
+    try {
+      await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: targetEmail }),
+      });
+      setResendState("sent");
+    } catch {
+      setResendState("idle");
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setPrompt(null);
+    setResendState("idle");
     setLoading(true);
 
     try {
       if (mode === "login") {
         await login(email, password);
+        router.replace(redirectTo);
       } else {
-        await register(name, email, password);
+        const result = await register(name, email, password);
+        if (result.kind === "verified") {
+          router.replace(redirectTo);
+        } else {
+          setPrompt({ email: result.email, message: result.message });
+          setLoading(false);
+        }
       }
-      router.replace(redirectTo);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      if (err instanceof AuthApiError && err.code === "EMAIL_NOT_VERIFIED") {
+        setPrompt({
+          email: err.email ?? email,
+          message:
+            "Your email isn't verified yet. Check your inbox or resend the verification link.",
+        });
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong");
+      }
       setLoading(false);
     }
+  }
+
+  if (prompt) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center">
+          <div className="mx-auto mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/15 text-brand-400 ring-1 ring-brand-500/30">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
+          </div>
+          <h1 className="text-lg font-semibold text-zinc-100">
+            Check your inbox
+          </h1>
+          <p className="mt-2 text-sm text-zinc-400">{prompt.message}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Sent to <span className="text-zinc-300">{prompt.email}</span>
+          </p>
+
+          <div className="mt-6 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => handleResend(prompt.email)}
+              disabled={resendState !== "idle"}
+              className={cn(
+                "rounded-lg border border-zinc-800 bg-zinc-900/60 py-2 text-xs font-medium transition hover:border-brand-500/40 hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-60",
+                resendState === "sent"
+                  ? "text-emerald-400"
+                  : "text-zinc-300"
+              )}
+            >
+              {resendState === "idle"
+                ? "Resend verification email"
+                : resendState === "sending"
+                ? "Sending…"
+                : "Sent — check your inbox"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPrompt(null);
+                setMode("login");
+                setResendState("idle");
+              }}
+              className="text-xs text-zinc-500 hover:text-zinc-300"
+            >
+              ← Back to sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

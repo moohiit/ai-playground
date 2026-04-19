@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { connectDB } from "@/lib/db";
-import { hashPassword, signToken } from "@/lib/auth";
+import { hashPassword } from "@/lib/auth";
 import { User } from "@/models/User";
 import { ApiError, handleRouteError } from "@/lib/apiError";
+import { generateToken, expiryFromNow, TOKEN_TTL } from "@/lib/tokens";
+import { sendVerificationEmail } from "@/lib/emailTemplates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,28 +26,40 @@ export async function POST(req: Request) {
 
     await connectDB();
 
-    const existing = await User.findOne({ email: parsed.data.email.toLowerCase() });
+    const email = parsed.data.email.toLowerCase();
+    const existing = await User.findOne({ email });
     if (existing) {
       throw new ApiError(409, "An account with this email already exists");
     }
 
     const passwordHash = await hashPassword(parsed.data.password);
+    const verificationToken = generateToken();
+
     const user = await User.create({
       name: parsed.data.name,
-      email: parsed.data.email.toLowerCase(),
+      email,
       passwordHash,
+      emailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationTokenExpiresAt: expiryFromNow(TOKEN_TTL.emailVerification),
     });
 
-    const token = signToken({
-      userId: user._id.toString(),
-      email: user.email,
-      name: user.name,
-    });
+    try {
+      await sendVerificationEmail({
+        to: user.email,
+        name: user.name,
+        token: verificationToken,
+      });
+    } catch (emailErr) {
+      console.error("[auth/register] failed to send verification email", emailErr);
+    }
 
     return NextResponse.json(
       {
-        token,
-        user: { id: user._id.toString(), name: user.name, email: user.email },
+        needsVerification: true,
+        email: user.email,
+        message:
+          "Account created. Check your email for a verification link to finish signing in.",
       },
       { status: 201 }
     );

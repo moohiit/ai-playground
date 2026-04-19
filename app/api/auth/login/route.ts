@@ -33,6 +33,17 @@ export async function POST(req: Request) {
       throw new ApiError(401, "Invalid email or password");
     }
 
+    if (!user.emailVerified) {
+      return NextResponse.json(
+        {
+          error: "Please verify your email before signing in.",
+          code: "EMAIL_NOT_VERIFIED",
+          email: user.email,
+        },
+        { status: 403 }
+      );
+    }
+
     const token = signToken({
       userId: user._id.toString(),
       email: user.email,
