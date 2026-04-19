@@ -2,11 +2,13 @@
 
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/authContext";
 import type { AnalysisResult } from "@/modules/resume-matcher/schemas";
 
 type Status = "idle" | "uploading" | "analyzing" | "done" | "error";
 
 export function MatcherClient() {
+  const { authFetch } = useAuth();
   const [resumeText, setResumeText] = useState("");
   const [jdText, setJdText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -24,7 +26,7 @@ export function MatcherClient() {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/projects/resume-matcher/upload", {
+      const res = await authFetch("/api/projects/resume-matcher/upload", {
         method: "POST",
         body: form,
       });
@@ -47,7 +49,7 @@ export function MatcherClient() {
     setResult(null);
 
     try {
-      const res = await fetch("/api/projects/resume-matcher/analyze", {
+      const res = await authFetch("/api/projects/resume-matcher/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resumeText, jdText }),

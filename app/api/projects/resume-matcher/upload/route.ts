@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { extractPdfText } from "@/modules/resume-matcher/service";
 import { ApiError, handleRouteError } from "@/lib/apiError";
 import { rateLimit, getClientKey } from "@/lib/rateLimit";
+import { requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,8 @@ export async function POST(req: Request) {
   const clientKey = getClientKey(req);
 
   try {
+    await requireAuth(req);
+
     const limit = rateLimit(
       `resume-matcher-upload:${clientKey}`,
       20,

@@ -3,8 +3,8 @@ import { analyzeResume } from "@/modules/resume-matcher/service";
 import { analyzeInputSchema } from "@/modules/resume-matcher/schemas";
 import { ApiError, handleRouteError } from "@/lib/apiError";
 import { rateLimit, getClientKey } from "@/lib/rateLimit";
-import { connectDB } from "@/lib/db";
-import { Usage } from "@/models/Usage";
+import { requireAuth } from "@/lib/auth";
+import { logAiUsage, requireAiUsageSlot } from "@/lib/usageLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +16,12 @@ const ACTION = "analyze";
 export async function POST(req: Request) {
   const started = Date.now();
   const clientKey = getClientKey(req);
+  let userId: string | null = null;
 
   try {
+    const auth = await requireAuth(req);
+    userId = auth.userId;
+
     const limit = rateLimit(
       `${PROJECT_SLUG}:${clientKey}`,
       10,
@@ -32,6 +36,8 @@ export async function POST(req: Request) {
       );
     }
 
+    await requireAiUsageSlot(userId, PROJECT_SLUG);
+
     const body = await req.json().catch(() => null);
     const parsed = analyzeInputSchema.safeParse(body);
     if (!parsed.success) {
@@ -40,41 +46,26 @@ export async function POST(req: Request) {
 
     const result = await analyzeResume(parsed.data);
 
-    logUsage({
+    logAiUsage({
+      userId,
+      clientKey,
+      slug: PROJECT_SLUG,
+      action: ACTION,
       success: true,
       latencyMs: Date.now() - started,
-      clientKey,
     }).catch(() => {});
 
     return NextResponse.json({ result });
   } catch (err) {
-    logUsage({
+    logAiUsage({
+      userId,
+      clientKey,
+      slug: PROJECT_SLUG,
+      action: ACTION,
       success: false,
       latencyMs: Date.now() - started,
-      clientKey,
       errorMessage: err instanceof Error ? err.message : String(err),
     }).catch(() => {});
     return handleRouteError(err);
-  }
-}
-
-async function logUsage(opts: {
-  success: boolean;
-  latencyMs: number;
-  clientKey: string;
-  errorMessage?: string;
-}) {
-  try {
-    await connectDB();
-    await Usage.create({
-      projectSlug: PROJECT_SLUG,
-      action: ACTION,
-      clientKey: opts.clientKey,
-      latencyMs: opts.latencyMs,
-      success: opts.success,
-      errorMessage: opts.errorMessage,
-    });
-  } catch (err) {
-    console.warn("[usage] failed to log", err);
   }
 }

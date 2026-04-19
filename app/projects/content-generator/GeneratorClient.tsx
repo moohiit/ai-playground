@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/authContext";
 import { MarkdownPreview } from "@/components/shared/MarkdownPreview";
 import { CopyButton } from "@/components/shared/CopyButton";
 import {
@@ -31,6 +32,7 @@ export function GeneratorClient() {
   const [keywordsRaw, setKeywordsRaw] = useState("");
   const [notes, setNotes] = useState("");
 
+  const { authFetch, token } = useAuth();
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [outline, setOutline] = useState<Outline | null>(null);
@@ -63,7 +65,7 @@ export function GeneratorClient() {
     setArticle("");
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         "/api/projects/content-generator/outline",
         {
           method: "POST",
@@ -148,9 +150,13 @@ export function GeneratorClient() {
     abortRef.current = controller;
 
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
       const res = await fetch("/api/projects/content-generator/draft", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           topic: topic.trim(),
           audience: audience.trim(),
@@ -203,7 +209,7 @@ export function GeneratorClient() {
     setDerivativesError(null);
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         "/api/projects/content-generator/derivatives",
         {
           method: "POST",

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/authContext";
 import type { SampleSchema } from "@/modules/sql-generator/sampleSchemas";
 import type { GenerateResult } from "@/modules/sql-generator/schemas";
 import type { QueryResult } from "@/modules/sql-generator/sandbox";
@@ -13,6 +14,7 @@ type Props = {
 };
 
 export function SqlClient({ samples }: Props) {
+  const { authFetch } = useAuth();
   const [selectedSlug, setSelectedSlug] = useState(samples[0]?.slug ?? "");
   const selected = useMemo(
     () => samples.find((s) => s.slug === selectedSlug),
@@ -44,7 +46,7 @@ export function SqlClient({ samples }: Props) {
     setExec(null);
 
     try {
-      const res = await fetch("/api/projects/sql-generator/generate", {
+      const res = await authFetch("/api/projects/sql-generator/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ schema: ddl, question }),
@@ -66,7 +68,7 @@ export function SqlClient({ samples }: Props) {
     setExec(null);
 
     try {
-      const res = await fetch("/api/projects/sql-generator/execute", {
+      const res = await authFetch("/api/projects/sql-generator/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
