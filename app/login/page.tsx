@@ -1,22 +1,21 @@
 "use client";
 
-import { useState, useMemo, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../../lib/authContext";
 import { cn } from "../../lib/utils";
 
 type Mode = "login" | "register";
 
-function getRedirectUrl(): string {
-  if (typeof window === "undefined") return "/";
-  const params = new URLSearchParams(window.location.search);
-  const redirect = params.get("redirect");
-  if (redirect && redirect.startsWith("/")) return redirect;
-  return "/";
-}
-
-export default function LoginPage() {
+function LoginContent() {
   const { login, register, user } = useAuth();
-  const redirectTo = useMemo(getRedirectUrl, []);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const redirectParam = searchParams?.get("redirect") ?? null;
+  const redirectTo =
+    redirectParam && redirectParam.startsWith("/") ? redirectParam : "/";
+
   const [mode, setMode] = useState<Mode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -24,10 +23,9 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  if (user) {
-    if (typeof window !== "undefined") window.location.href = redirectTo;
-    return null;
-  }
+  useEffect(() => {
+    if (user) router.replace(redirectTo);
+  }, [user, redirectTo, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -40,7 +38,7 @@ export default function LoginPage() {
       } else {
         await register(name, email, password);
       }
-      window.location.href = redirectTo;
+      router.replace(redirectTo);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);
@@ -119,5 +117,13 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   );
 }
