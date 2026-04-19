@@ -3,7 +3,13 @@ import "./globals.css";
 import { Providers } from "@/components/shared/Providers";
 import { NavAuth } from "@/components/shared/NavAuth";
 
+const rawAppUrl = process.env.APP_URL || "http://localhost:3000";
+const metadataBase = new URL(
+  rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`
+);
+
 export const metadata: Metadata = {
+  metadataBase,
   title: "AI Playground",
   description:
     "A collection of Generative AI projects in one place — resume matching, SQL generation, expense tracking, and more.",
