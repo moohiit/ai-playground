@@ -1,6 +1,7 @@
 import {
   GoogleGenerativeAI,
   SchemaType,
+  TaskType,
   type Schema,
 } from "@google/generative-ai";
 
@@ -231,4 +232,19 @@ export async function embed(text: string): Promise<number[]> {
   return result.embedding.values;
 }
 
-export { SchemaType };
+export async function embedBatch(
+  texts: string[],
+  taskType: TaskType = TaskType.RETRIEVAL_DOCUMENT
+): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const model = client.getGenerativeModel({ model: DEFAULT_EMBED_MODEL });
+  const result = await model.batchEmbedContents({
+    requests: texts.map((text) => ({
+      content: { role: "user", parts: [{ text }] },
+      taskType,
+    })),
+  });
+  return result.embeddings.map((e) => e.values);
+}
+
+export { SchemaType, TaskType };
