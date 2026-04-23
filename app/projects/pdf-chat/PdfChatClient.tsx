@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type DragEvent,
   type FormEvent,
 } from "react";
 import { cn } from "@/lib/utils";
@@ -66,32 +67,42 @@ export function PdfChatClient() {
     refresh();
   }, [refresh]);
 
-  async function handleFile(e: ChangeEvent<HTMLInputElement>) {
+  const uploadFile = useCallback(
+    async (file: File) => {
+      if (uploading) return;
+      if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+        setError("Only PDF files are supported");
+        return;
+      }
+      setError(null);
+      setUploading(true);
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await authFetch("/api/projects/pdf-chat/upload", {
+          method: "POST",
+          body: form,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Upload failed");
+        await refresh();
+        setSelectedId(data.document.id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Upload failed");
+      } finally {
+        setUploading(false);
+        if (fileRef.current) fileRef.current.value = "";
+      }
+    },
+    [authFetch, refresh, uploading]
+  );
+
+  async function handleFileInput(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
-    setError(null);
-    setUploading(true);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await authFetch("/api/projects/pdf-chat/upload", {
-        method: "POST",
-        body: form,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Upload failed");
-      await refresh();
-      setSelectedId(data.document.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
+    if (file) await uploadFile(file);
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this PDF and all its chunks?")) return;
     try {
       const res = await authFetch(`/api/projects/pdf-chat/documents/${id}`, {
         method: "DELETE",
@@ -107,10 +118,55 @@ export function PdfChatClient() {
     }
   }
 
+  const [dragging, setDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+
+  function onDragEnter(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    if (!e.dataTransfer?.types?.includes("Files")) return;
+    dragCounterRef.current += 1;
+    setDragging(true);
+  }
+  function onDragLeave(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setDragging(false);
+  }
+  function onDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }
+  async function onDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) await uploadFile(file);
+  }
+
   const selected = documents.find((d) => d.id === selectedId) ?? null;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div
+      className="relative grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand-500/60 bg-zinc-950/80 backdrop-blur-sm">
+          <div className="text-center">
+            <div className="text-base font-semibold text-brand-300">
+              Drop your PDF here
+            </div>
+            <div className="mt-1 text-xs text-zinc-400">
+              Up to 6 MB, 40 pages. We&apos;ll chunk and embed it for you.
+            </div>
+          </div>
+        </div>
+      )}
+
       <aside className="flex flex-col gap-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-4 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-xs uppercase tracking-[0.18em] text-zinc-500">
@@ -130,7 +186,7 @@ export function PdfChatClient() {
             ref={fileRef}
             type="file"
             accept="application/pdf,.pdf"
-            onChange={handleFile}
+            onChange={handleFileInput}
             className="hidden"
           />
         </div>
@@ -178,17 +234,10 @@ export function PdfChatClient() {
                     <span>
                       {d.pageCount || "?"} pages · {d.chunkCount} chunks
                     </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(d.id);
-                      }}
-                      className="text-[10px] text-zinc-500 transition hover:text-red-400"
-                      aria-label={`Delete ${d.name}`}
-                    >
-                      Delete
-                    </button>
+                    <DeleteButton
+                      onConfirm={() => handleDelete(d.id)}
+                      label={`Delete ${d.name}`}
+                    />
                   </div>
                   {d.errorMessage && (
                     <div className="text-[10px] text-red-400">
@@ -623,29 +672,120 @@ function StatusBadge({ status }: { status: DocumentSummary["status"] }) {
 }
 
 function EmptyChat({ hasDocs }: { hasDocs: boolean }) {
-  return (
-    <div className="flex h-[480px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-zinc-800 bg-zinc-950/40 text-center">
-      <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/60 text-zinc-500">
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-        </svg>
+  if (hasDocs) {
+    return (
+      <div className="flex h-[480px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-zinc-800 bg-zinc-950/40 text-center">
+        <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+        </div>
+        <p className="max-w-sm text-sm text-zinc-400">
+          Select a document from the list to start asking questions.
+        </p>
       </div>
-      <p className="max-w-sm text-sm text-zinc-400">
-        {hasDocs
-          ? "Select a document from the list to start asking questions."
-          : "Upload a PDF (up to 6 MB, 40 pages) to start. Embeddings run server-side and take a few seconds."}
-      </p>
+    );
+  }
+
+  return (
+    <div className="relative flex h-[480px] flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-brand-500/30 bg-gradient-to-b from-brand-500/5 to-transparent text-center">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-500/10 blur-3xl" />
+
+      <div className="relative flex flex-col items-center gap-4 px-6">
+        <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500/30 to-fuchsia-500/30 text-zinc-100 ring-1 ring-brand-500/30">
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-zinc-100">
+            Drop your first PDF to get started
+          </h3>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-zinc-400">
+            Drag anywhere on this pane, or click Upload on the left. We&apos;ll
+            chunk it, embed it, and let you ask grounded questions with page
+            citations.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-zinc-500">
+          <span className="rounded-full border border-zinc-800 bg-zinc-900/60 px-2 py-0.5">
+            PDF · up to 6 MB
+          </span>
+          <span className="rounded-full border border-zinc-800 bg-zinc-900/60 px-2 py-0.5">
+            up to 40 pages
+          </span>
+          <span className="rounded-full border border-zinc-800 bg-zinc-900/60 px-2 py-0.5">
+            page-level citations
+          </span>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function DeleteButton({
+  onConfirm,
+  label,
+}: {
+  onConfirm: () => void;
+  label: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  function handleClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (confirming) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      setConfirming(false);
+      onConfirm();
+      return;
+    }
+    setConfirming(true);
+    timeoutRef.current = setTimeout(() => setConfirming(false), 3000);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className={cn(
+        "text-[10px] transition",
+        confirming
+          ? "font-semibold text-red-400"
+          : "text-zinc-500 hover:text-red-400"
+      )}
+      aria-label={label}
+    >
+      {confirming ? "Confirm?" : "Delete"}
+    </button>
   );
 }
 
