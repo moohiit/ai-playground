@@ -39,7 +39,7 @@ export const projects: ProjectCardProps[] = [
       "Upload a PDF and ask grounded questions about it. Answers come with citations to the exact pages they're drawn from.",
     tags: ["RAG", "Embeddings", "Vector Search"],
     href: "/projects/pdf-chat",
-    status: "coming-soon",
+    status: "live",
   },
   {
     title: "YouTube Video Q&A",
