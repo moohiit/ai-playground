@@ -1,5 +1,4 @@
 import {
-  GoogleGenerativeAI,
   SchemaType,
   TaskType,
   type Schema,
@@ -11,11 +10,10 @@ if (!GEMINI_API_KEY) {
   throw new Error("GEMINI_API_KEY is not set in environment variables");
 }
 
-const client = new GoogleGenerativeAI(GEMINI_API_KEY);
-
 const DEFAULT_TEXT_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_VISION_MODEL = "gemini-2.5-flash-lite";
-const DEFAULT_EMBED_MODEL = "text-embedding-004";
+const DEFAULT_EMBED_MODEL = "gemini-embedding-001";
+const DEFAULT_EMBED_DIMS = 768;
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -226,25 +224,67 @@ export async function vision(input: VisionInput): Promise<string> {
   return callGeminiRaw(DEFAULT_VISION_MODEL, body);
 }
 
-export async function embed(text: string): Promise<number[]> {
-  const model = client.getGenerativeModel({ model: DEFAULT_EMBED_MODEL });
-  const result = await model.embedContent(text);
-  return result.embedding.values;
+async function embedRest(
+  texts: string[],
+  taskType: TaskType,
+  outputDimensionality: number
+): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const url = `${API_BASE}/${DEFAULT_EMBED_MODEL}:batchEmbedContents?key=${GEMINI_API_KEY}`;
+  const body = {
+    requests: texts.map((text) => ({
+      model: `models/${DEFAULT_EMBED_MODEL}`,
+      content: { parts: [{ text }] },
+      taskType,
+      outputDimensionality,
+    })),
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini embed error (${res.status}): ${err}`);
+  }
+  const data = (await res.json()) as {
+    embeddings: { values: number[] }[];
+  };
+  // gemini-embedding-001 returns unnormalized vectors whenever
+  // outputDimensionality is lower than the model's native 3072.
+  // Atlas cosine similarity expects unit vectors, so normalize here.
+  return data.embeddings.map((e) => l2Normalize(e.values));
+}
+
+function l2Normalize(v: number[]): number[] {
+  let sum = 0;
+  for (let i = 0; i < v.length; i++) sum += v[i] * v[i];
+  const norm = Math.sqrt(sum);
+  if (norm === 0) return v;
+  const out = new Array<number>(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] / norm;
+  return out;
+}
+
+export async function embed(
+  text: string,
+  opts: { taskType?: TaskType; outputDimensionality?: number } = {}
+): Promise<number[]> {
+  const [values] = await embedRest(
+    [text],
+    opts.taskType ?? TaskType.RETRIEVAL_DOCUMENT,
+    opts.outputDimensionality ?? DEFAULT_EMBED_DIMS
+  );
+  return values;
 }
 
 export async function embedBatch(
   texts: string[],
-  taskType: TaskType = TaskType.RETRIEVAL_DOCUMENT
+  taskType: TaskType = TaskType.RETRIEVAL_DOCUMENT,
+  outputDimensionality: number = DEFAULT_EMBED_DIMS
 ): Promise<number[][]> {
-  if (texts.length === 0) return [];
-  const model = client.getGenerativeModel({ model: DEFAULT_EMBED_MODEL });
-  const result = await model.batchEmbedContents({
-    requests: texts.map((text) => ({
-      content: { role: "user", parts: [{ text }] },
-      taskType,
-    })),
-  });
-  return result.embeddings.map((e) => e.values);
+  return embedRest(texts, taskType, outputDimensionality);
 }
 
 export { SchemaType, TaskType };

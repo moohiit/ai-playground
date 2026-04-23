@@ -141,6 +141,17 @@ export async function answerQuestion(
     TaskType.RETRIEVAL_QUERY
   );
 
+  const queryMag = Math.sqrt(
+    queryVector.reduce((s, n) => s + n * n, 0)
+  );
+  const storedChunkCount = await PdfChunk.countDocuments({
+    documentId: new mongoose.Types.ObjectId(opts.documentId),
+    userId: opts.userId,
+  });
+  console.log(
+    `[pdf-chat/ask] doc=${opts.documentId} storedChunks=${storedChunkCount} queryDims=${queryVector.length} queryMag=${queryMag.toFixed(4)}`
+  );
+
   type RetrievedChunk = {
     _id: unknown;
     index: number;
@@ -185,6 +196,40 @@ export async function answerQuestion(
       );
     }
     throw err;
+  }
+
+  console.log(
+    `[pdf-chat/ask] retrieved=${retrieved.length} scores=${retrieved
+      .map((r) => r.score.toFixed(3))
+      .join(",")} threshold=${MIN_RETRIEVAL_SCORE}`
+  );
+
+  if (retrieved.length === 0) {
+    try {
+      const noFilter = await PdfChunk.aggregate<{ score: number }>([
+        {
+          $vectorSearch: {
+            index: VECTOR_INDEX,
+            path: "embedding",
+            queryVector,
+            numCandidates: NUM_CANDIDATES,
+            limit: 3,
+          },
+        },
+        { $project: { _id: 1, score: { $meta: "vectorSearchScore" } } },
+      ]);
+      console.log(
+        `[pdf-chat/ask] no-filter sanity: retrieved=${noFilter.length} scores=${noFilter
+          .map((n) => n.score.toFixed(3))
+          .join(",")}`
+      );
+    } catch (err) {
+      console.log(
+        `[pdf-chat/ask] no-filter sanity failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
   }
 
   const relevant = retrieved.filter((c) => c.score >= MIN_RETRIEVAL_SCORE);
