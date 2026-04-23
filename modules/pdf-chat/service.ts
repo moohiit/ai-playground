@@ -1,17 +1,29 @@
+import { complete, embedBatch, TaskType } from "@/lib/llm";
 import { connectDB } from "@/lib/db";
-import { embedBatch, TaskType } from "@/lib/llm";
 import { PdfChunk } from "@/models/PdfChunk";
 import { PdfDocument } from "@/models/PdfDocument";
 import mongoose from "mongoose";
+import {
+  ANSWER_SYSTEM_PROMPT,
+  buildAnswerPrompt,
+} from "./prompts";
 import {
   CHUNK_CHARS,
   CHUNK_OVERLAP,
   MAX_PDF_BYTES,
   MAX_PDF_PAGES,
+  MIN_RETRIEVAL_SCORE,
+  RETRIEVAL_K,
+  type AskInput,
+  type AskResult,
+  type Citation,
   type DocumentSummary,
 } from "./schemas";
 
 const EMBED_BATCH_SIZE = 20;
+const VECTOR_INDEX = "pdf_chunks_vector_index";
+const NUM_CANDIDATES = 100;
+const SNIPPET_CHARS = 180;
 
 export type IngestResult = DocumentSummary;
 
@@ -103,6 +115,125 @@ export async function listDocuments(userId: string): Promise<DocumentSummary[]> 
     errorMessage: d.errorMessage,
     createdAt: d.createdAt.toISOString(),
   }));
+}
+
+export async function answerQuestion(
+  opts: AskInput & { userId: string }
+): Promise<AskResult> {
+  await connectDB();
+
+  if (!mongoose.isValidObjectId(opts.documentId)) {
+    throw new Error("Invalid document id");
+  }
+
+  const doc = await PdfDocument.findOne({
+    _id: opts.documentId,
+    userId: opts.userId,
+  }).lean();
+
+  if (!doc) throw new Error("Document not found");
+  if (doc.status !== "ready") {
+    throw new Error(`Document is ${doc.status}; cannot query yet.`);
+  }
+
+  const [queryVector] = await embedBatch(
+    [opts.question],
+    TaskType.RETRIEVAL_QUERY
+  );
+
+  type RetrievedChunk = {
+    _id: unknown;
+    index: number;
+    pageStart: number;
+    pageEnd: number;
+    text: string;
+    score: number;
+  };
+
+  let retrieved: RetrievedChunk[];
+  try {
+    retrieved = await PdfChunk.aggregate<RetrievedChunk>([
+      {
+        $vectorSearch: {
+          index: VECTOR_INDEX,
+          path: "embedding",
+          queryVector,
+          numCandidates: NUM_CANDIDATES,
+          limit: RETRIEVAL_K,
+          filter: {
+            userId: opts.userId,
+            documentId: new mongoose.Types.ObjectId(opts.documentId),
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          index: 1,
+          pageStart: 1,
+          pageEnd: 1,
+          text: 1,
+          score: { $meta: "vectorSearchScore" },
+        },
+      },
+    ]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/index.*not.*found|vectorSearch/i.test(msg)) {
+      throw new Error(
+        `Atlas vector index "${VECTOR_INDEX}" is missing. Create it on the "pdfchunks" collection (768 dims, cosine, with documentId + userId filters).`
+      );
+    }
+    throw err;
+  }
+
+  const relevant = retrieved.filter((c) => c.score >= MIN_RETRIEVAL_SCORE);
+
+  if (relevant.length === 0) {
+    return {
+      answer:
+        "I can't find that in this document. Try rephrasing, or ask something the document actually covers.",
+      citations: [],
+      grounded: false,
+    };
+  }
+
+  const excerpts = relevant.map((c) => ({
+    index: c.index,
+    pageStart: c.pageStart,
+    pageEnd: c.pageEnd,
+    text: c.text,
+  }));
+
+  const answer = await complete(
+    buildAnswerPrompt({
+      question: opts.question,
+      excerpts,
+      history: opts.history ?? [],
+    }),
+    {
+      system: ANSWER_SYSTEM_PROMPT,
+      temperature: 0.2,
+      maxOutputTokens: 1024,
+    }
+  );
+
+  const citations: Citation[] = relevant.map((c) => ({
+    chunkIndex: c.index,
+    pageStart: c.pageStart,
+    pageEnd: c.pageEnd,
+    snippet:
+      c.text.length > SNIPPET_CHARS
+        ? c.text.slice(0, SNIPPET_CHARS).trimEnd() + "…"
+        : c.text,
+    score: Number(c.score.toFixed(3)),
+  }));
+
+  return {
+    answer: answer.trim(),
+    citations,
+    grounded: true,
+  };
 }
 
 export async function deleteDocument(opts: {

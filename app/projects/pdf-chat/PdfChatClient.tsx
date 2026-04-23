@@ -6,10 +6,14 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type FormEvent,
 } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/authContext";
-import type { DocumentSummary } from "@/modules/pdf-chat/schemas";
+import type {
+  AskResult,
+  DocumentSummary,
+} from "@/modules/pdf-chat/schemas";
 
 export function PdfChatClient() {
   const { authFetch } = useAuth();
@@ -187,14 +191,148 @@ export function PdfChatClient() {
         {!selected ? (
           <EmptyChat hasDocs={documents.length > 0} />
         ) : (
-          <div className="flex h-[480px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-800 bg-zinc-950/40 text-center text-sm text-zinc-500">
-            <div className="text-xs uppercase tracking-wider text-brand-500">
-              Selected: {selected.name}
-            </div>
-            Chat panel wires up in Step 3.
-          </div>
+          <AskPanel document={selected} />
         )}
       </section>
+    </div>
+  );
+}
+
+function AskPanel({ document }: { document: DocumentSummary }) {
+  const { authFetch } = useAuth();
+  const [question, setQuestion] = useState("");
+  const [result, setResult] = useState<AskResult | null>(null);
+  const [status, setStatus] = useState<"idle" | "asking" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (question.trim().length < 3) return;
+    setStatus("asking");
+    setError(null);
+    setResult(null);
+    try {
+      const res = await authFetch("/api/projects/pdf-chat/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: document.id,
+          question: question.trim(),
+          history: [],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Ask failed");
+      setResult(data.result);
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ask failed");
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between text-xs text-zinc-500">
+        <span>
+          Asking{" "}
+          <span className="text-zinc-300" title={document.name}>
+            {document.name}
+          </span>
+        </span>
+        <span>
+          {document.pageCount} pages · {document.chunkCount} chunks
+        </span>
+      </div>
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+        <textarea
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          rows={3}
+          placeholder="Ask a question about this PDF — e.g. 'What's the retention policy?'"
+          className="resize-y rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-brand-500 focus:outline-none"
+        />
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] text-zinc-500">
+            Answers cite excerpts as [#n] inline.
+          </p>
+          <button
+            type="submit"
+            disabled={status === "asking" || question.trim().length < 3}
+            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-brand-600 via-brand-500 to-fuchsia-500 px-4 py-1.5 text-xs font-semibold text-white shadow-lg shadow-brand-500/30 transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {status === "asking" ? (
+              <>
+                <Spinner /> Thinking…
+              </>
+            ) : (
+              <>Ask →</>
+            )}
+          </button>
+        </div>
+      </form>
+
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+          {error}
+        </div>
+      )}
+
+      {result && <AnswerView result={result} />}
+    </div>
+  );
+}
+
+function AnswerView({ result }: { result: AskResult }) {
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-zinc-800 bg-zinc-950/60 p-4">
+      <div>
+        <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-wider text-zinc-500">
+          <span>Answer</span>
+          {result.grounded ? (
+            <span className="inline-flex items-center gap-1 text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              Grounded
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-amber-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              Not found in doc
+            </span>
+          )}
+        </div>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
+          {result.answer}
+        </p>
+      </div>
+
+      {result.citations.length > 0 && (
+        <div>
+          <div className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">
+            Sources
+          </div>
+          <ul className="flex flex-col gap-2">
+            {result.citations.map((c) => (
+              <li
+                key={c.chunkIndex}
+                className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2.5 text-xs text-zinc-300"
+              >
+                <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500">
+                  <span>
+                    [#{c.chunkIndex}] pages {c.pageStart}
+                    {c.pageEnd !== c.pageStart ? `–${c.pageEnd}` : ""}
+                  </span>
+                  <span className="font-mono text-zinc-500">
+                    score {c.score}
+                  </span>
+                </div>
+                {c.snippet}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
