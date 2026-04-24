@@ -13,11 +13,14 @@ import {
   MAX_VIDEO_DURATION_SEC,
   MIN_RETRIEVAL_SCORE,
   RETRIEVAL_K,
+  parseYoutubeVideoId,
   type AskInput,
   type AskResult,
   type Citation,
   type VideoSummary,
 } from "./schemas";
+
+export { parseYoutubeVideoId };
 
 const EMBED_BATCH_SIZE = 20;
 const VECTOR_INDEX = "yt_chunks_vector_index";
@@ -35,28 +38,6 @@ type VideoMeta = {
   author?: string;
   thumbnailUrl?: string;
 };
-
-export function parseYoutubeVideoId(url: string): string | null {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "");
-    if (host === "youtu.be") {
-      const id = u.pathname.slice(1);
-      return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
-    }
-    if (host.endsWith("youtube.com")) {
-      if (u.pathname === "/watch") {
-        const id = u.searchParams.get("v");
-        return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
-      }
-      const shorts = u.pathname.match(/^\/(shorts|embed|v|live)\/([A-Za-z0-9_-]{11})/);
-      if (shorts) return shorts[2];
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
 
 async function fetchVideoMeta(videoId: string): Promise<VideoMeta> {
   const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(
@@ -93,13 +74,12 @@ async function fetchTranscript(videoId: string): Promise<TranscriptSegment[]> {
   try {
     raw = await YoutubeTranscript.fetchTranscript(videoId);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `Couldn't fetch transcript for this video (${msg}). Make sure it has captions and isn't age-restricted.`
-    );
+    throw new Error(friendlyTranscriptError(err));
   }
   if (!raw || raw.length === 0) {
-    throw new Error("No transcript available for this video.");
+    throw new Error(
+      "No transcript available for this video. Make sure captions are enabled by the creator."
+    );
   }
   return raw.map((r) => {
     const startSec = r.offset > 1000 ? r.offset / 1000 : r.offset;
@@ -110,6 +90,27 @@ async function fetchTranscript(videoId: string): Promise<TranscriptSegment[]> {
       endSec: startSec + durationSec,
     };
   });
+}
+
+function friendlyTranscriptError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = msg.toLowerCase();
+  if (m.includes("disabled") || m.includes("transcript is disabled")) {
+    return "This video has transcripts disabled by the creator. Try a different video with captions turned on.";
+  }
+  if (m.includes("unavailable") || m.includes("not available")) {
+    return "Video unavailable or has no transcripts. Check that the URL is correct and the video is public.";
+  }
+  if (m.includes("too many requests") || m.includes("429")) {
+    return "YouTube is rate-limiting transcript fetches right now. Wait a minute and try again.";
+  }
+  if (m.includes("private") || m.includes("age")) {
+    return "This video is private or age-restricted, so we can't fetch its transcript.";
+  }
+  if (m.includes("no transcript") || m.includes("no captions")) {
+    return "No captions found on this video. Try one that has a [CC] badge on YouTube.";
+  }
+  return `Couldn't fetch transcript: ${msg}`;
 }
 
 function decodeHtmlEntities(s: string): string {

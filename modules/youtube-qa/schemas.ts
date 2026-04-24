@@ -62,3 +62,27 @@ export const askResultSchema = z.object({
 });
 
 export type AskResult = z.infer<typeof askResultSchema>;
+
+export function parseYoutubeVideoId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = u.pathname.slice(1);
+      return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+    }
+    if (host.endsWith("youtube.com")) {
+      if (u.pathname === "/watch") {
+        const id = u.searchParams.get("v");
+        return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+      }
+      const route = u.pathname.match(
+        /^\/(shorts|embed|v|live)\/([A-Za-z0-9_-]{11})/
+      );
+      if (route) return route[2];
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}

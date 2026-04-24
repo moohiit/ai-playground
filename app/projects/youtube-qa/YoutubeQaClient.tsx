@@ -9,10 +9,11 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/authContext";
-import type {
-  AskResult,
-  Citation,
-  VideoSummary,
+import {
+  parseYoutubeVideoId,
+  type AskResult,
+  type Citation,
+  type VideoSummary,
 } from "@/modules/youtube-qa/schemas";
 import { YoutubePlayer, type YoutubePlayerHandle } from "./YoutubePlayer";
 
@@ -69,6 +70,15 @@ export function YoutubeQaClient() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!url.trim() || ingesting) return;
+
+    const videoId = parseYoutubeVideoId(url.trim());
+    if (!videoId) {
+      setError(
+        "That doesn't look like a YouTube URL. Paste a full youtube.com/watch?v=… or youtu.be/… link."
+      );
+      return;
+    }
+
     setIngesting(true);
     setError(null);
     try {
