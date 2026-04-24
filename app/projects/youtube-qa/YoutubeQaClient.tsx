@@ -172,16 +172,30 @@ export function YoutubeQaClient() {
           <ul className="flex flex-col gap-2">
             {videos.map((v) => (
               <li key={v.id}>
-                <button
-                  type="button"
-                  onClick={() => v.status === "ready" && setSelectedId(v.id)}
-                  disabled={v.status !== "ready"}
+                <div
+                  role="button"
+                  tabIndex={v.status === "ready" ? 0 : -1}
+                  aria-disabled={v.status !== "ready"}
+                  onClick={() =>
+                    v.status === "ready" && setSelectedId(v.id)
+                  }
+                  onKeyDown={(e) => {
+                    if (
+                      v.status === "ready" &&
+                      (e.key === "Enter" || e.key === " ")
+                    ) {
+                      e.preventDefault();
+                      setSelectedId(v.id);
+                    }
+                  }}
                   className={cn(
                     "group flex w-full gap-2.5 rounded-lg border p-2 text-left transition",
                     selectedId === v.id
                       ? "border-brand-500/50 bg-brand-500/10"
                       : "border-zinc-800 bg-zinc-950/40 hover:border-zinc-700",
-                    v.status !== "ready" && "cursor-default opacity-80"
+                    v.status !== "ready"
+                      ? "cursor-default opacity-80"
+                      : "cursor-pointer"
                   )}
                 >
                   <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-md bg-zinc-950">
@@ -220,7 +234,7 @@ export function YoutubeQaClient() {
                       </div>
                     )}
                   </div>
-                </button>
+                </div>
               </li>
             ))}
           </ul>

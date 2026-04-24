@@ -209,16 +209,30 @@ export function PdfChatClient() {
           <ul className="flex flex-col gap-1">
             {documents.map((d) => (
               <li key={d.id}>
-                <button
-                  type="button"
-                  onClick={() => d.status === "ready" && setSelectedId(d.id)}
-                  disabled={d.status !== "ready"}
+                <div
+                  role="button"
+                  tabIndex={d.status === "ready" ? 0 : -1}
+                  aria-disabled={d.status !== "ready"}
+                  onClick={() =>
+                    d.status === "ready" && setSelectedId(d.id)
+                  }
+                  onKeyDown={(e) => {
+                    if (
+                      d.status === "ready" &&
+                      (e.key === "Enter" || e.key === " ")
+                    ) {
+                      e.preventDefault();
+                      setSelectedId(d.id);
+                    }
+                  }}
                   className={cn(
                     "group flex w-full flex-col gap-1 rounded-lg border p-2.5 text-left transition",
                     selectedId === d.id
                       ? "border-brand-500/50 bg-brand-500/10"
                       : "border-zinc-800 bg-zinc-950/40 hover:border-zinc-700",
-                    d.status !== "ready" && "cursor-default opacity-80"
+                    d.status !== "ready"
+                      ? "cursor-default opacity-80"
+                      : "cursor-pointer"
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -244,7 +258,7 @@ export function PdfChatClient() {
                       {d.errorMessage}
                     </div>
                   )}
-                </button>
+                </div>
               </li>
             ))}
           </ul>
