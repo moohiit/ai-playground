@@ -1,4 +1,300 @@
-// Service implementations land in Steps 2 and 3:
-//   Step 2: ingestVideo() — fetch transcript, chunk, embed, store
-//   Step 3: answerQuestion() — vector search + grounded answer with timestamp citations
-export {};
+import { connectDB } from "@/lib/db";
+import { embedBatch, TaskType } from "@/lib/llm";
+import { YoutubeChunk } from "@/models/YoutubeChunk";
+import { YoutubeVideo } from "@/models/YoutubeVideo";
+import mongoose from "mongoose";
+import {
+  MAX_CHUNK_CHARS,
+  MAX_CHUNK_SECONDS,
+  MAX_VIDEO_DURATION_SEC,
+  type VideoSummary,
+} from "./schemas";
+
+const EMBED_BATCH_SIZE = 20;
+
+type TranscriptSegment = {
+  text: string;
+  startSec: number;
+  endSec: number;
+};
+
+type VideoMeta = {
+  title: string;
+  author?: string;
+  thumbnailUrl?: string;
+};
+
+export function parseYoutubeVideoId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = u.pathname.slice(1);
+      return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+    }
+    if (host.endsWith("youtube.com")) {
+      if (u.pathname === "/watch") {
+        const id = u.searchParams.get("v");
+        return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+      }
+      const shorts = u.pathname.match(/^\/(shorts|embed|v|live)\/([A-Za-z0-9_-]{11})/);
+      if (shorts) return shorts[2];
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function fetchVideoMeta(videoId: string): Promise<VideoMeta> {
+  const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(
+    `https://www.youtube.com/watch?v=${videoId}`
+  )}&format=json`;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      throw new Error(`oembed ${res.status}`);
+    }
+    const data = (await res.json()) as {
+      title?: string;
+      author_name?: string;
+      thumbnail_url?: string;
+    };
+    return {
+      title: data.title ?? `YouTube video ${videoId}`,
+      author: data.author_name,
+      thumbnailUrl:
+        data.thumbnail_url ??
+        `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    };
+  } catch {
+    return {
+      title: `YouTube video ${videoId}`,
+      thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    };
+  }
+}
+
+async function fetchTranscript(videoId: string): Promise<TranscriptSegment[]> {
+  const { YoutubeTranscript } = await import("youtube-transcript");
+  let raw: Array<{ text: string; duration: number; offset: number }>;
+  try {
+    raw = await YoutubeTranscript.fetchTranscript(videoId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Couldn't fetch transcript for this video (${msg}). Make sure it has captions and isn't age-restricted.`
+    );
+  }
+  if (!raw || raw.length === 0) {
+    throw new Error("No transcript available for this video.");
+  }
+  return raw.map((r) => {
+    const startSec = r.offset > 1000 ? r.offset / 1000 : r.offset;
+    const durationSec = r.duration > 1000 ? r.duration / 1000 : r.duration;
+    return {
+      text: decodeHtmlEntities(r.text).replace(/\s+/g, " ").trim(),
+      startSec,
+      endSec: startSec + durationSec,
+    };
+  });
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+}
+
+type Chunk = {
+  text: string;
+  startSec: number;
+  endSec: number;
+};
+
+function chunkSegments(segments: TranscriptSegment[]): Chunk[] {
+  if (segments.length === 0) return [];
+  const chunks: Chunk[] = [];
+  let buf = "";
+  let chunkStart = segments[0].startSec;
+  let chunkEnd = segments[0].endSec;
+
+  for (const seg of segments) {
+    if (!seg.text) continue;
+    const joiner = buf ? " " : "";
+    const candidate = buf + joiner + seg.text;
+    const newDuration = seg.endSec - chunkStart;
+
+    if (
+      buf.length > 0 &&
+      (candidate.length > MAX_CHUNK_CHARS || newDuration > MAX_CHUNK_SECONDS)
+    ) {
+      chunks.push({ text: buf, startSec: chunkStart, endSec: chunkEnd });
+      buf = seg.text;
+      chunkStart = seg.startSec;
+      chunkEnd = seg.endSec;
+    } else {
+      buf = candidate;
+      chunkEnd = seg.endSec;
+    }
+  }
+  if (buf.length > 0) {
+    chunks.push({ text: buf, startSec: chunkStart, endSec: chunkEnd });
+  }
+  return chunks;
+}
+
+export async function ingestVideo(opts: {
+  userId: string;
+  url: string;
+}): Promise<VideoSummary> {
+  const videoId = parseYoutubeVideoId(opts.url);
+  if (!videoId) {
+    throw new Error("Couldn't parse a YouTube video ID from that URL.");
+  }
+
+  await connectDB();
+
+  const existing = await YoutubeVideo.findOne({
+    userId: opts.userId,
+    videoId,
+  });
+  if (existing && existing.status === "ready") {
+    return toSummary(existing);
+  }
+
+  const meta = await fetchVideoMeta(videoId);
+
+  const doc =
+    existing ??
+    (await YoutubeVideo.create({
+      userId: opts.userId,
+      videoId,
+      title: meta.title,
+      author: meta.author,
+      thumbnailUrl: meta.thumbnailUrl,
+      durationSec: 0,
+      chunkCount: 0,
+      status: "processing",
+    }));
+
+  if (existing) {
+    doc.status = "processing";
+    doc.errorMessage = undefined;
+    doc.title = meta.title;
+    doc.author = meta.author;
+    doc.thumbnailUrl = meta.thumbnailUrl;
+    await doc.save();
+    await YoutubeChunk.deleteMany({ videoId: doc._id, userId: opts.userId });
+  }
+
+  try {
+    const segments = await fetchTranscript(videoId);
+    const durationSec = segments[segments.length - 1]?.endSec ?? 0;
+    if (durationSec > MAX_VIDEO_DURATION_SEC) {
+      throw new Error(
+        `Video is ${Math.round(durationSec / 60)} min; max allowed is ${
+          MAX_VIDEO_DURATION_SEC / 60
+        } min.`
+      );
+    }
+
+    const chunks = chunkSegments(segments);
+    if (chunks.length === 0) throw new Error("Transcript produced no chunks.");
+
+    for (let i = 0; i < chunks.length; i += EMBED_BATCH_SIZE) {
+      const batch = chunks.slice(i, i + EMBED_BATCH_SIZE);
+      const vectors = await embedBatch(
+        batch.map((c) => c.text),
+        TaskType.RETRIEVAL_DOCUMENT
+      );
+      const rows = batch.map((c, j) => ({
+        videoId: doc._id,
+        userId: opts.userId,
+        index: i + j,
+        startSec: c.startSec,
+        endSec: c.endSec,
+        text: c.text,
+        embedding: vectors[j],
+      }));
+      await YoutubeChunk.insertMany(rows, { ordered: false });
+    }
+
+    doc.durationSec = Math.round(durationSec);
+    doc.chunkCount = chunks.length;
+    doc.status = "ready";
+    await doc.save();
+
+    return toSummary(doc);
+  } catch (err) {
+    doc.status = "failed";
+    doc.errorMessage = err instanceof Error ? err.message : String(err);
+    await doc.save().catch(() => {});
+    throw err;
+  }
+}
+
+export async function listVideos(userId: string): Promise<VideoSummary[]> {
+  await connectDB();
+  const videos = await YoutubeVideo.find({ userId })
+    .sort({ createdAt: -1 })
+    .lean();
+  return videos.map((v) => ({
+    id: v._id.toString(),
+    videoId: v.videoId,
+    title: v.title,
+    author: v.author,
+    thumbnailUrl: v.thumbnailUrl,
+    durationSec: v.durationSec,
+    chunkCount: v.chunkCount,
+    status: v.status,
+    errorMessage: v.errorMessage,
+    createdAt: v.createdAt.toISOString(),
+  }));
+}
+
+export async function deleteVideo(opts: {
+  userId: string;
+  id: string;
+}): Promise<void> {
+  await connectDB();
+  if (!mongoose.isValidObjectId(opts.id)) throw new Error("Invalid video id");
+  const video = await YoutubeVideo.findOne({
+    _id: opts.id,
+    userId: opts.userId,
+  });
+  if (!video) throw new Error("Video not found");
+  await YoutubeChunk.deleteMany({ videoId: video._id, userId: opts.userId });
+  await video.deleteOne();
+}
+
+function toSummary(v: {
+  _id: { toString(): string };
+  videoId: string;
+  title: string;
+  author?: string;
+  thumbnailUrl?: string;
+  durationSec: number;
+  chunkCount: number;
+  status: "processing" | "ready" | "failed";
+  errorMessage?: string;
+  createdAt: Date;
+}): VideoSummary {
+  return {
+    id: v._id.toString(),
+    videoId: v.videoId,
+    title: v.title,
+    author: v.author,
+    thumbnailUrl: v.thumbnailUrl,
+    durationSec: v.durationSec,
+    chunkCount: v.chunkCount,
+    status: v.status,
+    errorMessage: v.errorMessage,
+    createdAt: v.createdAt.toISOString(),
+  };
+}
