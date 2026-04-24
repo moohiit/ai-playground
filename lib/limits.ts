@@ -4,6 +4,7 @@ export const PROJECT_SLUGS = [
   "expense-tracker",
   "content-generator",
   "pdf-chat",
+  "youtube-qa",
 ] as const;
 
 export type ProjectSlug = (typeof PROJECT_SLUGS)[number];
@@ -14,6 +15,7 @@ export const DEFAULT_MONTHLY_REQUEST_LIMITS: Record<ProjectSlug, number> = {
   "expense-tracker": 200,
   "content-generator": 30,
   "pdf-chat": 80,
+  "youtube-qa": 80,
 };
 
 export const PROJECT_LABELS: Record<ProjectSlug, string> = {
@@ -22,6 +24,7 @@ export const PROJECT_LABELS: Record<ProjectSlug, string> = {
   "expense-tracker": "Expense Tracker",
   "content-generator": "Content Generator",
   "pdf-chat": "PDF Chat",
+  "youtube-qa": "YouTube Q&A",
 };
 
 export function isProjectSlug(value: string): value is ProjectSlug {

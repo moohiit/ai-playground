@@ -47,7 +47,7 @@ export const projects: ProjectCardProps[] = [
       "Paste a YouTube URL, ask questions about the video. RAG over the transcript with timestamped citations jumping to the exact moment.",
     tags: ["RAG", "Transcripts", "Citations"],
     href: "/projects/youtube-qa",
-    status: "coming-soon",
+    status: "live",
   },
   {
     title: "GitHub Repo Explainer",
