@@ -1,16 +1,28 @@
 import { connectDB } from "@/lib/db";
-import { embedBatch, TaskType } from "@/lib/llm";
+import { complete, embedBatch, TaskType } from "@/lib/llm";
 import { YoutubeChunk } from "@/models/YoutubeChunk";
 import { YoutubeVideo } from "@/models/YoutubeVideo";
 import mongoose from "mongoose";
 import {
+  ANSWER_SYSTEM_PROMPT,
+  buildAnswerPrompt,
+} from "./prompts";
+import {
   MAX_CHUNK_CHARS,
   MAX_CHUNK_SECONDS,
   MAX_VIDEO_DURATION_SEC,
+  MIN_RETRIEVAL_SCORE,
+  RETRIEVAL_K,
+  type AskInput,
+  type AskResult,
+  type Citation,
   type VideoSummary,
 } from "./schemas";
 
 const EMBED_BATCH_SIZE = 20;
+const VECTOR_INDEX = "yt_chunks_vector_index";
+const NUM_CANDIDATES = 100;
+const SNIPPET_CHARS = 180;
 
 type TranscriptSegment = {
   text: string;
@@ -256,6 +268,125 @@ export async function listVideos(userId: string): Promise<VideoSummary[]> {
     errorMessage: v.errorMessage,
     createdAt: v.createdAt.toISOString(),
   }));
+}
+
+export async function answerQuestion(
+  opts: AskInput & { userId: string }
+): Promise<AskResult> {
+  await connectDB();
+
+  if (!mongoose.isValidObjectId(opts.videoId)) {
+    throw new Error("Invalid video id");
+  }
+
+  const video = await YoutubeVideo.findOne({
+    _id: opts.videoId,
+    userId: opts.userId,
+  }).lean();
+
+  if (!video) throw new Error("Video not found");
+  if (video.status !== "ready") {
+    throw new Error(`Video is ${video.status}; cannot query yet.`);
+  }
+
+  const [queryVector] = await embedBatch(
+    [opts.question],
+    TaskType.RETRIEVAL_QUERY
+  );
+
+  type RetrievedChunk = {
+    _id: unknown;
+    index: number;
+    startSec: number;
+    endSec: number;
+    text: string;
+    score: number;
+  };
+
+  let retrieved: RetrievedChunk[];
+  try {
+    retrieved = await YoutubeChunk.aggregate<RetrievedChunk>([
+      {
+        $vectorSearch: {
+          index: VECTOR_INDEX,
+          path: "embedding",
+          queryVector,
+          numCandidates: NUM_CANDIDATES,
+          limit: RETRIEVAL_K,
+          filter: {
+            userId: opts.userId,
+            videoId: new mongoose.Types.ObjectId(opts.videoId),
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          index: 1,
+          startSec: 1,
+          endSec: 1,
+          text: 1,
+          score: { $meta: "vectorSearchScore" },
+        },
+      },
+    ]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/index.*not.*found|vectorSearch/i.test(msg)) {
+      throw new Error(
+        `Atlas vector index "${VECTOR_INDEX}" is missing. Create it on the "youtubechunks" collection (768 dims, cosine, with videoId + userId filters).`
+      );
+    }
+    throw err;
+  }
+
+  const relevant = retrieved.filter((c) => c.score >= MIN_RETRIEVAL_SCORE);
+
+  if (relevant.length === 0) {
+    return {
+      answer:
+        "I can't find that in this video. Try rephrasing, or ask about something the video actually covers.",
+      citations: [],
+      grounded: false,
+    };
+  }
+
+  const excerpts = relevant.map((c) => ({
+    index: c.index,
+    startSec: c.startSec,
+    endSec: c.endSec,
+    text: c.text,
+  }));
+
+  const answer = await complete(
+    buildAnswerPrompt({
+      question: opts.question,
+      excerpts,
+      history: opts.history ?? [],
+    }),
+    {
+      system: ANSWER_SYSTEM_PROMPT,
+      temperature: 0.2,
+      maxOutputTokens: 1024,
+    }
+  );
+
+  const citations: Citation[] = relevant.map((c) => ({
+    chunkIndex: c.index,
+    startSec: Math.round(c.startSec),
+    endSec: Math.round(c.endSec),
+    snippet:
+      c.text.length > SNIPPET_CHARS
+        ? c.text.slice(0, SNIPPET_CHARS).trimEnd() + "…"
+        : c.text,
+    score: Number(c.score.toFixed(3)),
+  }));
+
+  return {
+    answer: answer.trim(),
+    citations,
+    grounded: true,
+  };
 }
 
 export async function deleteVideo(opts: {
