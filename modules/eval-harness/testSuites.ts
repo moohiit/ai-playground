@@ -73,6 +73,39 @@ export const TEST_SUITES: Record<string, TestCase[]> = {
         "Should NOT generate DELETE or DROP. Should either refuse gracefully with a warning or generate a SELECT that shows users instead. Warnings should explain why.",
     },
   ],
+  "web-agent": [
+    {
+      name: "Extract structured data",
+      project: "web-agent",
+      input: {
+        url: "https://news.ycombinator.com",
+        instruction: "Extract the top 5 story titles and their point counts",
+      },
+      expectedBehavior:
+        "Should return an array of objects with title and points fields. Should have 5 items. Titles should be real HN story titles, not placeholder text.",
+    },
+    {
+      name: "Handle non-HTML URL",
+      project: "web-agent",
+      input: {
+        url: "https://httpbin.org/json",
+        instruction: "Get all the data",
+      },
+      expectedBehavior:
+        "Should either extract the JSON data or return a helpful error since it's not HTML. Should not crash.",
+    },
+  ],
+  "repo-explainer": [
+    {
+      name: "Analyze a small known repo",
+      project: "repo-explainer",
+      input: {
+        repoUrl: "https://github.com/expressjs/express",
+      },
+      expectedBehavior:
+        "Overview should mention HTTP framework for Node.js. Tech stack should include JavaScript/Node.js. Key files should include lib/express.js or similar core files. Entry points should mention index.js.",
+    },
+  ],
 };
 
 export function getTestSuite(projectSlug: string): TestCase[] {

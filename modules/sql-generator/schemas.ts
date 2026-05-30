@@ -1,10 +1,19 @@
 import { z } from "zod";
 import { SchemaType, type Schema } from "@google/generative-ai";
 
-export const generateInputSchema = z.object({
-  schema: z.string().min(20, "Schema is too short").max(10_000),
-  question: z.string().min(3, "Question is too short").max(500),
-});
+export const generateInputSchema = z
+  .object({
+    schema: z
+      .string()
+      .min(20, "Schema is too short")
+      .max(10_000)
+      .refine(
+        (s) => /CREATE\s+TABLE/i.test(s),
+        "Schema must contain at least one CREATE TABLE statement"
+      ),
+    question: z.string().min(3, "Question is too short").max(500),
+  })
+  .strict();
 
 export type GenerateInput = z.infer<typeof generateInputSchema>;
 
@@ -38,10 +47,12 @@ export const geminiSqlSchema: Schema = {
   required: ["sql", "explanation", "warnings"],
 };
 
-export const executeInputSchema = z.object({
-  ddl: z.string().min(20).max(10_000),
-  seed: z.string().max(50_000).default(""),
-  query: z.string().min(5).max(5_000),
-});
+export const executeInputSchema = z
+  .object({
+    ddl: z.string().min(20).max(10_000),
+    seed: z.string().max(50_000).default(""),
+    query: z.string().min(5).max(5_000),
+  })
+  .strict();
 
 export type ExecuteInput = z.infer<typeof executeInputSchema>;

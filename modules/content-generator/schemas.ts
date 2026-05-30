@@ -17,14 +17,16 @@ export const LENGTH_WORDS: Record<(typeof LENGTHS)[number], number> = {
   long: 1500,
 };
 
-export const briefInputSchema = z.object({
-  topic: z.string().min(5, "Topic is too short").max(300),
-  audience: z.string().max(200).optional().default(""),
-  tone: z.enum(TONES).default("professional"),
-  length: z.enum(LENGTHS).default("medium"),
-  keywords: z.array(z.string().min(1).max(60)).max(10).optional().default([]),
-  notes: z.string().max(2_000).optional().default(""),
-});
+export const briefInputSchema = z
+  .object({
+    topic: z.string().min(5, "Topic is too short").max(300),
+    audience: z.string().max(200).optional().default(""),
+    tone: z.enum(TONES).default("professional"),
+    length: z.enum(LENGTHS).default("medium"),
+    keywords: z.array(z.string().min(1).max(60)).max(10).optional().default([]),
+    notes: z.string().max(2_000).optional().default(""),
+  })
+  .strict();
 
 export type BriefInput = z.infer<typeof briefInputSchema>;
 

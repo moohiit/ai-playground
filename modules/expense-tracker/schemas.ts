@@ -14,54 +14,62 @@ export const CATEGORIES = [
   "Other",
 ] as const;
 
-export const createGroupSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).default(""),
-  memberEmails: z
-    .array(z.string().email())
-    .min(1, "Add at least 1 other member by email"),
-});
+export const createGroupSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    description: z.string().max(500).default(""),
+    memberEmails: z
+      .array(z.string().email())
+      .min(1, "Add at least 1 other member by email"),
+  })
+  .strict();
 
 export type CreateGroupInput = z.infer<typeof createGroupSchema>;
 
-export const updateGroupSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().max(500).optional(),
-});
+export const updateGroupSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    description: z.string().max(500).optional(),
+  })
+  .strict();
 
-export const addMemberSchema = z.object({
-  email: z.string().email(),
-});
+export const addMemberSchema = z
+  .object({
+    email: z.string().email(),
+  })
+  .strict();
 
-export const createExpenseSchema = z.object({
-  type: z.enum(["personal", "group"]),
-  groupId: z.string().optional(),
-  paidBy: z.object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-  }),
-  amount: z.number().positive("Amount must be positive"),
-  description: z.string().min(1).max(500),
-  category: z.enum(CATEGORIES),
-  date: z.string().refine((d) => !isNaN(Date.parse(d)), "Invalid date"),
-  splitAmong: z
-    .array(
-      z.object({
-        memberId: z.string().min(1),
-        name: z.string().min(1),
-      })
-    )
-    .optional(),
-  items: z
-    .array(
-      z.object({
-        name: z.string(),
-        quantity: z.number().default(1),
-        price: z.number(),
-      })
-    )
-    .optional(),
-});
+export const createExpenseSchema = z
+  .object({
+    type: z.enum(["personal", "group"]),
+    groupId: z.string().optional(),
+    paidBy: z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+    }),
+    amount: z.number().positive("Amount must be positive"),
+    description: z.string().min(1).max(500),
+    category: z.enum(CATEGORIES),
+    date: z.string().refine((d) => !isNaN(Date.parse(d)), "Invalid date"),
+    splitAmong: z
+      .array(
+        z.object({
+          memberId: z.string().min(1),
+          name: z.string().min(1),
+        })
+      )
+      .optional(),
+    items: z
+      .array(
+        z.object({
+          name: z.string(),
+          quantity: z.number().default(1),
+          price: z.number(),
+        })
+      )
+      .optional(),
+  })
+  .strict();
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 

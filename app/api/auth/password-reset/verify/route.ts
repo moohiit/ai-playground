@@ -18,7 +18,7 @@ const schema = z.object({
     .string()
     .min(6, "Password must be at least 6 characters")
     .max(200),
-});
+}).strict();
 
 export async function POST(req: Request) {
   try {
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     user.passwordResetOtpHash = undefined;
     user.passwordResetOtpExpiresAt = undefined;
     user.passwordResetOtpAttempts = 0;
-    user.emailVerified = true;
+    if (user.emailVerified !== true) user.emailVerified = true;
     await user.save();
 
     const jwt = signToken({

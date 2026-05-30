@@ -14,7 +14,7 @@ const schema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email(),
   password: z.string().min(6, "Password must be at least 6 characters"),
-});
+}).strict();
 
 export async function POST(req: Request) {
   try {

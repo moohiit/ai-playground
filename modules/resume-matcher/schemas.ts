@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { SchemaType, type Schema } from "@google/generative-ai";
 
-export const analyzeInputSchema = z.object({
-  resumeText: z.string().min(50, "Resume text is too short").max(20_000),
-  jdText: z.string().min(30, "Job description is too short").max(10_000),
-});
+export const analyzeInputSchema = z
+  .object({
+    resumeText: z.string().min(50, "Resume text is too short").max(20_000),
+    jdText: z.string().min(30, "Job description is too short").max(10_000),
+  })
+  .strict();
 
 export type AnalyzeInput = z.infer<typeof analyzeInputSchema>;
 

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   token: z.string().min(10),
-});
+}).strict();
 
 export async function POST(req: Request) {
   try {

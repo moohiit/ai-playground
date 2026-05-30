@@ -83,7 +83,10 @@ export async function ingestPdf(opts: {
         text: c.text,
         embedding: vectors[j],
       }));
-      await PdfChunk.insertMany(rows, { ordered: false });
+      const inserted = await PdfChunk.insertMany(rows, { ordered: false });
+      if (inserted.length < rows.length) {
+        console.warn(`[pdf-chat] Only ${inserted.length}/${rows.length} chunks inserted`);
+      }
     }
 
     doc.pageCount = pages.length;
@@ -195,7 +198,8 @@ export async function answerQuestion(
         `Atlas vector index "${VECTOR_INDEX}" is missing. Create it on the "pdfchunks" collection (768 dims, cosine, with documentId + userId filters).`
       );
     }
-    throw err;
+    console.error("[pdf-chat] vector search failed:", err);
+    throw new Error("Vector search failed. Please try again or re-upload the PDF.");
   }
 
   console.log(

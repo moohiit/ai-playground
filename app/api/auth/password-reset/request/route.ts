@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { User } from "@/models/User";
 import { hashPassword } from "@/lib/auth";
 import { handleRouteError } from "@/lib/apiError";
-import { rateLimit } from "@/lib/rateLimit";
+import { rateLimit, getClientKey } from "@/lib/rateLimit";
 import { expiryFromNow, generateOtp, TOKEN_TTL } from "@/lib/tokens";
 import { sendPasswordResetOtpEmail } from "@/lib/emailTemplates";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   email: z.string().email(),
-});
+}).strict();
 
 const GENERIC_OK = {
   ok: true,
@@ -30,7 +30,8 @@ export async function POST(req: Request) {
     }
 
     const email = parsed.data.email.toLowerCase();
-    const limit = rateLimit(`pwreset:${email}`, 3, 60 * 60 * 1000);
+    const clientKey = getClientKey(req);
+    const limit = rateLimit(`pwreset:${clientKey}`, 5, 60 * 60 * 1000);
     if (!limit.allowed) return NextResponse.json(GENERIC_OK);
 
     await connectDB();

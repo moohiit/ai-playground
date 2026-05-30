@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 const schema = z.object({
   email: z.string().email(),
-});
+}).strict();
 
 // Constant positive response — never reveal whether the email exists.
 const GENERIC_OK = {

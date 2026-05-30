@@ -15,7 +15,9 @@ const DEFAULT_VISION_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_EMBED_MODEL = "gemini-embedding-001";
 const DEFAULT_EMBED_DIMS = 768;
 
-const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const API_BASE =
+  process.env.GEMINI_API_BASE ??
+  "https://generativelanguage.googleapis.com/v1beta/models";
 
 type CompleteOptions = {
   system?: string;

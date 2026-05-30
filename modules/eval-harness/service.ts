@@ -1,6 +1,8 @@
 import { complete, completeJSON } from "@/lib/llm";
 import { analyzeResume } from "@/modules/resume-matcher/service";
 import { generateSql } from "@/modules/sql-generator/service";
+import { scrapeUrl } from "@/modules/web-agent/service";
+import { analyzeRepo } from "@/modules/repo-explainer/service";
 import {
   geminiJudgeSchema,
   judgeResultSchema,
@@ -14,6 +16,8 @@ import { getTestSuite, getAvailableProjects } from "./testSuites";
 const PROJECT_RUNNERS: Record<string, (input: any) => Promise<unknown>> = {
   "resume-matcher": (input) => analyzeResume(input),
   "sql-generator": (input) => generateSql(input),
+  "web-agent": (input) => scrapeUrl(input),
+  "repo-explainer": (input) => analyzeRepo(input.repoUrl),
 };
 
 const JUDGE_SYSTEM = `You are an LLM output quality judge. Given a test case (input + expected behavior) and the actual output, evaluate whether the output meets expectations.

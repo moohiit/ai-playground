@@ -1,15 +1,17 @@
 import { z } from "zod";
 import { SchemaType, type Schema } from "@google/generative-ai";
 
-export const repoInputSchema = z.object({
-  repoUrl: z
-    .string()
-    .url()
-    .refine(
-      (u) => /^https:\/\/github\.com\/[^/]+\/[^/]+/.test(u),
-      "Must be a valid GitHub repository URL"
-    ),
-});
+export const repoInputSchema = z
+  .object({
+    repoUrl: z
+      .string()
+      .url()
+      .refine(
+        (u) => /^https:\/\/github\.com\/[^/]+\/[^/]+/.test(u),
+        "Must be a valid GitHub repository URL"
+      ),
+  })
+  .strict();
 
 export type RepoInput = z.infer<typeof repoInputSchema>;
 

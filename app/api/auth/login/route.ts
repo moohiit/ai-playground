@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-});
+}).strict();
 
 export async function POST(req: Request) {
   try {

@@ -8,18 +8,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const schema = z.object({
-  message: z.string().min(1).max(2000),
-  history: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        content: z.string(),
-      })
-    )
-    .max(20)
-    .default([]),
-});
+const schema = z
+  .object({
+    message: z.string().min(1).max(2000),
+    history: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string(),
+        })
+      )
+      .max(20)
+      .default([]),
+  })
+  .strict();
 
 export async function POST(req: Request) {
   const clientKey = getClientKey(req);

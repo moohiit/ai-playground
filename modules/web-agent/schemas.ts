@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { SchemaType, type Schema } from "@google/generative-ai";
 
-export const scrapeInputSchema = z.object({
-  url: z.string().url("Must be a valid URL"),
-  instruction: z.string().min(5, "Describe what data you want").max(500),
-});
+export const scrapeInputSchema = z
+  .object({
+    url: z.string().url("Must be a valid URL"),
+    instruction: z.string().min(5, "Describe what data you want").max(500),
+  })
+  .strict();
 
 export type ScrapeInput = z.infer<typeof scrapeInputSchema>;
 

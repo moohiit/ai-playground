@@ -44,7 +44,10 @@ async function fetchVideoMeta(videoId: string): Promise<VideoMeta> {
     `https://www.youtube.com/watch?v=${videoId}`
   )}&format=json`;
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) {
       throw new Error(`oembed ${res.status}`);
     }

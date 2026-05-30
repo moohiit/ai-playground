@@ -23,20 +23,22 @@ export const documentSummarySchema = z.object({
 
 export type DocumentSummary = z.infer<typeof documentSummarySchema>;
 
-export const askInputSchema = z.object({
-  documentId: z.string().min(1),
-  question: z.string().min(3).max(1_000),
-  history: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        content: z.string(),
-      })
-    )
-    .max(10)
-    .optional()
-    .default([]),
-});
+export const askInputSchema = z
+  .object({
+    documentId: z.string().min(1),
+    question: z.string().min(3).max(1_000),
+    history: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string(),
+        })
+      )
+      .max(10)
+      .optional()
+      .default([]),
+  })
+  .strict();
 
 export type AskInput = z.infer<typeof askInputSchema>;
 
