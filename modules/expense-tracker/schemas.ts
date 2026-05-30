@@ -80,6 +80,7 @@ export type ExpenseFilter = z.infer<typeof expenseFilterSchema>;
 
 export const reportFilterSchema = z.object({
   groupId: z.string().optional(),
+  category: z.string().optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   settled: z.enum(["true", "false", "all"]).optional().default("all"),

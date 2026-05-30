@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
+import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { AddExpenseModal } from "../components/AddExpenseModal";
 
 type Expense = {
@@ -19,8 +20,29 @@ type Expense = {
 };
 
 type ViewMode = "all" | "personal" | "group";
+type RangeKey = "all" | "month" | "30d" | "7d";
 
 const PAGE_SIZE = 25;
+
+const RANGES: { key: RangeKey; label: string }[] = [
+  { key: "all", label: "All time" },
+  { key: "month", label: "This month" },
+  { key: "30d", label: "Last 30d" },
+  { key: "7d", label: "Last 7d" },
+];
+
+function rangeToDateFrom(range: RangeKey): string | null {
+  if (range === "all") return null;
+  const now = new Date();
+  if (range === "month") {
+    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  }
+  const days = range === "7d" ? 7 : 30;
+  const from = new Date(now);
+  from.setDate(from.getDate() - (days - 1));
+  from.setHours(0, 0, 0, 0);
+  return from.toISOString();
+}
 
 export function Dashboard() {
   const { authFetch } = useAuth();
@@ -29,20 +51,28 @@ export function Dashboard() {
   const [totalAmount, setTotalAmount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("all");
+  const [category, setCategory] = useState<string>("");
+  const [range, setRange] = useState<RangeKey>("all");
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
+    const dateFrom = rangeToDateFrom(range);
+
     const params = new URLSearchParams({
       limit: String(PAGE_SIZE),
       page: String(page),
     });
     if (view !== "all") params.set("type", view);
+    if (category) params.set("category", category);
+    if (dateFrom) params.set("dateFrom", dateFrom);
 
-    const summaryParams = new URLSearchParams();
-    if (view === "group") summaryParams.set("groupId", "");
+    // Keep the Total Expenses card consistent with the active filters.
+    const summaryParams = new URLSearchParams({ scope: view });
+    if (category) summaryParams.set("category", category);
+    if (dateFrom) summaryParams.set("dateFrom", dateFrom);
 
     const [expRes, sumRes] = await Promise.all([
       authFetch(`/api/projects/expense-tracker/expenses?${params}`),
@@ -56,7 +86,7 @@ export function Dashboard() {
     setTotal(expData.total ?? 0);
     setTotalAmount(sumData.totalAmount ?? 0);
     setLoading(false);
-  }, [view, page]);
+  }, [view, category, range, page]);
 
   useEffect(() => {
     fetchExpenses();
@@ -64,7 +94,9 @@ export function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [view]);
+  }, [view, category, range]);
+
+  const hasActiveFilters = view !== "all" || category !== "" || range !== "all";
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this expense?")) return;
@@ -115,21 +147,76 @@ export function Dashboard() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {(["all", "personal", "group"] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            className={cn(
-              "rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-all",
-              view === v
-                ? "border-brand-500/60 bg-brand-500/15 text-brand-500 shadow-[0_0_20px_-5px_rgba(99,102,241,0.5)]"
-                : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:-translate-y-0.5 hover:border-zinc-600 hover:text-zinc-200"
-            )}
-          >
-            {v}
-          </button>
-        ))}
+      <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-3 backdrop-blur-sm sm:p-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+              Type
+            </span>
+            <div className="flex gap-1.5">
+              {(["all", "personal", "group"] as const).map((v) => (
+                <FilterChip
+                  key={v}
+                  active={view === v}
+                  onClick={() => setView(v)}
+                >
+                  {v}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+              When
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {RANGES.map((r) => (
+                <FilterChip
+                  key={r.key}
+                  active={range === r.key}
+                  onClick={() => setRange(r.key)}
+                >
+                  {r.label}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+              Category
+            </span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-medium text-zinc-200 outline-none transition-colors hover:border-zinc-600 focus:border-brand-500/60"
+            >
+              <option value="">All categories</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              onClick={() => {
+                setView("all");
+                setCategory("");
+                setRange("all");
+              }}
+              className="ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -145,7 +232,20 @@ export function Dashboard() {
       ) : expenses.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 backdrop-blur-sm">
+        <>
+          <div className="flex flex-col gap-2 sm:hidden">
+            {expenses.map((e, i) => (
+              <ExpenseCard
+                key={e._id}
+                expense={e}
+                index={i}
+                onEdit={() => setEditingExpense(e)}
+                onDelete={() => handleDelete(e._id)}
+              />
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 backdrop-blur-sm sm:block">
           <table className="w-full text-sm">
             <thead className="bg-zinc-900/80 text-xs">
               <tr>
@@ -228,7 +328,8 @@ export function Dashboard() {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       {!loading && showPagination && (
@@ -292,6 +393,107 @@ function StatCard({
         {value}
       </div>
       {hint && <div className="mt-0.5 text-xs text-zinc-500">{hint}</div>}
+    </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-all",
+        active
+          ? "border-brand-500/60 bg-brand-500/15 text-brand-500 shadow-[0_0_20px_-5px_rgba(99,102,241,0.5)]"
+          : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:-translate-y-0.5 hover:border-zinc-600 hover:text-zinc-200"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ExpenseCard({
+  expense: e,
+  index,
+  onEdit,
+  onDelete,
+}: {
+  expense: Expense;
+  index: number;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const splitNames =
+    e.splitAmong && e.splitAmong.length > 0
+      ? e.splitAmong.map((m) => m.name).join(", ")
+      : null;
+
+  return (
+    <div
+      className="animate-fade-up rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-4 backdrop-blur-sm"
+      style={{ animationDelay: `${index * 25}ms` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate font-medium text-zinc-100">
+            {e.description}
+          </div>
+          <div className="mt-0.5 text-xs text-zinc-500">
+            {new Date(e.date).toLocaleDateString()} · {e.paidBy.name}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="font-mono tabular-nums text-base font-semibold text-zinc-100">
+            ₹{e.amount.toFixed(2)}
+          </div>
+          <span
+            className={cn(
+              "mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ring-1",
+              e.type === "group"
+                ? "bg-brand-500/10 text-brand-500 ring-brand-500/30"
+                : "bg-zinc-800/60 text-zinc-400 ring-zinc-700"
+            )}
+          >
+            {e.type}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[11px] text-zinc-300">
+          {e.category}
+        </span>
+        {splitNames && (
+          <span className="truncate text-[11px] text-zinc-500">
+            Split: {splitNames}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-3 flex justify-end gap-4 border-t border-zinc-800/60 pt-3">
+        <button
+          onClick={onEdit}
+          className="text-xs font-medium text-zinc-400 transition-colors hover:text-brand-400"
+        >
+          Edit
+        </button>
+        <button
+          onClick={onDelete}
+          className="text-xs font-medium text-zinc-400 transition-colors hover:text-red-400"
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }

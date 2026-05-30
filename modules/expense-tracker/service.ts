@@ -386,6 +386,8 @@ export async function getSummary(
     }
   }
 
+  if (filter.category) match.category = filter.category;
+
   if (filter.dateFrom || filter.dateTo) {
     match.date = {};
     if (filter.dateFrom)
