@@ -55,7 +55,7 @@ export const projects: ProjectCardProps[] = [
       "Point it at a public repo. Get a plain-English tour of the architecture, key files, and how data flows through the code.",
     tags: ["Code", "Tree-sitter", "RAG"],
     href: "/projects/repo-explainer",
-    status: "coming-soon",
+    status: "live",
   },
   {
     title: "Web Scraping Agent",
@@ -63,7 +63,7 @@ export const projects: ProjectCardProps[] = [
       "Describe the data you want in plain English. The agent browses the page with tool use and returns clean structured JSON.",
     tags: ["Agents", "Tool Use", "Playwright"],
     href: "/projects/web-agent",
-    status: "coming-soon",
+    status: "live",
   },
   {
     title: "Voice Assistant",
@@ -71,7 +71,7 @@ export const projects: ProjectCardProps[] = [
       "Talk to a Gemini-powered assistant in the browser. Whisper for speech-to-text, Gemini for reasoning, TTS for the reply.",
     tags: ["Voice", "Whisper", "TTS"],
     href: "/projects/voice-assistant",
-    status: "coming-soon",
+    status: "live",
   },
   {
     title: "LLM Eval Harness",
@@ -79,6 +79,6 @@ export const projects: ProjectCardProps[] = [
       "LLM-as-judge evaluation framework running test suites across every project, with pass-rate tracking and regression alerts.",
     tags: ["Evals", "LLM-as-judge", "Quality"],
     href: "/projects/eval-harness",
-    status: "coming-soon",
+    status: "live",
   },
 ];

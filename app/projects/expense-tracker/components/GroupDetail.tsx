@@ -48,6 +48,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expenseTotal, setExpenseTotal] = useState(0);
+  const [activeAmount, setActiveAmount] = useState(0);
   const [page, setPage] = useState(1);
   const [settlementHistory, setSettlementHistory] = useState<SettlementRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,23 +61,26 @@ export function GroupDetail({ groupId, onBack }: Props) {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [gRes, bRes, eRes] = await Promise.all([
+    const [gRes, bRes, eRes, sRes] = await Promise.all([
       authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
       authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
       authFetch(
         `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=${PAGE_SIZE}&page=${page}&settled=false`
       ),
+      authFetch(`/api/projects/expense-tracker/reports/summary?groupId=${groupId}`),
     ]);
-    const [gData, bData, eData] = await Promise.all([
+    const [gData, bData, eData, sData] = await Promise.all([
       gRes.json(),
       bRes.json(),
       eRes.json(),
+      sRes.json(),
     ]);
     setGroup(gData.group ?? null);
     setBalances(bData.balances ?? []);
     setSettlements(bData.settlements ?? []);
     setExpenses(eData.expenses ?? []);
     setExpenseTotal(eData.total ?? 0);
+    setActiveAmount(sData.totalAmount ?? 0);
     setLoading(false);
   }, [groupId, page]);
 
@@ -254,11 +258,16 @@ export function GroupDetail({ groupId, onBack }: Props) {
                     {expenseTotal}
                   </span>
                 </h3>
-                {showPagination && (
-                  <span className="text-xs text-zinc-500">
-                    {rangeStart}–{rangeEnd} of {expenseTotal}
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
+                    Total: ₹{activeAmount.toFixed(2)}
                   </span>
-                )}
+                  {showPagination && (
+                    <span className="text-xs text-zinc-500">
+                      {rangeStart}–{rangeEnd} of {expenseTotal}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {expenses.length === 0 ? (
@@ -557,38 +566,116 @@ function SettledHistoryView({ history }: { history: SettlementRecord[] }) {
             </span>
           </div>
 
-          <div className="mb-3 text-xs text-zinc-500">
-            Total:{" "}
-            <span className="font-mono text-zinc-300">
-              ₹
-              {record.expenses
-                .reduce((sum, e) => sum + e.amount, 0)
-                .toFixed(2)}
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            {record.expenses.map((e) => (
-              <div
-                key={e._id}
-                className="flex items-center justify-between rounded-md border border-zinc-800/60 bg-zinc-950/40 px-3 py-2 text-xs"
-              >
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-zinc-200">{e.description}</span>
-                  <span className="truncate text-zinc-600">
-                    Paid by {e.paidBy.name} ·{" "}
-                    {new Date(e.date).toLocaleDateString()} ·{" "}
-                    {e.splitAmong.map((m) => m.name).join(", ")}
-                  </span>
-                </div>
-                <span className="font-mono tabular-nums text-zinc-300">
-                  ₹{e.amount.toFixed(2)}
-                </span>
-              </div>
-            ))}
-          </div>
+          <SettlementSummary expenses={record.expenses} />
         </section>
       ))}
+    </div>
+  );
+}
+
+function SettlementSummary({ expenses }: { expenses: Expense[] }) {
+  const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+  const members = new Map<string, { name: string; paid: number; share: number }>();
+  for (const e of expenses) {
+    const payerId = e.paidBy?.id ?? e.paidBy?.name;
+    if (!members.has(payerId)) {
+      members.set(payerId, { name: e.paidBy.name, paid: 0, share: 0 });
+    }
+    members.get(payerId)!.paid += e.amount;
+
+    for (const s of e.splits ?? []) {
+      if (!members.has(s.memberId)) {
+        members.set(s.memberId, { name: s.name, paid: 0, share: 0 });
+      }
+      members.get(s.memberId)!.share += s.amount;
+    }
+  }
+
+  const sorted = Array.from(members.values()).sort(
+    (a, b) => b.paid - b.share - (a.paid - a.share)
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-xs text-zinc-500">
+        Total:{" "}
+        <span className="font-mono font-semibold text-zinc-200">
+          ₹{total.toFixed(2)}
+        </span>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-zinc-800/60">
+        <table className="w-full text-xs">
+          <thead className="bg-zinc-900/80">
+            <tr>
+              <th className="px-3 py-2 text-left font-semibold text-zinc-500">Member</th>
+              <th className="px-3 py-2 text-right font-semibold text-zinc-500">Paid</th>
+              <th className="px-3 py-2 text-right font-semibold text-zinc-500">Share</th>
+              <th className="px-3 py-2 text-right font-semibold text-zinc-500">Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((m) => {
+              const net = m.paid - m.share;
+              return (
+                <tr key={m.name} className="border-t border-zinc-800/40">
+                  <td className="px-3 py-1.5 text-zinc-200">{m.name}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-300">
+                    ₹{m.paid.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-300">
+                    ₹{m.share.toFixed(2)}
+                  </td>
+                  <td
+                    className={cn(
+                      "px-3 py-1.5 text-right font-mono tabular-nums",
+                      net > 0.01
+                        ? "text-emerald-400"
+                        : net < -0.01
+                        ? "text-red-400"
+                        : "text-zinc-500"
+                    )}
+                  >
+                    {net > 0 ? "+" : ""}₹{net.toFixed(2)}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="border-t border-zinc-700">
+              <td className="px-3 py-1.5 font-semibold text-zinc-200">Total</td>
+              <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold text-zinc-200">
+                ₹{total.toFixed(2)}
+              </td>
+              <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold text-zinc-200">
+                ₹{sorted.reduce((s, m) => s + m.share, 0).toFixed(2)}
+              </td>
+              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-500">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        {expenses.map((e) => (
+          <div
+            key={e._id}
+            className="flex items-center justify-between rounded-md border border-zinc-800/60 bg-zinc-950/40 px-3 py-2 text-xs"
+          >
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-zinc-200">{e.description}</span>
+              <span className="truncate text-zinc-600">
+                Paid by {e.paidBy.name} ·{" "}
+                {new Date(e.date).toLocaleDateString()} ·{" "}
+                {e.splitAmong.map((m) => m.name).join(", ")}
+              </span>
+            </div>
+            <span className="font-mono tabular-nums text-zinc-300">
+              ₹{e.amount.toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

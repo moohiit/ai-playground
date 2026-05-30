@@ -26,6 +26,7 @@ export function Dashboard() {
   const { authFetch } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("all");
   const [page, setPage] = useState(1);
@@ -39,12 +40,21 @@ export function Dashboard() {
       page: String(page),
     });
     if (view !== "all") params.set("type", view);
-    const res = await authFetch(
-      `/api/projects/expense-tracker/expenses?${params}`
-    );
-    const data = await res.json();
-    setExpenses(data.expenses ?? []);
-    setTotal(data.total ?? 0);
+
+    const summaryParams = new URLSearchParams();
+    if (view === "group") summaryParams.set("groupId", "");
+
+    const [expRes, sumRes] = await Promise.all([
+      authFetch(`/api/projects/expense-tracker/expenses?${params}`),
+      authFetch(`/api/projects/expense-tracker/reports/summary?${summaryParams}`),
+    ]);
+    const [expData, sumData] = await Promise.all([
+      expRes.json(),
+      sumRes.json(),
+    ]);
+    setExpenses(expData.expenses ?? []);
+    setTotal(expData.total ?? 0);
+    setTotalAmount(sumData.totalAmount ?? 0);
     setLoading(false);
   }, [view, page]);
 
@@ -69,19 +79,13 @@ export function Dashboard() {
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(total, page * PAGE_SIZE);
 
-  const totalAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
-
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
-          label="Showing"
+          label="Total Expenses"
           value={`₹${totalAmount.toFixed(2)}`}
-          hint={
-            total === 0
-              ? "0 entries"
-              : `${rangeStart}–${rangeEnd} of ${total} entries`
-          }
+          hint={`${total} entries`}
           accent="from-brand-500/40"
         />
         <StatCard
