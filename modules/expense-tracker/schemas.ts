@@ -42,7 +42,7 @@ export const createExpenseSchema = z.object({
   }),
   amount: z.number().positive("Amount must be positive"),
   description: z.string().min(1).max(500),
-  category: z.string().min(1),
+  category: z.enum(CATEGORIES),
   date: z.string().refine((d) => !isNaN(Date.parse(d)), "Invalid date"),
   splitAmong: z
     .array(

@@ -1,4 +1,6 @@
 import { complete, completeJSON } from "@/lib/llm";
+import { analyzeResume } from "@/modules/resume-matcher/service";
+import { generateSql } from "@/modules/sql-generator/service";
 import {
   geminiJudgeSchema,
   judgeResultSchema,
@@ -8,6 +10,11 @@ import {
   type SuiteResult,
 } from "./schemas";
 import { getTestSuite, getAvailableProjects } from "./testSuites";
+
+const PROJECT_RUNNERS: Record<string, (input: any) => Promise<unknown>> = {
+  "resume-matcher": (input) => analyzeResume(input),
+  "sql-generator": (input) => generateSql(input),
+};
 
 const JUDGE_SYSTEM = `You are an LLM output quality judge. Given a test case (input + expected behavior) and the actual output, evaluate whether the output meets expectations.
 
@@ -24,17 +31,11 @@ async function runTestCase(testCase: TestCase): Promise<EvalResult> {
   const started = Date.now();
 
   try {
-    let output: unknown;
-
-    if (testCase.project === "resume-matcher") {
-      const { analyzeResume } = await import("@/modules/resume-matcher/service");
-      output = await analyzeResume(testCase.input as any);
-    } else if (testCase.project === "sql-generator") {
-      const { generateSql } = await import("@/modules/sql-generator/service");
-      output = await generateSql(testCase.input as any);
-    } else {
+    const runner = PROJECT_RUNNERS[testCase.project];
+    if (!runner) {
       throw new Error(`No eval runner for project: ${testCase.project}`);
     }
+    const output = await runner(testCase.input);
 
     const latencyMs = Date.now() - started;
 

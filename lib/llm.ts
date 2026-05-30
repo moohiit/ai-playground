@@ -48,9 +48,9 @@ async function callGeminiRaw(
     throw new Error(`Gemini returned no content (finishReason: ${reason})`);
   }
 
-  if (data.usageMetadata) {
+  if (data.usageMetadata && process.env.NODE_ENV === "development") {
     console.log(
-      `[gemini] tokens — prompt: ${data.usageMetadata.promptTokenCount}, ` +
+      `[gemini] prompt: ${data.usageMetadata.promptTokenCount}, ` +
         `thinking: ${data.usageMetadata.thoughtsTokenCount ?? 0}, ` +
         `output: ${data.usageMetadata.candidatesTokenCount}, ` +
         `finish: ${candidate.finishReason}`

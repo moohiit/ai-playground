@@ -4,6 +4,13 @@ import type { JWTPayload } from "@/lib/auth";
 import { User } from "@/models/User";
 import mongoose from "mongoose";
 import { Group, Expense, type ExpenseDoc } from "./models";
+
+function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
+  if (!mongoose.isValidObjectId(id)) {
+    throw new Error(`Invalid ${label}: ${id}`);
+  }
+  return new mongoose.Types.ObjectId(id);
+}
 import {
   type CreateGroupInput,
   type CreateExpenseInput,
@@ -304,7 +311,7 @@ export async function updateExpense(
   if (input.date !== undefined) expense.date = new Date(input.date);
   if (input.paidBy !== undefined) expense.paidBy = input.paidBy;
   if (input.type !== undefined) expense.type = input.type;
-  if (input.groupId !== undefined) expense.groupId = input.groupId ? new mongoose.Types.ObjectId(input.groupId) : null;
+  if (input.groupId !== undefined) expense.groupId = input.groupId ? toObjectId(input.groupId, "groupId") : null;
 
   await expense.save();
   return expense.toObject();
@@ -341,7 +348,13 @@ export async function scanReceipt(
     responseSchema: geminiReceiptSchema,
   });
 
-  const parsed = receiptResultSchema.safeParse(JSON.parse(raw));
+  let jsonData: unknown;
+  try {
+    jsonData = JSON.parse(raw);
+  } catch {
+    throw new Error("Failed to parse receipt — AI returned invalid JSON. Try a clearer image.");
+  }
+  const parsed = receiptResultSchema.safeParse(jsonData);
   if (!parsed.success) {
     throw new Error(`Failed to parse receipt: ${parsed.error.message}`);
   }
@@ -600,7 +613,7 @@ export async function getGroupBalances(
     throw new Error("Group not found or access denied");
   }
 
-  const oid = new mongoose.Types.ObjectId(groupId);
+  const oid = toObjectId(groupId, "groupId");
   const expenses = await Expense.find({
     groupId: oid,
     type: "group",
@@ -620,38 +633,32 @@ export async function settleGroup(groupId: string, auth: JWTPayload) {
     throw new Error("Group not found or access denied");
   }
 
-  const oid = new mongoose.Types.ObjectId(groupId);
+  const oid = toObjectId(groupId, "groupId");
+  const settlementId = `settle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date();
+
   const unsettledFilter = {
     groupId: oid,
     type: "group",
     $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
   };
 
-  const unsettled = await Expense.find(unsettledFilter).lean();
-
-  console.log("[settle] groupId:", groupId, "oid:", oid.toString(), "unsettled count:", unsettled.length);
-
-  if (unsettled.length === 0) {
-    throw new Error("No unsettled expenses in this group");
-  }
-
-  const settlementId = `settle_${Date.now()}`;
-  const now = new Date();
-
-  const balances = calculateBalances(unsettled as ExpenseDoc[]);
-  const settlementPlan = calculateSettlements(balances);
-
   const updateResult = await Expense.updateMany(unsettledFilter, {
     $set: { settledAt: now, settlementId },
   });
 
-  console.log("[settle] updateMany result:", JSON.stringify(updateResult));
+  if (updateResult.modifiedCount === 0) {
+    throw new Error("No unsettled expenses in this group");
+  }
+
+  const settled = await Expense.find({ settlementId }).lean();
+  const balances = calculateBalances(settled as ExpenseDoc[]);
+  const settlementPlan = calculateSettlements(balances);
 
   return {
     settlementId,
     settledAt: now,
-    expenseCount: unsettled.length,
-    updatedCount: updateResult.modifiedCount,
+    expenseCount: updateResult.modifiedCount,
     balances,
     settlements: settlementPlan,
   };
@@ -665,7 +672,7 @@ export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
     throw new Error("Group not found or access denied");
   }
 
-  const oid = new mongoose.Types.ObjectId(groupId);
+  const oid = toObjectId(groupId, "groupId");
 
   const settled = await Expense.find({
     groupId: oid,

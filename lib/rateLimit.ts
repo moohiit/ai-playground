@@ -35,7 +35,14 @@ export function rateLimit(
 }
 
 export function getClientKey(req: Request): string {
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+
   const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return req.headers.get("x-real-ip") ?? "anonymous";
+  if (fwd) {
+    const parts = fwd.split(",").map((s) => s.trim());
+    return parts[parts.length - 1] || "anonymous";
+  }
+
+  return "anonymous";
 }

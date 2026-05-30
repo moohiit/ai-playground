@@ -47,10 +47,14 @@ async function githubFetch(url: string): Promise<any> {
   const token = process.env.GITHUB_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(url, { headers });
+  const res = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(20_000),
+  });
   if (!res.ok) {
     if (res.status === 403) throw new Error("GitHub API rate limit exceeded. Try again later.");
     if (res.status === 404) throw new Error("Repository not found or is private.");
+    if (res.status === 422) throw new Error("Repository is too large or has no default branch.");
     throw new Error(`GitHub API error: ${res.status}`);
   }
   return res.json();
