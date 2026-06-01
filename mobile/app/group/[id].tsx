@@ -23,8 +23,9 @@ import type {
   Group,
   Settlement,
   SettlementRecord,
-  Summary,
 } from "../../lib/types";
+import { AppBackground } from "../../components/ui";
+import { GroupReportView } from "../../components/GroupReportView";
 
 type Tab = "active" | "settled" | "report";
 
@@ -40,7 +41,6 @@ export default function GroupDetailScreen() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [activeTotal, setActiveTotal] = useState(0);
   const [history, setHistory] = useState<SettlementRecord[]>([]);
-  const [report, setReport] = useState<Summary | null>(null);
   const [tab, setTab] = useState<Tab>("active");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -50,7 +50,7 @@ export default function GroupDetailScreen() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [gRes, bRes, eRes, sRes, hRes, rRes] = await Promise.all([
+      const [gRes, bRes, eRes, sRes, hRes] = await Promise.all([
         authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
         authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
         authFetch(
@@ -60,10 +60,9 @@ export default function GroupDetailScreen() {
           `/api/projects/expense-tracker/reports/summary?groupId=${groupId}&settled=false`
         ),
         authFetch(`/api/projects/expense-tracker/groups/${groupId}/history`),
-        authFetch(`/api/projects/expense-tracker/reports/summary?groupId=${groupId}`),
       ]);
-      const [g, b, e, s, h, r] = await Promise.all([
-        gRes.json(), bRes.json(), eRes.json(), sRes.json(), hRes.json(), rRes.json(),
+      const [g, b, e, s, h] = await Promise.all([
+        gRes.json(), bRes.json(), eRes.json(), sRes.json(), hRes.json(),
       ]);
       setGroup(g.group ?? null);
       setBalances(b.balances ?? []);
@@ -71,7 +70,6 @@ export default function GroupDetailScreen() {
       setExpenses(e.expenses ?? []);
       setActiveTotal(s.totalAmount ?? 0);
       setHistory(h.history ?? []);
-      setReport(r);
     } catch {
       // keep last good state
     }
@@ -195,7 +193,8 @@ export default function GroupDetailScreen() {
   if (!user) return <Redirect href="/login" />;
 
   return (
-    <SafeAreaView className="flex-1 bg-[#05060a]" edges={["top"]}>
+    <SafeAreaView className="flex-1" edges={["top"]}>
+      <AppBackground />
       <View className="flex-row items-center justify-between px-5 py-3">
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Text className="text-sm text-zinc-400">← Groups</Text>
@@ -332,6 +331,48 @@ export default function GroupDetailScreen() {
                     </View>
                   ))}
                 </View>
+
+                {/* Calculation details */}
+                <View className="mt-4 border-t border-amber-500/20 pt-3">
+                  <Text className="mb-2 text-[11px] uppercase tracking-wider text-amber-300/80">
+                    How it's calculated
+                  </Text>
+                  <View className="flex-row border-b border-white/10 pb-1" style={{ gap: 8 }}>
+                    <Text style={{ flex: 1 }} className="text-[10px] uppercase text-zinc-500">Member</Text>
+                    <Text style={{ width: 58 }} className="text-right text-[10px] uppercase text-zinc-500">Paid</Text>
+                    <Text style={{ width: 58 }} className="text-right text-[10px] uppercase text-zinc-500">Share</Text>
+                    <Text style={{ width: 66 }} className="text-right text-[10px] uppercase text-zinc-500">Net</Text>
+                  </View>
+                  {balances.map((b) => (
+                    <View key={b.memberId} className="flex-row border-b border-white/5 py-1.5" style={{ gap: 8 }}>
+                      <Text style={{ flex: 1 }} className="text-xs text-zinc-200" numberOfLines={1}>
+                        {b.name}
+                      </Text>
+                      <Text style={{ width: 58 }} className="text-right text-[11px] text-zinc-300">
+                        ₹{b.totalPaid.toFixed(2)}
+                      </Text>
+                      <Text style={{ width: 58 }} className="text-right text-[11px] text-zinc-300">
+                        ₹{b.totalOwed.toFixed(2)}
+                      </Text>
+                      <Text
+                        style={{ width: 66 }}
+                        className={`text-right text-[11px] ${
+                          b.netBalance > 0.01
+                            ? "text-emerald-400"
+                            : b.netBalance < -0.01
+                            ? "text-red-400"
+                            : "text-zinc-500"
+                        }`}
+                      >
+                        {b.netBalance > 0 ? "+" : ""}₹{b.netBalance.toFixed(2)}
+                      </Text>
+                    </View>
+                  ))}
+                  <Text className="mt-2 text-[10px] leading-4 text-zinc-500">
+                    Net = Paid − Share. Positive → owed to them; negative → they
+                    owe. The plan above settles everyone with the fewest transfers.
+                  </Text>
+                </View>
               </View>
             )}
 
@@ -367,6 +408,11 @@ export default function GroupDetailScreen() {
                         {new Date(e.date).toLocaleDateString()} · split{" "}
                         {e.splitAmong?.length ?? 0} ways
                       </Text>
+                      {e.splitAmong && e.splitAmong.length > 0 && (
+                        <Text className="mt-0.5 text-[11px] text-zinc-600" numberOfLines={2}>
+                          Split: {e.splitAmong.map((m) => m.name).join(", ")}
+                        </Text>
+                      )}
                     </View>
                     <Text className="text-base font-semibold text-zinc-100">
                       ₹{e.amount.toFixed(2)}
@@ -407,79 +453,125 @@ export default function GroupDetailScreen() {
               <Text className="text-sm text-zinc-400">No settlement history yet.</Text>
             </View>
           ) : (
-            history.map((rec) => {
-              const total = rec.expenses.reduce((s, e) => s + e.amount, 0);
-              return (
-                <View
-                  key={rec.settlementId}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
-                >
-                  <View className="mb-2 flex-row items-center justify-between">
-                    <Text className="text-sm font-semibold text-zinc-100">
-                      {new Date(rec.settledAt).toLocaleDateString()}
-                    </Text>
-                    <Text className="text-xs text-emerald-400">
-                      {rec.expenses.length} expenses · ₹{total.toFixed(2)}
-                    </Text>
-                  </View>
-                  <View className="gap-1.5">
-                    {rec.expenses.map((e) => (
-                      <View key={e._id} className="flex-row justify-between">
-                        <Text className="flex-1 text-xs text-zinc-400" numberOfLines={1}>
-                          {e.description}
-                        </Text>
-                        <Text className="text-xs text-zinc-300">
-                          ₹{e.amount.toFixed(2)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              );
-            })
+            history.map((rec) => (
+              <SettlementCard key={rec.settlementId} record={rec} />
+            ))
           )
         ) : (
-          // Report
-          !report || report.totalCount === 0 ? (
-            <View className="items-center rounded-2xl border border-white/10 bg-white/[0.03] py-12">
-              <Text className="text-sm text-zinc-400">No data yet.</Text>
-            </View>
-          ) : (
-            <>
-              <View className="flex-row flex-wrap gap-3">
-                <ReportStat label="All-time total" value={`₹${report.totalAmount.toFixed(2)}`} />
-                <ReportStat label="My share" value={`₹${report.myShare.toFixed(2)}`} />
-                <ReportStat label="Expenses" value={String(report.totalCount)} />
-                <ReportStat label="Avg / txn" value={`₹${report.averagePerTransaction.toFixed(2)}`} />
-              </View>
-              {report.byCategory.length > 0 && (
-                <View className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <Text className="mb-3 text-sm font-semibold text-zinc-100">By category</Text>
-                  <View className="gap-2">
-                    {report.byCategory.map((c) => (
-                      <View key={c.category} className="flex-row justify-between">
-                        <Text className="text-xs text-zinc-400">{c.category}</Text>
-                        <Text className="text-xs font-medium text-zinc-200">
-                          ₹{c.total.toFixed(2)}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </>
-          )
+          <GroupReportView groupId={groupId} groupName={group?.name ?? "Group"} />
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function ReportStat({ label, value }: { label: string; value: string }) {
+/** Per-member Paid / Share / Net for a settled batch (mirrors the web summary). */
+function settlementMembers(expenses: Expense[]) {
+  const map = new Map<string, { name: string; paid: number; share: number }>();
+  for (const e of expenses) {
+    const pid = e.paidBy?.id ?? e.paidBy?.name ?? "?";
+    if (!map.has(pid)) map.set(pid, { name: e.paidBy?.name ?? "-", paid: 0, share: 0 });
+    map.get(pid)!.paid += e.amount;
+    for (const s of e.splits ?? []) {
+      if (!map.has(s.memberId)) map.set(s.memberId, { name: s.name, paid: 0, share: 0 });
+      map.get(s.memberId)!.share += s.amount;
+    }
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => b.paid - b.share - (a.paid - a.share)
+  );
+}
+
+function SettlementCard({ record }: { record: SettlementRecord }) {
+  const total = record.expenses.reduce((s, e) => s + e.amount, 0);
+  const members = settlementMembers(record.expenses);
+  const totalShare = members.reduce((s, m) => s + m.share, 0);
+
   return (
-    <View className="min-w-[45%] flex-1 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-      <Text className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</Text>
-      <Text className="mt-1 text-lg font-bold text-zinc-50">{value}</Text>
+    <View className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+      <View className="mb-3 flex-row items-center justify-between">
+        <Text className="text-sm font-semibold text-zinc-100">
+          {new Date(record.settledAt).toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })}
+        </Text>
+        <Text className="text-xs text-emerald-400">
+          {record.expenses.length} expenses · ₹{total.toFixed(2)}
+        </Text>
+      </View>
+
+      {/* Member calculation table */}
+      <View className="overflow-hidden rounded-xl border border-white/10">
+        <View className="flex-row bg-zinc-900/60 px-3 py-2" style={{ gap: 8 }}>
+          <Text style={{ flex: 1 }} className="text-[10px] uppercase text-zinc-500">Member</Text>
+          <Text style={{ width: 58 }} className="text-right text-[10px] uppercase text-zinc-500">Paid</Text>
+          <Text style={{ width: 58 }} className="text-right text-[10px] uppercase text-zinc-500">Share</Text>
+          <Text style={{ width: 64 }} className="text-right text-[10px] uppercase text-zinc-500">Net</Text>
+        </View>
+        {members.map((m) => {
+          const net = m.paid - m.share;
+          return (
+            <View key={m.name} className="flex-row border-t border-white/5 px-3 py-2" style={{ gap: 8 }}>
+              <Text style={{ flex: 1 }} className="text-xs text-zinc-200" numberOfLines={1}>
+                {m.name}
+              </Text>
+              <Text style={{ width: 58 }} className="text-right text-[11px] text-zinc-300">
+                ₹{m.paid.toFixed(2)}
+              </Text>
+              <Text style={{ width: 58 }} className="text-right text-[11px] text-zinc-300">
+                ₹{m.share.toFixed(2)}
+              </Text>
+              <Text
+                style={{ width: 64 }}
+                className={`text-right text-[11px] ${
+                  net > 0.01
+                    ? "text-emerald-400"
+                    : net < -0.01
+                    ? "text-red-400"
+                    : "text-zinc-500"
+                }`}
+              >
+                {net > 0 ? "+" : ""}₹{net.toFixed(2)}
+              </Text>
+            </View>
+          );
+        })}
+        <View className="flex-row border-t border-white/10 bg-zinc-900/40 px-3 py-2" style={{ gap: 8 }}>
+          <Text style={{ flex: 1 }} className="text-xs font-semibold text-zinc-200">Total</Text>
+          <Text style={{ width: 58 }} className="text-right text-[11px] font-semibold text-zinc-200">
+            ₹{total.toFixed(2)}
+          </Text>
+          <Text style={{ width: 58 }} className="text-right text-[11px] font-semibold text-zinc-200">
+            ₹{totalShare.toFixed(2)}
+          </Text>
+          <Text style={{ width: 64 }} className="text-right text-[11px] text-zinc-500">—</Text>
+        </View>
+      </View>
+
+      {/* Expense details */}
+      <View className="mt-3 gap-2">
+        {record.expenses.map((e) => (
+          <View
+            key={e._id}
+            className="flex-row items-start justify-between gap-3 rounded-lg border border-white/5 bg-zinc-950/40 px-3 py-2"
+          >
+            <View className="flex-1">
+              <Text className="text-xs text-zinc-200" numberOfLines={1}>
+                {e.description}
+              </Text>
+              <Text className="mt-0.5 text-[10px] text-zinc-500" numberOfLines={1}>
+                Paid by {e.paidBy.name} · {new Date(e.date).toLocaleDateString()}
+                {e.splitAmong && e.splitAmong.length > 0
+                  ? ` · ${e.splitAmong.map((m) => m.name).join(", ")}`
+                  : ""}
+              </Text>
+            </View>
+            <Text className="text-xs text-zinc-300">₹{e.amount.toFixed(2)}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
