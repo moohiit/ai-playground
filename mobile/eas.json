@@ -16,6 +16,12 @@
       "android": {
         "buildType": "apk"
       },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ai-playground-moohiits-projects.vercel.app"
+      }
+    },
+    "ios-simulator": {
+      "distribution": "internal",
       "ios": {
         "simulator": true
       },
