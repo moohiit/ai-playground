@@ -5,7 +5,7 @@ the web app (`ai-playground`) — there is no separate backend. Auth is the same
 stateless JWT Bearer-token flow; the token is stored in `expo-secure-store`.
 
 ## Stack
-- Expo SDK 52 + `expo-router` (file-based routing)
+- Expo SDK 54 + `expo-router` (file-based routing)
 - NativeWind v4 (Tailwind classes in React Native)
 - `expo-secure-store` for token storage
 
