@@ -181,6 +181,17 @@ export default function LoginScreen() {
                       loading={loading}
                     />
                   </View>
+
+                  {mode === "login" && (
+                    <Pressable
+                      onPress={() => router.push("/forgot-password")}
+                      className="items-center pt-1"
+                    >
+                      <Text className="text-xs text-zinc-500">
+                        Forgot password?
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
               </>
             )}

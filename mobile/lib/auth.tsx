@@ -41,6 +41,7 @@ type AuthContextType = {
   ) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   authFetch: (path: string, opts?: RequestInit) => Promise<Response>;
+  applyAuth: (token: string, user: User) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -155,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, register, logout, authFetch }}
+      value={{ user, token, loading, login, register, logout, authFetch, applyAuth: saveAuth }}
     >
       {children}
     </AuthContext.Provider>
