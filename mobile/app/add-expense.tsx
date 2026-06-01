@@ -11,35 +11,53 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../lib/auth";
-import { CATEGORIES } from "../lib/types";
-
-type Member = {
-  userId: string;
-  name: string;
-  email: string;
-  isActive: boolean;
-};
-type Group = { _id: string; name: string; members: Member[] };
+import { CATEGORIES, type Expense, type Group } from "../lib/types";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export default function AddExpenseScreen() {
   const { user, authFetch } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams<{ expense?: string; groupId?: string }>();
 
-  const [type, setType] = useState<"personal" | "group">("personal");
+  const editExpense = useMemo<Expense | null>(() => {
+    if (!params.expense) return null;
+    try {
+      return JSON.parse(params.expense) as Expense;
+    } catch {
+      return null;
+    }
+  }, [params.expense]);
+  const isEdit = !!editExpense;
+  const preGroupId = typeof params.groupId === "string" ? params.groupId : "";
+
+  const [type, setType] = useState<"personal" | "group">(
+    editExpense?.type ?? (preGroupId ? "group" : "personal")
+  );
   const [groups, setGroups] = useState<Group[]>([]);
-  const [groupId, setGroupId] = useState("");
-  const [paidById, setPaidById] = useState(user?.userId ?? "");
-  const [paidByName, setPaidByName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<string>(CATEGORIES[0]);
-  const [date, setDate] = useState(todayISO());
-  const [present, setPresent] = useState<Set<string>>(new Set());
+  const [groupId, setGroupId] = useState(editExpense?.groupId ?? preGroupId ?? "");
+  const [paidById, setPaidById] = useState(
+    editExpense?.paidBy?.id ?? user?.userId ?? ""
+  );
+  const [paidByName, setPaidByName] = useState(editExpense?.paidBy?.name ?? "");
+  const [amount, setAmount] = useState(
+    editExpense ? String(editExpense.amount) : ""
+  );
+  const [description, setDescription] = useState(editExpense?.description ?? "");
+  const [category, setCategory] = useState<string>(
+    editExpense?.category ?? CATEGORIES[0]
+  );
+  const [date, setDate] = useState(
+    editExpense
+      ? new Date(editExpense.date).toISOString().slice(0, 10)
+      : todayISO()
+  );
+  const [present, setPresent] = useState<Set<string>>(
+    () => new Set(editExpense?.splitAmong?.map((m) => m.memberId) ?? [])
+  );
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,20 +76,26 @@ export default function AddExpenseScreen() {
 
   useEffect(() => {
     if (!selectedGroup) return;
-    setPresent(
-      new Set(selectedGroup.members.filter((m) => m.isActive).map((m) => m.userId))
-    );
-    if (selectedGroup.members.length > 0) {
+    // Don't clobber a saved split when editing.
+    if (!isEdit || present.size === 0) {
+      setPresent(
+        new Set(
+          selectedGroup.members.filter((m) => m.isActive).map((m) => m.userId)
+        )
+      );
+    }
+    if (!paidById && selectedGroup.members.length > 0) {
       setPaidById(selectedGroup.members[0].userId);
       setPaidByName(selectedGroup.members[0].name);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroup]);
 
-  function toggleMember(id: string) {
+  function toggleMember(memberId: string) {
     setPresent((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(memberId)) next.delete(memberId);
+      else next.add(memberId);
       return next;
     });
   }
@@ -86,7 +110,6 @@ export default function AddExpenseScreen() {
         setError("Permission denied for " + source);
         return;
       }
-
       const opts: ImagePicker.ImagePickerOptions = {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.7,
@@ -95,13 +118,11 @@ export default function AddExpenseScreen() {
         source === "camera"
           ? await ImagePicker.launchCameraAsync(opts)
           : await ImagePicker.launchImageLibraryAsync(opts);
-
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
 
       setScanning(true);
       setError(null);
-
       const form = new FormData();
       form.append("file", {
         uri: asset.uri,
@@ -115,7 +136,6 @@ export default function AddExpenseScreen() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
-
       const r = data.result;
       if (r.total != null) setAmount(String(r.total));
       if (r.vendor) setDescription(r.vendor);
@@ -162,8 +182,12 @@ export default function AddExpenseScreen() {
             }
           : { id: user?.userId, name: user?.name || paidByName || "Me" };
 
-      const res = await authFetch("/api/projects/expense-tracker/expenses", {
-        method: "POST",
+      const url = isEdit
+        ? `/api/projects/expense-tracker/expenses/${editExpense!._id}`
+        : "/api/projects/expense-tracker/expenses";
+
+      const res = await authFetch(url, {
+        method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type,
@@ -191,7 +215,9 @@ export default function AddExpenseScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Text className="text-sm text-zinc-400">← Cancel</Text>
         </Pressable>
-        <Text className="text-base font-semibold text-zinc-100">Add Expense</Text>
+        <Text className="text-base font-semibold text-zinc-100">
+          {isEdit ? "Edit Expense" : "Add Expense"}
+        </Text>
         <View style={{ width: 52 }} />
       </View>
 
@@ -203,26 +229,26 @@ export default function AddExpenseScreen() {
           contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Scan receipt */}
-          <Pressable
-            onPress={onScanPress}
-            disabled={scanning}
-            className="items-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-5"
-          >
-            {scanning ? (
-              <ActivityIndicator color="#6366f1" />
-            ) : (
-              <Text className="text-2xl">📷</Text>
-            )}
-            <Text className="mt-2 text-sm font-medium text-zinc-200">
-              {scanning ? "Scanning receipt…" : "Scan receipt"}
-            </Text>
-            <Text className="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-500">
-              Auto-fill with Gemini Vision
-            </Text>
-          </Pressable>
+          {!isEdit && (
+            <Pressable
+              onPress={onScanPress}
+              disabled={scanning}
+              className="items-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-5"
+            >
+              {scanning ? (
+                <ActivityIndicator color="#6366f1" />
+              ) : (
+                <Text className="text-2xl">📷</Text>
+              )}
+              <Text className="mt-2 text-sm font-medium text-zinc-200">
+                {scanning ? "Scanning receipt…" : "Scan receipt"}
+              </Text>
+              <Text className="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-500">
+                Auto-fill with Gemini Vision
+              </Text>
+            </Pressable>
+          )}
 
-          {/* Type */}
           <View className="flex-row gap-2">
             {(["personal", "group"] as const).map((t) => (
               <Pressable
@@ -245,13 +271,12 @@ export default function AddExpenseScreen() {
             ))}
           </View>
 
-          {/* Group selection */}
           {type === "group" && (
             <View className="gap-3">
               <Field label="Group">
                 {groups.length === 0 ? (
                   <Text className="text-xs text-zinc-500">
-                    No groups yet — create one on the web app first.
+                    No groups yet — create one in the Groups tab first.
                   </Text>
                 ) : (
                   <View className="gap-2">
@@ -330,7 +355,6 @@ export default function AddExpenseScreen() {
             </Field>
           )}
 
-          {/* Amount + Date */}
           <View className="flex-row gap-3">
             <View className="flex-1">
               <Field label="Amount">
@@ -400,7 +424,9 @@ export default function AddExpenseScreen() {
             {saving ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text className="text-sm font-semibold text-white">Save Expense</Text>
+              <Text className="text-sm font-semibold text-white">
+                {isEdit ? "Update Expense" : "Save Expense"}
+              </Text>
             )}
           </Pressable>
         </ScrollView>

@@ -32,18 +32,21 @@ The web app must be running (`npm run dev` in the repo root) or deployed so the
 app has something to call.
 
 ## What's here
-- `app/_layout.tsx` — root layout, wraps everything in `AuthProvider`
+- `app/_layout.tsx` — root stack, wraps everything in `AuthProvider`
 - `app/index.tsx` — redirects to `/dashboard` or `/login` based on auth
 - `app/login.tsx` — login / register (handles email-verification prompt)
-- `app/dashboard.tsx` — expense list with All/Personal/Group filter, totals, pull-to-refresh, "New Expense"
-- `app/add-expense.tsx` — create expense (personal/group, payer, split members, category) + **receipt scanning** (camera/library → `POST /scan`, auto-fills the form via Gemini Vision)
+- `app/(tabs)/_layout.tsx` — bottom tab navigation (auth-gated): Dashboard / Groups / Reports
+- `app/(tabs)/dashboard.tsx` — expense list, All/Personal/Group filter, scope-aware totals, pull-to-refresh, **edit/delete**, New Expense
+- `app/(tabs)/groups.tsx` — list + create groups; tap to open a group
+- `app/(tabs)/reports.tsx` — summary stats with scope filter, category bars, monthly breakdown
+- `app/group/[id].tsx` — group detail: members + balances, **Settle Up** (mark settled), active expenses (edit/delete), settled history, per-group report
+- `app/add-expense.tsx` — create **or edit** an expense (personal/group, payer, split members, category) + **receipt scanning** (camera/library → `POST /scan`, Gemini Vision auto-fill)
 - `lib/auth.tsx` — auth context (mirror of the web one, SecureStore instead of localStorage)
 - `lib/api.ts` — base URL + `apiUrl()` helper
 - `lib/types.ts` — client-side response types + `CATEGORIES`
 
 ## Next steps (not yet built)
-- Edit / delete expense (`PUT/DELETE /api/projects/expense-tracker/expenses/:id`)
-- Groups & reports tabs
 - A native date picker (currently a `YYYY-MM-DD` text field)
+- Add/remove group members from the app (currently create-only; web supports member management)
 - Share the zod schemas from `modules/expense-tracker` once they're split from
   server-only deps (`@google/generative-ai`).

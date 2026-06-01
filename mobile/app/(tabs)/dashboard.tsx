@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -8,15 +9,15 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Redirect, useFocusEffect, useRouter } from "expo-router";
-import { useAuth } from "../lib/auth";
-import type { Expense, ExpenseListResponse, Summary } from "../lib/types";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useAuth } from "../../lib/auth";
+import type { Expense, ExpenseListResponse, Summary } from "../../lib/types";
 
 type ViewMode = "all" | "personal" | "group";
 const PAGE_SIZE = 25;
 
 export default function Dashboard() {
-  const { user, loading: authLoading, authFetch, logout } = useAuth();
+  const { user, authFetch, logout } = useAuth();
   const router = useRouter();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -46,8 +47,6 @@ export default function Dashboard() {
     }
   }, [view, authFetch]);
 
-  // Refetches both when the filter (view) changes and whenever the screen
-  // regains focus — e.g. after returning from the Add-expense screen.
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
@@ -61,21 +60,39 @@ export default function Dashboard() {
     setRefreshing(false);
   }, [fetchExpenses]);
 
-  if (authLoading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-[#05060a]">
-        <ActivityIndicator color="#6366f1" />
-      </View>
-    );
+  function handleEdit(e: Expense) {
+    router.push({
+      pathname: "/add-expense",
+      params: { expense: JSON.stringify(e) },
+    });
   }
-  if (!user) return <Redirect href="/login" />;
+
+  function handleDelete(e: Expense) {
+    Alert.alert("Delete expense", `Delete "${e.description}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await authFetch(`/api/projects/expense-tracker/expenses/${e._id}`, {
+              method: "DELETE",
+            });
+            fetchExpenses();
+          } catch {
+            Alert.alert("Error", "Failed to delete expense");
+          }
+        },
+      },
+    ]);
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-[#05060a]" edges={["top"]}>
       <View className="flex-row items-center justify-between px-5 pb-2 pt-2">
         <View>
           <Text className="text-xl font-bold text-zinc-50">Expense Tracker</Text>
-          <Text className="text-xs text-zinc-500">Hi, {user.name}</Text>
+          <Text className="text-xs text-zinc-500">Hi, {user?.name}</Text>
         </View>
         <Pressable
           onPress={logout}
@@ -143,7 +160,13 @@ export default function Dashboard() {
             </View>
           </View>
         }
-        renderItem={({ item }) => <ExpenseCard expense={item} />}
+        renderItem={({ item }) => (
+          <ExpenseCard
+            expense={item}
+            onEdit={() => handleEdit(item)}
+            onDelete={() => handleDelete(item)}
+          />
+        )}
         ListEmptyComponent={
           loading ? (
             <View className="items-center py-16">
@@ -160,7 +183,15 @@ export default function Dashboard() {
   );
 }
 
-function ExpenseCard({ expense: e }: { expense: Expense }) {
+function ExpenseCard({
+  expense: e,
+  onEdit,
+  onDelete,
+}: {
+  expense: Expense;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const splitNames =
     e.splitAmong && e.splitAmong.length > 0
       ? e.splitAmong.map((m) => m.name).join(", ")
@@ -206,6 +237,15 @@ function ExpenseCard({ expense: e }: { expense: Expense }) {
             Split: {splitNames}
           </Text>
         )}
+      </View>
+
+      <View className="mt-3 flex-row justify-end gap-4 border-t border-white/5 pt-3">
+        <Pressable onPress={onEdit} hitSlop={8}>
+          <Text className="text-xs font-medium text-zinc-400">Edit</Text>
+        </Pressable>
+        <Pressable onPress={onDelete} hitSlop={8}>
+          <Text className="text-xs font-medium text-red-400">Delete</Text>
+        </Pressable>
       </View>
     </View>
   );

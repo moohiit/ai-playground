@@ -25,12 +25,68 @@ export type ExpenseListResponse = {
   totalPages: number;
 };
 
+export type Member = {
+  userId: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+};
+
+export type Group = {
+  _id: string;
+  name: string;
+  description?: string;
+  members: Member[];
+};
+
+export type Balance = {
+  memberId: string;
+  name: string;
+  totalPaid: number;
+  totalOwed: number;
+  netBalance: number;
+};
+
+export type Settlement = {
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  amount: number;
+};
+
+export type SettlementRecord = {
+  settlementId: string;
+  settledAt: string;
+  expenses: Expense[];
+};
+
+export type CategoryStat = { category: string; total: number; count: number };
+export type MonthStat = {
+  year: number;
+  month: number;
+  total: number;
+  count: number;
+};
+
 export type Summary = {
   totalAmount: number;
   totalCount: number;
   myShare: number;
+  paidByMe: number;
+  paidByOthers: number;
   personalTotal: number;
   groupTotal: number;
+  averagePerDay: number;
+  averagePerTransaction: number;
+  daysCovered: number;
+  largest: {
+    description: string;
+    amount: number;
+    date: string;
+    paidBy: string;
+    category: string;
+  } | null;
+  byCategory: CategoryStat[];
+  byMonth: MonthStat[];
 };
 
 export const CATEGORIES = [
