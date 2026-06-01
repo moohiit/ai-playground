@@ -68,6 +68,7 @@ export function Dashboard() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
   const [settling, setSettling] = useState(false);
+  const [settled, setSettled] = useState<"false" | "true" | "all">("false");
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
@@ -80,25 +81,31 @@ export function Dashboard() {
     if (view !== "all") params.set("type", view);
     if (category) params.set("category", category);
     if (dateFrom) params.set("dateFrom", dateFrom);
+    params.set("settled", settled);
 
-    // Keep the Total Expenses card consistent with the active filters.
-    const summaryParams = new URLSearchParams({ scope: view });
+    // Keep the Total Expenses card consistent with the listed rows.
+    const summaryParams = new URLSearchParams({ scope: view, settled });
     if (category) summaryParams.set("category", category);
     if (dateFrom) summaryParams.set("dateFrom", dateFrom);
 
-    const [expRes, sumRes] = await Promise.all([
-      authFetch(`/api/projects/expense-tracker/expenses?${params}`),
-      authFetch(`/api/projects/expense-tracker/reports/summary?${summaryParams}`),
-    ]);
-    const [expData, sumData] = await Promise.all([
-      expRes.json(),
-      sumRes.json(),
-    ]);
-    setExpenses(expData.expenses ?? []);
-    setTotal(expData.total ?? 0);
-    setTotalAmount(sumData.totalAmount ?? 0);
-    setLoading(false);
-  }, [view, category, range, page]);
+    try {
+      const [expRes, sumRes] = await Promise.all([
+        authFetch(`/api/projects/expense-tracker/expenses?${params}`),
+        authFetch(`/api/projects/expense-tracker/reports/summary?${summaryParams}`),
+      ]);
+      const [expData, sumData] = await Promise.all([
+        expRes.json().catch(() => ({})),
+        sumRes.json().catch(() => ({})),
+      ]);
+      setExpenses(expData.expenses ?? []);
+      setTotal(expData.total ?? 0);
+      setTotalAmount(sumData.totalAmount ?? 0);
+    } catch {
+      // leave the last good state in place
+    } finally {
+      setLoading(false);
+    }
+  }, [view, category, range, settled, page, authFetch]);
 
   const fetchBreakdown = useCallback(async () => {
     const [allRes, pRes, gRes, hRes] = await Promise.all([
@@ -108,10 +115,10 @@ export function Dashboard() {
       authFetch(`/api/projects/expense-tracker/personal/history`),
     ]);
     const [all, p, g, h] = await Promise.all([
-      allRes.json(),
-      pRes.json(),
-      gRes.json(),
-      hRes.json(),
+      allRes.json().catch(() => ({})),
+      pRes.json().catch(() => ({})),
+      gRes.json().catch(() => ({})),
+      hRes.json().catch(() => ({})),
     ]);
     setBreakdown({
       personalTotal: all.personalTotal ?? 0,
@@ -134,9 +141,10 @@ export function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [view, category, range]);
+  }, [view, category, range, settled]);
 
-  const hasActiveFilters = view !== "all" || category !== "" || range !== "all";
+  const hasActiveFilters =
+    view !== "all" || category !== "" || range !== "all" || settled !== "false";
 
   async function handleSettlePersonal() {
     const count = breakdown?.personalActiveCount ?? 0;
@@ -153,8 +161,9 @@ export function Dashboard() {
         `/api/projects/expense-tracker/personal/settle`,
         { method: "POST" }
       );
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Settlement failed");
+      setPage(1);
       await Promise.all([fetchBreakdown(), fetchExpenses()]);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Settlement failed");
@@ -255,6 +264,27 @@ export function Dashboard() {
 
           <div className="flex items-center gap-2">
             <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+              Status
+            </span>
+            <div className="flex gap-1.5">
+              {([
+                ["false", "Active"],
+                ["true", "Settled"],
+                ["all", "All"],
+              ] as const).map(([val, label]) => (
+                <FilterChip
+                  key={val}
+                  active={settled === val}
+                  onClick={() => setSettled(val)}
+                >
+                  {label}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
               When
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -294,6 +324,7 @@ export function Dashboard() {
                 setView("all");
                 setCategory("");
                 setRange("all");
+                setSettled("false");
               }}
               className="ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
             >
