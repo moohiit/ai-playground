@@ -50,6 +50,8 @@ app has something to call.
 ## Feature parity with web
 The app now covers the full web feature set: dashboard filters + pagination,
 add/edit/delete, receipt scanning, groups (create, add member, delete, settle,
-history), reports (date ranges, charts, PDF export). Remaining minor differences:
-charts are rendered with SVG/bars rather than recharts, and the PDF is
-summary-level (web also embeds a full per-expense table).
+history), reports (date ranges, charts, PDF export). The PDF mirrors the web
+report: summary, top groups, category breakdown, monthly trend, the full
+All-Expenses table, and a per-group section (member summary + settlement plan +
+expense details). Only remaining cosmetic difference: charts render with
+SVG/bars rather than recharts.
