@@ -36,17 +36,20 @@ app has something to call.
 - `app/index.tsx` — redirects to `/dashboard` or `/login` based on auth
 - `app/login.tsx` — login / register (handles email-verification prompt)
 - `app/(tabs)/_layout.tsx` — bottom tab navigation (auth-gated): Dashboard / Groups / Reports
-- `app/(tabs)/dashboard.tsx` — expense list, All/Personal/Group filter, scope-aware totals, pull-to-refresh, **edit/delete**, New Expense
+- `app/(tabs)/dashboard.tsx` — expense list, filters (type + date-range + category), scope-aware totals, **pagination**, pull-to-refresh, **edit/delete**, New Expense
 - `app/(tabs)/groups.tsx` — list + create groups; tap to open a group
-- `app/(tabs)/reports.tsx` — summary stats with scope filter, category bars, monthly breakdown
-- `app/group/[id].tsx` — group detail: members + balances, **Settle Up** (mark settled), active expenses (edit/delete), settled history, per-group report
-- `app/add-expense.tsx` — create **or edit** an expense (personal/group, payer, split members, category) + **receipt scanning** (camera/library → `POST /scan`, Gemini Vision auto-fill)
+- `app/(tabs)/reports.tsx` — scope + **date-range** filters (quick ranges + custom dates), stat grid, **donut charts** (personal-vs-group, by-category), day-of-week bars, top-groups, category breakdown, monthly trend, **Export PDF**
+- `app/group/[id].tsx` — group detail: members + balances, **add member**, **delete group**, **Settle Up** (mark settled), active expenses (edit/delete), settled history, per-group report
+- `app/add-expense.tsx` — create **or edit** an expense (personal/group, payer, split members, category, **native date picker**) + **receipt scanning** (camera/library → `POST /scan`, Gemini Vision auto-fill)
+- `components/Donut.tsx` — lightweight SVG donut chart (react-native-svg)
 - `lib/auth.tsx` — auth context (mirror of the web one, SecureStore instead of localStorage)
 - `lib/api.ts` — base URL + `apiUrl()` helper
+- `lib/pdf.ts` — summary PDF builder (expo-print + expo-sharing)
 - `lib/types.ts` — client-side response types + `CATEGORIES`
 
-## Next steps (not yet built)
-- A native date picker (currently a `YYYY-MM-DD` text field)
-- Add/remove group members from the app (currently create-only; web supports member management)
-- Share the zod schemas from `modules/expense-tracker` once they're split from
-  server-only deps (`@google/generative-ai`).
+## Feature parity with web
+The app now covers the full web feature set: dashboard filters + pagination,
+add/edit/delete, receipt scanning, groups (create, add member, delete, settle,
+history), reports (date ranges, charts, PDF export). Remaining minor differences:
+charts are rendered with SVG/bars rather than recharts, and the PDF is
+summary-level (web also embeds a full per-expense table).

@@ -6,6 +6,7 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -44,6 +45,8 @@ export default function GroupDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [newMember, setNewMember] = useState("");
+  const [addingMember, setAddingMember] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -140,6 +143,55 @@ export default function GroupDetailScreen() {
     );
   }
 
+  async function handleAddMember() {
+    const email = newMember.trim();
+    if (!email) return;
+    setAddingMember(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/members`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to add member");
+      setNewMember("");
+      fetchAll();
+    } catch (err) {
+      Alert.alert("Error", err instanceof Error ? err.message : "Failed");
+    } finally {
+      setAddingMember(false);
+    }
+  }
+
+  function handleDeleteGroup() {
+    Alert.alert(
+      "Delete group",
+      "Delete this group and ALL its expenses? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await authFetch(
+                `/api/projects/expense-tracker/groups/${groupId}`,
+                { method: "DELETE" }
+              );
+              router.back();
+            } catch {
+              Alert.alert("Error", "Failed to delete group");
+            }
+          },
+        },
+      ]
+    );
+  }
+
   if (!user) return <Redirect href="/login" />;
 
   return (
@@ -222,6 +274,29 @@ export default function GroupDetailScreen() {
                     </View>
                   );
                 })}
+              </View>
+
+              <View className="mt-3 flex-row gap-2">
+                <TextInput
+                  value={newMember}
+                  onChangeText={setNewMember}
+                  placeholder="Add member by email"
+                  placeholderTextColor="#71717a"
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  className="flex-1 rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100"
+                />
+                <Pressable
+                  onPress={handleAddMember}
+                  disabled={addingMember || !newMember.trim()}
+                  className={`items-center justify-center rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 ${
+                    addingMember || !newMember.trim() ? "opacity-50" : ""
+                  }`}
+                >
+                  <Text className="text-xs font-semibold text-brand-400">
+                    {addingMember ? "…" : "Add"}
+                  </Text>
+                </Pressable>
               </View>
             </View>
 
@@ -316,6 +391,15 @@ export default function GroupDetailScreen() {
                 </View>
               ))
             )}
+
+            <Pressable
+              onPress={handleDeleteGroup}
+              className="mt-2 items-center rounded-xl border border-red-500/30 bg-red-500/5 py-3"
+            >
+              <Text className="text-sm font-medium text-red-400">
+                Delete Group
+              </Text>
+            </Pressable>
           </>
         ) : tab === "settled" ? (
           history.length === 0 ? (

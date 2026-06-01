@@ -66,6 +66,15 @@ export type MonthStat = {
   total: number;
   count: number;
 };
+export type DayStat = { day: number; total: number; count: number };
+export type GroupStat = {
+  groupId: string;
+  groupName: string;
+  total: number;
+  myShare: number;
+  count: number;
+};
+export type PayerStat = { id: string; name: string; total: number; count: number };
 
 export type Summary = {
   totalAmount: number;
@@ -87,6 +96,9 @@ export type Summary = {
   } | null;
   byCategory: CategoryStat[];
   byMonth: MonthStat[];
+  byDayOfWeek: DayStat[];
+  byGroup: GroupStat[];
+  topPayers?: PayerStat[];
 };
 
 export const CATEGORIES = [

@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../lib/auth";
 import { CATEGORIES, type Expense, type Group } from "../lib/types";
@@ -60,6 +61,7 @@ export default function AddExpenseScreen() {
   );
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showDate, setShowDate] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -369,17 +371,27 @@ export default function AddExpenseScreen() {
               </Field>
             </View>
             <View className="flex-1">
-              <Field label="Date (YYYY-MM-DD)">
-                <TextInput
-                  value={date}
-                  onChangeText={setDate}
-                  placeholder="2026-01-01"
-                  placeholderTextColor="#71717a"
-                  className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
-                />
+              <Field label="Date">
+                <Pressable
+                  onPress={() => setShowDate(true)}
+                  className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3"
+                >
+                  <Text className="text-zinc-100">{date}</Text>
+                </Pressable>
               </Field>
             </View>
           </View>
+
+          {showDate && (
+            <DateTimePicker
+              value={date ? new Date(date) : new Date()}
+              mode="date"
+              onChange={(_, d) => {
+                setShowDate(false);
+                if (d) setDate(d.toISOString().slice(0, 10));
+              }}
+            />
+          )}
 
           <Field label="Description">
             <TextInput

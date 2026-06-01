@@ -31,7 +31,8 @@
           "cameraPermission": "Allow Expense Tracker to use the camera to scan a receipt."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

@@ -1,20 +1,47 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
   RefreshControl,
+  ScrollView,
   Text,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import type { Expense, ExpenseListResponse, Summary } from "../../lib/types";
+import {
+  CATEGORIES,
+  type Expense,
+  type ExpenseListResponse,
+  type Summary,
+} from "../../lib/types";
 
 type ViewMode = "all" | "personal" | "group";
+type RangeKey = "all" | "month" | "30d" | "7d";
 const PAGE_SIZE = 25;
+
+const RANGES: { key: RangeKey; label: string }[] = [
+  { key: "all", label: "All time" },
+  { key: "month", label: "This month" },
+  { key: "30d", label: "Last 30d" },
+  { key: "7d", label: "Last 7d" },
+];
+
+function rangeToDateFrom(range: RangeKey): string | null {
+  if (range === "all") return null;
+  const now = new Date();
+  if (range === "month") {
+    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  }
+  const days = range === "7d" ? 7 : 30;
+  const from = new Date(now);
+  from.setDate(from.getDate() - (days - 1));
+  from.setHours(0, 0, 0, 0);
+  return from.toISOString();
+}
 
 export default function Dashboard() {
   const { user, authFetch, logout } = useAuth();
@@ -24,13 +51,25 @@ export default function Dashboard() {
   const [total, setTotal] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
   const [view, setView] = useState<ViewMode>("all");
+  const [category, setCategory] = useState<string>("");
+  const [range, setRange] = useState<RangeKey>("all");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchExpenses = useCallback(async () => {
-    const params = new URLSearchParams({ limit: String(PAGE_SIZE), page: "1" });
+    const dateFrom = rangeToDateFrom(range);
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      page: String(page),
+    });
     if (view !== "all") params.set("type", view);
+    if (category) params.set("category", category);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+
     const summaryParams = new URLSearchParams({ scope: view });
+    if (category) summaryParams.set("category", category);
+    if (dateFrom) summaryParams.set("dateFrom", dateFrom);
 
     try {
       const [expRes, sumRes] = await Promise.all([
@@ -45,7 +84,7 @@ export default function Dashboard() {
     } catch {
       // keep last good state on transient errors
     }
-  }, [view, authFetch]);
+  }, [view, category, range, page, authFetch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -53,6 +92,11 @@ export default function Dashboard() {
       fetchExpenses().finally(() => setLoading(false));
     }, [fetchExpenses])
   );
+
+  // Reset to first page whenever a filter changes.
+  useEffect(() => {
+    setPage(1);
+  }, [view, category, range]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -86,6 +130,9 @@ export default function Dashboard() {
       },
     ]);
   }
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasFilters = view !== "all" || category !== "" || range !== "all";
 
   return (
     <SafeAreaView className="flex-1 bg-[#05060a]" edges={["top"]}>
@@ -137,26 +184,67 @@ export default function Dashboard() {
               </Text>
             </Pressable>
 
-            <View className="flex-row gap-2">
-              {(["all", "personal", "group"] as const).map((v) => (
-                <Pressable
-                  key={v}
-                  onPress={() => setView(v)}
-                  className={`rounded-lg border px-3 py-1.5 ${
-                    view === v
-                      ? "border-brand-500/60 bg-brand-500/15"
-                      : "border-white/10 bg-zinc-900/40"
-                  }`}
-                >
-                  <Text
-                    className={`text-xs font-medium capitalize ${
-                      view === v ? "text-brand-400" : "text-zinc-400"
-                    }`}
+            {/* Filters */}
+            <View className="gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+                  Filters
+                </Text>
+                {hasFilters && (
+                  <Pressable
+                    onPress={() => {
+                      setView("all");
+                      setCategory("");
+                      setRange("all");
+                    }}
+                    hitSlop={8}
                   >
-                    {v}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Text className="text-xs text-zinc-400">Clear</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              <View className="flex-row gap-2">
+                {(["all", "personal", "group"] as const).map((v) => (
+                  <Chip
+                    key={v}
+                    label={v}
+                    active={view === v}
+                    onPress={() => setView(v)}
+                  />
+                ))}
+              </View>
+
+              <View className="flex-row flex-wrap gap-2">
+                {RANGES.map((r) => (
+                  <Chip
+                    key={r.key}
+                    label={r.label}
+                    active={range === r.key}
+                    onPress={() => setRange(r.key)}
+                  />
+                ))}
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8 }}
+              >
+                <Chip
+                  label="All categories"
+                  active={category === ""}
+                  onPress={() => setCategory("")}
+                />
+                {CATEGORIES.map((c) => (
+                  <Chip
+                    key={c}
+                    label={c}
+                    active={category === c}
+                    onPress={() => setCategory(c)}
+                  />
+                ))}
+              </ScrollView>
             </View>
           </View>
         }
@@ -174,12 +262,82 @@ export default function Dashboard() {
             </View>
           ) : (
             <View className="items-center rounded-2xl border border-white/10 bg-white/[0.03] py-12">
-              <Text className="text-sm text-zinc-400">No expenses yet.</Text>
+              <Text className="text-sm text-zinc-400">No expenses found.</Text>
             </View>
           )
         }
+        ListFooterComponent={
+          total > PAGE_SIZE ? (
+            <View className="mt-3 flex-row items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+              <PageBtn
+                label="‹ Prev"
+                disabled={page <= 1}
+                onPress={() => setPage((p) => Math.max(1, p - 1))}
+              />
+              <Text className="text-xs text-zinc-400">
+                Page {page} of {totalPages}
+              </Text>
+              <PageBtn
+                label="Next ›"
+                disabled={page >= totalPages}
+                onPress={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
+            </View>
+          ) : null
+        }
       />
     </SafeAreaView>
+  );
+}
+
+function Chip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`rounded-lg border px-3 py-1.5 ${
+        active
+          ? "border-brand-500/60 bg-brand-500/15"
+          : "border-white/10 bg-zinc-900/40"
+      }`}
+    >
+      <Text
+        className={`text-xs font-medium capitalize ${
+          active ? "text-brand-400" : "text-zinc-400"
+        }`}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function PageBtn({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      className={`rounded-lg border px-3 py-1.5 ${
+        disabled ? "border-white/5 opacity-40" : "border-white/10 bg-zinc-900/40"
+      }`}
+    >
+      <Text className="text-xs font-medium text-zinc-300">{label}</Text>
+    </Pressable>
   );
 }
 
