@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Expense Tracker",
+    "slug": "expense-tracker",
+    "scheme": "expensetracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#05060a",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.moohiit.expensetracker"
+    },
+    "android": {
+      "package": "com.moohiit.expensetracker",
+      "adaptiveIcon": {
+        "backgroundColor": "#05060a"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Expense Tracker to access your photos to attach a receipt.",
+          "cameraPermission": "Allow Expense Tracker to use the camera to scan a receipt."
+        }
+      ],
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
