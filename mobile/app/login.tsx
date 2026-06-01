@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -9,8 +8,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { AuthApiError, useAuth } from "../lib/auth";
+import { AppBackground, GradientButton } from "../components/ui";
 
 type Mode = "login" | "register";
 type VerificationPrompt = { email: string; message: string };
@@ -63,11 +64,8 @@ export default function LoginScreen() {
   }
 
   return (
-    <View className="flex-1 bg-[#05060a]">
-      {/* Ambient material-style background accents */}
-      <View className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-brand-600/20" />
-      <View className="pointer-events-none absolute -right-20 top-40 h-64 w-64 rounded-full bg-fuchsia-500/10" />
-      <View className="pointer-events-none absolute -bottom-24 left-10 h-72 w-72 rounded-full bg-pink-500/10" />
+    <View className="flex-1">
+      <AppBackground />
 
       <KeyboardAvoidingView
         className="flex-1"
@@ -77,7 +75,8 @@ export default function LoginScreen() {
           contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
           keyboardShouldPersistTaps="handled"
         >
-          <View className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+          <Animated.View entering={FadeInDown.duration(500)}>
+            <View className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.05] p-6">
             {prompt ? (
               <View className="items-center">
                 <View className="mb-4 h-12 w-12 items-center justify-center rounded-2xl border border-brand-500/30 bg-brand-500/15">
@@ -175,25 +174,18 @@ export default function LoginScreen() {
                     </Text>
                   )}
 
-                  <Pressable
-                    onPress={handleSubmit}
-                    disabled={loading}
-                    className={`mt-1 items-center rounded-xl bg-brand-600 py-3 ${
-                      loading ? "opacity-60" : ""
-                    }`}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text className="text-sm font-semibold text-white">
-                        {mode === "login" ? "Sign in" : "Create account"}
-                      </Text>
-                    )}
-                  </Pressable>
+                  <View className="mt-1">
+                    <GradientButton
+                      label={mode === "login" ? "Sign in" : "Create account"}
+                      onPress={handleSubmit}
+                      loading={loading}
+                    />
+                  </View>
                 </View>
               </>
             )}
-          </View>
+            </View>
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

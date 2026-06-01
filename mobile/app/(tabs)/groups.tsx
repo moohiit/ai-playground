@@ -9,9 +9,11 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Group } from "../../lib/types";
+import { AppBackground, GradientButton } from "../../components/ui";
 
 export default function GroupsTab() {
   const { authFetch } = useAuth();
@@ -80,7 +82,8 @@ export default function GroupsTab() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#05060a]" edges={["top"]}>
+    <SafeAreaView className="flex-1" edges={["top"]}>
+      <AppBackground />
       <View className="flex-row items-center justify-between px-5 pb-2 pt-2">
         <Text className="text-xl font-bold text-zinc-50">Groups</Text>
         <Pressable
@@ -131,25 +134,16 @@ export default function GroupsTab() {
                   {error}
                 </Text>
               )}
-              <Pressable
+              <GradientButton
+                label="Create group"
                 onPress={handleCreate}
-                disabled={creating}
-                className={`items-center rounded-xl bg-brand-600 py-3 ${
-                  creating ? "opacity-60" : ""
-                }`}
-              >
-                {creating ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text className="text-sm font-semibold text-white">
-                    Create group
-                  </Text>
-                )}
-              </Pressable>
+                loading={creating}
+              />
             </View>
           ) : null
         }
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
+          <Animated.View entering={FadeInDown.duration(300).delay(Math.min(index, 8) * 50)}>
           <Pressable
             onPress={() =>
               router.push({ pathname: "/group/[id]", params: { id: item._id } })
@@ -172,6 +166,7 @@ export default function GroupsTab() {
               {item.members.length === 1 ? "member" : "members"}
             </Text>
           </Pressable>
+          </Animated.View>
         )}
         ListEmptyComponent={
           loading ? (

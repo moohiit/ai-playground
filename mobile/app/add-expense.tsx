@@ -16,6 +16,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../lib/auth";
 import { CATEGORIES, type Expense, type Group } from "../lib/types";
+import { AppBackground, GradientButton } from "../components/ui";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -212,7 +213,8 @@ export default function AddExpenseScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#05060a]" edges={["top"]}>
+    <SafeAreaView className="flex-1" edges={["top"]}>
+      <AppBackground />
       <View className="flex-row items-center justify-between px-5 py-3">
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Text className="text-sm text-zinc-400">← Cancel</Text>
@@ -426,21 +428,13 @@ export default function AddExpenseScreen() {
             </Text>
           )}
 
-          <Pressable
-            onPress={handleSave}
-            disabled={saving}
-            className={`mt-2 items-center rounded-xl bg-brand-600 py-3.5 ${
-              saving ? "opacity-60" : ""
-            }`}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text className="text-sm font-semibold text-white">
-                {isEdit ? "Update Expense" : "Save Expense"}
-              </Text>
-            )}
-          </Pressable>
+          <View className="mt-2">
+            <GradientButton
+              label={isEdit ? "Update Expense" : "Save Expense"}
+              onPress={handleSave}
+              loading={saving}
+            />
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
