@@ -89,10 +89,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new AuthApiError(
-          data.error ?? "Login failed",
+          data.error ?? `Login failed (${res.status})`,
           (data.code as LoginErrorCode) ?? "UNKNOWN",
           data.email
         );
@@ -117,8 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Registration failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok)
+        throw new Error(data.error ?? `Registration failed (${res.status})`);
 
       if (data.needsVerification) {
         return {

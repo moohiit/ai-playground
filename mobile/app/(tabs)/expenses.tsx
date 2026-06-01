@@ -55,6 +55,7 @@ export default function ExpensesScreen() {
   const [view, setView] = useState<ViewMode>("all");
   const [category, setCategory] = useState<string>("");
   const [range, setRange] = useState<RangeKey>("all");
+  const [settled, setSettled] = useState<"false" | "true" | "all">("false");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,8 +69,10 @@ export default function ExpensesScreen() {
     if (view !== "all") params.set("type", view);
     if (category) params.set("category", category);
     if (dateFrom) params.set("dateFrom", dateFrom);
+    params.set("settled", settled);
 
-    const summaryParams = new URLSearchParams({ scope: view });
+    // Keep the headline total consistent with the listed rows.
+    const summaryParams = new URLSearchParams({ scope: view, settled });
     if (category) summaryParams.set("category", category);
     if (dateFrom) summaryParams.set("dateFrom", dateFrom);
 
@@ -78,15 +81,15 @@ export default function ExpensesScreen() {
         authFetch(`/api/projects/expense-tracker/expenses?${params}`),
         authFetch(`/api/projects/expense-tracker/reports/summary?${summaryParams}`),
       ]);
-      const expData: ExpenseListResponse = await expRes.json();
-      const sumData: Summary = await sumRes.json();
+      const expData: ExpenseListResponse = await expRes.json().catch(() => ({}));
+      const sumData: Summary = await sumRes.json().catch(() => ({}));
       setExpenses(expData.expenses ?? []);
       setTotal(expData.total ?? 0);
       setTotalAmount(sumData.totalAmount ?? 0);
     } catch {
       // keep last good state on transient errors
     }
-  }, [view, category, range, page, authFetch]);
+  }, [view, category, range, settled, page, authFetch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -97,7 +100,7 @@ export default function ExpensesScreen() {
 
   useEffect(() => {
     setPage(1);
-  }, [view, category, range]);
+  }, [view, category, range, settled]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -133,7 +136,8 @@ export default function ExpensesScreen() {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const hasFilters = view !== "all" || category !== "" || range !== "all";
+  const hasFilters =
+    view !== "all" || category !== "" || range !== "all" || settled !== "false";
 
   return (
     <SafeAreaView className="flex-1" edges={["top"]}>
@@ -184,6 +188,7 @@ export default function ExpensesScreen() {
                       setView("all");
                       setCategory("");
                       setRange("all");
+                      setSettled("false");
                     }}
                     hitSlop={8}
                   >
@@ -196,6 +201,24 @@ export default function ExpensesScreen() {
                 {(["all", "personal", "group"] as const).map((v) => (
                   <Chip key={v} label={v} active={view === v} onPress={() => setView(v)} />
                 ))}
+              </View>
+
+              <View className="flex-row gap-2">
+                {([
+                  ["false", "Active"],
+                  ["settled-true", "Settled"],
+                  ["all", "All"],
+                ] as const).map(([key, label]) => {
+                  const val = key === "settled-true" ? "true" : key;
+                  return (
+                    <Chip
+                      key={key}
+                      label={label}
+                      active={settled === val}
+                      onPress={() => setSettled(val as "false" | "true" | "all")}
+                    />
+                  );
+                })}
               </View>
 
               <View className="flex-row flex-wrap gap-2">

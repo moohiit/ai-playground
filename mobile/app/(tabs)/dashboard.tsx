@@ -44,10 +44,10 @@ export default function Dashboard() {
         authFetch("/api/projects/expense-tracker/reports/summary?scope=group&settled=false"),
         authFetch("/api/projects/expense-tracker/personal/history"),
       ]);
-      setSummary((await allRes.json()) as Summary);
-      setPersonalActive((await pActiveRes.json()) as Summary);
-      setGroupActive((await gActiveRes.json()) as Summary);
-      const hist = await histRes.json();
+      setSummary((await allRes.json().catch(() => null)) as Summary);
+      setPersonalActive((await pActiveRes.json().catch(() => null)) as Summary);
+      setGroupActive((await gActiveRes.json().catch(() => null)) as Summary);
+      const hist = await histRes.json().catch(() => ({}));
       setLastPersonalSettle(hist.history?.[0]?.settledAt ?? null);
     } catch {
       // keep last good state

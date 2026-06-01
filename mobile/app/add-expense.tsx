@@ -79,8 +79,8 @@ export default function AddExpenseScreen() {
 
   useEffect(() => {
     if (!selectedGroup) return;
-    // Don't clobber a saved split when editing.
-    if (!isEdit || present.size === 0) {
+    // Only auto-select all members when creating; never clobber a saved split.
+    if (!isEdit) {
       setPresent(
         new Set(
           selectedGroup.members.filter((m) => m.isActive).map((m) => m.userId)
@@ -114,7 +114,7 @@ export default function AddExpenseScreen() {
         return;
       }
       const opts: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         quality: 0.7,
       };
       const result =

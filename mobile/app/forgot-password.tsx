@@ -39,7 +39,7 @@ export default function ForgotPasswordScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Something went wrong");
       setInfo(data.message ?? "If that email exists, we sent a 6-digit code.");
       setStage("code");
@@ -66,7 +66,7 @@ export default function ForgotPasswordScreen() {
           newPassword,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Reset failed");
       await applyAuth(data.token, {
         userId: data.user.id,
