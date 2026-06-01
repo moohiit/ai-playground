@@ -701,3 +701,63 @@ export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
 
   return Array.from(grouped.values());
 }
+
+// ── Personal settlement ─────────────────────────────
+
+export async function settlePersonal(auth: JWTPayload) {
+  await connectDB();
+
+  const settlementId = `psettle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date();
+
+  const unsettledFilter = {
+    createdBy: auth.userId,
+    type: "personal",
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  };
+
+  const updateResult = await Expense.updateMany(unsettledFilter, {
+    $set: { settledAt: now, settlementId },
+  });
+
+  if (updateResult.modifiedCount === 0) {
+    throw new Error("No unsettled personal expenses");
+  }
+
+  return {
+    settlementId,
+    settledAt: now,
+    expenseCount: updateResult.modifiedCount,
+  };
+}
+
+export async function getPersonalSettlementHistory(auth: JWTPayload) {
+  await connectDB();
+
+  const settled = await Expense.find({
+    createdBy: auth.userId,
+    type: "personal",
+    settledAt: { $ne: null },
+  })
+    .sort({ settledAt: -1, date: -1 })
+    .lean();
+
+  const grouped = new Map<
+    string,
+    { settlementId: string; settledAt: Date; expenses: typeof settled }
+  >();
+
+  for (const exp of settled) {
+    const sid = exp.settlementId ?? "unknown";
+    if (!grouped.has(sid)) {
+      grouped.set(sid, {
+        settlementId: sid,
+        settledAt: exp.settledAt!,
+        expenses: [],
+      });
+    }
+    grouped.get(sid)!.expenses.push(exp);
+  }
+
+  return Array.from(grouped.values());
+}
