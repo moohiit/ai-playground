@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -20,26 +21,70 @@ const COLORS = [
   "#f472b6", "#22d3ee", "#fb923c", "#2dd4bf", "#c084fc",
 ];
 const fmt = (n: number) => `₹${n.toFixed(2)}`;
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
 export default function Dashboard() {
   const { user, authFetch, logout } = useAuth();
   const router = useRouter();
 
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [personalActive, setPersonalActive] = useState<Summary | null>(null);
+  const [groupActive, setGroupActive] = useState<Summary | null>(null);
+  const [lastPersonalSettle, setLastPersonalSettle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [settling, setSettling] = useState(false);
 
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await authFetch(
-        "/api/projects/expense-tracker/reports/summary?scope=all&settled=all"
-      );
-      const data: Summary = await res.json();
-      setSummary(data);
+      const [allRes, pActiveRes, gActiveRes, histRes] = await Promise.all([
+        authFetch("/api/projects/expense-tracker/reports/summary?scope=all&settled=all"),
+        authFetch("/api/projects/expense-tracker/reports/summary?scope=personal&settled=false"),
+        authFetch("/api/projects/expense-tracker/reports/summary?scope=group&settled=false"),
+        authFetch("/api/projects/expense-tracker/personal/history"),
+      ]);
+      setSummary((await allRes.json()) as Summary);
+      setPersonalActive((await pActiveRes.json()) as Summary);
+      setGroupActive((await gActiveRes.json()) as Summary);
+      const hist = await histRes.json();
+      setLastPersonalSettle(hist.history?.[0]?.settledAt ?? null);
     } catch {
       // keep last good state
     }
   }, [authFetch]);
+
+  function handleSettlePersonal() {
+    const count = personalActive?.totalCount ?? 0;
+    if (count === 0) return;
+    Alert.alert(
+      "Settle personal expenses",
+      `Mark all ${count} active personal ${count === 1 ? "expense" : "expenses"} as settled? They move to settled history.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Settle",
+          onPress: async () => {
+            setSettling(true);
+            try {
+              const res = await authFetch(
+                "/api/projects/expense-tracker/personal/settle",
+                { method: "POST" }
+              );
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error ?? "Settle failed");
+              Alert.alert("Settled", `Cleared ${data.expenseCount} personal expenses.`);
+              await fetchSummary();
+            } catch (err) {
+              Alert.alert("Error", err instanceof Error ? err.message : "Failed");
+            } finally {
+              setSettling(false);
+            }
+          },
+        },
+      ]
+    );
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -147,6 +192,50 @@ export default function Dashboard() {
               <Stat label="Avg / day" value={fmt(summary.averagePerDay)} />
             </Animated.View>
 
+            {/* Active vs Total breakdown */}
+            <Panel title="Active vs total">
+              <View>
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-sm font-semibold text-zinc-100">Personal</Text>
+                  {(personalActive?.totalCount ?? 0) > 0 && (
+                    <Pressable
+                      onPress={handleSettlePersonal}
+                      disabled={settling}
+                      className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1"
+                    >
+                      <Text className="text-[11px] font-semibold text-amber-300">
+                        {settling ? "Settling…" : "Settle"}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+                <View className="mt-1.5 flex-row gap-3">
+                  <MiniStat
+                    label="Active"
+                    value={fmt(personalActive?.totalAmount ?? 0)}
+                    hint={`${personalActive?.totalCount ?? 0} entries${
+                      lastPersonalSettle ? ` · since ${shortDate(lastPersonalSettle)}` : ""
+                    }`}
+                  />
+                  <MiniStat label="Total" value={fmt(summary.personalTotal)} />
+                </View>
+              </View>
+
+              <View className="my-3 h-px bg-white/5" />
+
+              <View>
+                <Text className="text-sm font-semibold text-zinc-100">Group</Text>
+                <View className="mt-1.5 flex-row gap-3">
+                  <MiniStat
+                    label="Active"
+                    value={fmt(groupActive?.totalAmount ?? 0)}
+                    hint={`${groupActive?.totalCount ?? 0} entries`}
+                  />
+                  <MiniStat label="Total" value={fmt(summary.groupTotal)} />
+                </View>
+              </View>
+            </Panel>
+
             {summary.largest && (
               <Panel title="Largest expense">
                 <View className="flex-row items-center justify-between">
@@ -236,6 +325,24 @@ function Stat({ label, value }: { label: string; value: string }) {
         {label}
       </Text>
       <Text className="mt-1 text-lg font-bold text-zinc-50">{value}</Text>
+    </View>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <View className="flex-1 rounded-xl border border-white/10 bg-zinc-950/40 p-3">
+      <Text className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</Text>
+      <Text className="mt-0.5 text-base font-bold text-zinc-50">{value}</Text>
+      {hint && <Text className="mt-0.5 text-[10px] text-zinc-500">{hint}</Text>}
     </View>
   );
 }

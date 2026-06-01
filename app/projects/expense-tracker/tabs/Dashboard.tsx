@@ -22,6 +22,16 @@ type Expense = {
 type ViewMode = "all" | "personal" | "group";
 type RangeKey = "all" | "month" | "30d" | "7d";
 
+type Breakdown = {
+  personalTotal: number;
+  groupTotal: number;
+  personalActive: number;
+  personalActiveCount: number;
+  groupActive: number;
+  groupActiveCount: number;
+  lastPersonalSettle: string | null;
+};
+
 const PAGE_SIZE = 25;
 
 const RANGES: { key: RangeKey; label: string }[] = [
@@ -56,6 +66,8 @@ export function Dashboard() {
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
+  const [settling, setSettling] = useState(false);
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
@@ -88,15 +100,68 @@ export function Dashboard() {
     setLoading(false);
   }, [view, category, range, page]);
 
+  const fetchBreakdown = useCallback(async () => {
+    const [allRes, pRes, gRes, hRes] = await Promise.all([
+      authFetch(`/api/projects/expense-tracker/reports/summary?scope=all&settled=all`),
+      authFetch(`/api/projects/expense-tracker/reports/summary?scope=personal&settled=false`),
+      authFetch(`/api/projects/expense-tracker/reports/summary?scope=group&settled=false`),
+      authFetch(`/api/projects/expense-tracker/personal/history`),
+    ]);
+    const [all, p, g, h] = await Promise.all([
+      allRes.json(),
+      pRes.json(),
+      gRes.json(),
+      hRes.json(),
+    ]);
+    setBreakdown({
+      personalTotal: all.personalTotal ?? 0,
+      groupTotal: all.groupTotal ?? 0,
+      personalActive: p.totalAmount ?? 0,
+      personalActiveCount: p.totalCount ?? 0,
+      groupActive: g.totalAmount ?? 0,
+      groupActiveCount: g.totalCount ?? 0,
+      lastPersonalSettle: h.history?.[0]?.settledAt ?? null,
+    });
+  }, [authFetch]);
+
   useEffect(() => {
     fetchExpenses();
   }, [fetchExpenses]);
+
+  useEffect(() => {
+    fetchBreakdown();
+  }, [fetchBreakdown]);
 
   useEffect(() => {
     setPage(1);
   }, [view, category, range]);
 
   const hasActiveFilters = view !== "all" || category !== "" || range !== "all";
+
+  async function handleSettlePersonal() {
+    const count = breakdown?.personalActiveCount ?? 0;
+    if (count === 0) return;
+    if (
+      !confirm(
+        `Settle all ${count} active personal ${count === 1 ? "expense" : "expenses"}? They move to settled history.`
+      )
+    )
+      return;
+    setSettling(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/personal/settle`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Settlement failed");
+      await Promise.all([fetchBreakdown(), fetchExpenses()]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Settlement failed");
+    } finally {
+      setSettling(false);
+    }
+  }
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this expense?")) return;
@@ -146,6 +211,28 @@ export function Dashboard() {
           </div>
         </button>
       </div>
+
+      {breakdown && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <BreakdownCard
+            title="Personal"
+            accent="from-emerald-500/40"
+            activeAmount={breakdown.personalActive}
+            activeCount={breakdown.personalActiveCount}
+            totalAmount={breakdown.personalTotal}
+            since={breakdown.lastPersonalSettle}
+            onSettle={handleSettlePersonal}
+            settling={settling}
+          />
+          <BreakdownCard
+            title="Group"
+            accent="from-brand-500/40"
+            activeAmount={breakdown.groupActive}
+            activeCount={breakdown.groupActiveCount}
+            totalAmount={breakdown.groupTotal}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-3 backdrop-blur-sm sm:p-4">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
@@ -393,6 +480,74 @@ function StatCard({
         {value}
       </div>
       {hint && <div className="mt-0.5 text-xs text-zinc-500">{hint}</div>}
+    </div>
+  );
+}
+
+function BreakdownCard({
+  title,
+  accent,
+  activeAmount,
+  activeCount,
+  totalAmount,
+  since,
+  onSettle,
+  settling,
+}: {
+  title: string;
+  accent?: string;
+  activeAmount: number;
+  activeCount: number;
+  totalAmount: number;
+  since?: string | null;
+  onSettle?: () => void;
+  settling?: boolean;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5 backdrop-blur-sm">
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r to-transparent",
+          accent ?? "from-brand-500/40"
+        )}
+      />
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
+        {onSettle && activeCount > 0 && (
+          <button
+            onClick={onSettle}
+            disabled={settling}
+            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+          >
+            {settling ? "Settling…" : "Settle all"}
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+            Active
+          </div>
+          <div className="mt-0.5 text-xl font-bold tabular-nums text-zinc-100">
+            ₹{activeAmount.toFixed(2)}
+          </div>
+          <div className="mt-0.5 text-[11px] text-zinc-500">
+            {activeCount} {activeCount === 1 ? "entry" : "entries"}
+            {since
+              ? ` · since ${new Date(since).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+              : ""}
+          </div>
+        </div>
+        <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+            Total
+          </div>
+          <div className="mt-0.5 text-xl font-bold tabular-nums text-zinc-100">
+            ₹{totalAmount.toFixed(2)}
+          </div>
+          <div className="mt-0.5 text-[11px] text-zinc-500">all time</div>
+        </div>
+      </div>
     </div>
   );
 }
