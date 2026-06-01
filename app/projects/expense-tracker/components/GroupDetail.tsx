@@ -67,7 +67,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
       authFetch(
         `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=${PAGE_SIZE}&page=${page}&settled=false`
       ),
-      authFetch(`/api/projects/expense-tracker/reports/summary?groupId=${groupId}`),
+      authFetch(`/api/projects/expense-tracker/reports/summary?groupId=${groupId}&settled=false`),
     ]);
     const [gData, bData, eData, sData] = await Promise.all([
       gRes.json(),
