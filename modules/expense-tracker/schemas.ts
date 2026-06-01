@@ -74,12 +74,17 @@ export const createExpenseSchema = z
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 
+const isoDate = z
+  .string()
+  .refine((d) => !isNaN(Date.parse(d)), "Invalid date")
+  .optional();
+
 export const expenseFilterSchema = z.object({
   groupId: z.string().optional(),
   type: z.enum(["personal", "group"]).optional(),
   category: z.string().optional(),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
+  dateFrom: isoDate,
+  dateTo: isoDate,
   settled: z.enum(["true", "false", "all"]).optional().default("false"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(500).default(20),
@@ -90,8 +95,8 @@ export type ExpenseFilter = z.infer<typeof expenseFilterSchema>;
 export const reportFilterSchema = z.object({
   groupId: z.string().optional(),
   category: z.string().optional(),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
+  dateFrom: isoDate,
+  dateTo: isoDate,
   settled: z.enum(["true", "false", "all"]).optional().default("all"),
   scope: z.enum(["all", "personal", "group"]).optional().default("all"),
 });

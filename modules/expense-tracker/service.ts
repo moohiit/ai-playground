@@ -168,25 +168,38 @@ export async function createExpense(
   let splitAmong = input.splitAmong ?? [];
   let splits: { memberId: string; name: string; amount: number }[] = [];
 
-  if (input.type === "group" && input.groupId) {
+  if (input.type === "group") {
+    if (!input.groupId) {
+      throw new Error("A group is required for a group expense");
+    }
     const group = await Group.findById(input.groupId).lean();
     if (!group) throw new Error("Group not found");
     if (!group.members.some((m) => m.userId === auth.userId)) {
       throw new Error("You are not a member of this group");
     }
 
+    const memberIds = new Set(group.members.map((m) => m.userId));
+    if (!memberIds.has(input.paidBy.id)) {
+      throw new Error("Payer must be a member of the group");
+    }
+
     if (splitAmong.length === 0) {
       splitAmong = group.members
         .filter((m) => m.isActive)
         .map((m) => ({ memberId: m.userId, name: m.name }));
+    } else if (splitAmong.some((s) => !memberIds.has(s.memberId))) {
+      throw new Error("Split members must belong to the group");
     }
 
     splits = calculateSplits(input.amount, splitAmong);
+  } else {
+    // Personal expenses never carry a group or splits.
+    splitAmong = [];
   }
 
   const expense = await Expense.create({
     type: input.type,
-    groupId: input.groupId ?? null,
+    groupId: input.type === "group" ? input.groupId ?? null : null,
     createdBy: auth.userId,
     paidBy: input.paidBy,
     amount: input.amount,
@@ -283,26 +296,62 @@ export async function updateExpense(
   const expense = await Expense.findById(id);
   if (!expense) throw new Error("Expense not found");
 
+  // 1. Authorize access to the expense as it currently exists.
   if (expense.type === "group" && expense.groupId) {
     const group = await Group.findById(expense.groupId).lean();
     if (!group || !group.members.some((m) => m.userId === auth.userId)) {
       throw new Error("Access denied");
     }
-
-    // Recalculate splits if splitAmong changed
-    if (input.splitAmong) {
-      const amount = input.amount ?? expense.amount;
-      expense.splits = calculateSplits(amount, input.splitAmong);
-      expense.splitAmong = input.splitAmong as typeof expense.splitAmong;
-    } else if (input.amount && input.amount !== expense.amount) {
-      // Amount changed but splitAmong didn't — recalculate with existing splitAmong
-      expense.splits = calculateSplits(
-        input.amount,
-        expense.splitAmong as { memberId: string; name: string }[]
-      );
-    }
   } else if (expense.createdBy !== auth.userId) {
     throw new Error("Access denied");
+  }
+
+  // 2. Determine the effective target (type/group) after this update.
+  const newType = input.type ?? expense.type;
+  const currentGroupId = expense.groupId ? expense.groupId.toString() : null;
+  const newGroupId =
+    input.groupId !== undefined ? input.groupId || null : currentGroupId;
+  const movingOrConverting =
+    newType !== expense.type || (newGroupId ?? null) !== currentGroupId;
+
+  // Only the original creator may move/convert an expense across personal/groups.
+  if (movingOrConverting && expense.createdBy !== auth.userId) {
+    throw new Error("Only the creator can move this expense");
+  }
+
+  if (newType === "group") {
+    if (!newGroupId) throw new Error("A group is required for a group expense");
+    // 3. Re-authorize against the TARGET group + validate payer/split members.
+    const target = await Group.findById(newGroupId).lean();
+    if (!target || !target.members.some((m) => m.userId === auth.userId)) {
+      throw new Error("Access denied");
+    }
+    const memberIds = new Set(target.members.map((m) => m.userId));
+
+    const splitAmong = (input.splitAmong ??
+      (expense.splitAmong as { memberId: string; name: string }[])) as {
+      memberId: string;
+      name: string;
+    }[];
+    const payer = input.paidBy ?? expense.paidBy;
+    if (payer && !memberIds.has(payer.id)) {
+      throw new Error("Payer must be a member of the group");
+    }
+    for (const s of splitAmong ?? []) {
+      if (!memberIds.has(s.memberId)) {
+        throw new Error("Split members must belong to the group");
+      }
+    }
+
+    const amount = input.amount ?? expense.amount;
+    expense.splitAmong = splitAmong as typeof expense.splitAmong;
+    expense.splits = calculateSplits(amount, splitAmong ?? []);
+    expense.groupId = toObjectId(newGroupId, "groupId");
+  } else {
+    // Personal expenses carry no group / splits.
+    expense.groupId = null;
+    expense.splitAmong = [] as typeof expense.splitAmong;
+    expense.splits = [];
   }
 
   if (input.amount !== undefined) expense.amount = input.amount;
@@ -310,8 +359,7 @@ export async function updateExpense(
   if (input.category !== undefined) expense.category = input.category;
   if (input.date !== undefined) expense.date = new Date(input.date);
   if (input.paidBy !== undefined) expense.paidBy = input.paidBy;
-  if (input.type !== undefined) expense.type = input.type;
-  if (input.groupId !== undefined) expense.groupId = input.groupId ? toObjectId(input.groupId, "groupId") : null;
+  expense.type = newType;
 
   await expense.save();
   return expense.toObject();
