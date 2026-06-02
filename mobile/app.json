@@ -28,7 +28,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow Expense Tracker to access your photos to attach a receipt.",
-          "cameraPermission": "Allow Expense Tracker to use the camera to scan a receipt."
+          "cameraPermission": "Allow Expense Tracker to use the camera to scan a receipt.",
+          "microphonePermission": false
         }
       ],
       "expo-asset",
@@ -36,6 +37,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b4e4d8f3-c1ad-496a-a758-ed2ea95ac8f3"
+      }
     }
   }
 }
