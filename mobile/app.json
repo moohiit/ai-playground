@@ -7,7 +7,9 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
     "splash": {
+      "image": "./assets/splash-icon.png",
       "backgroundColor": "#05060a",
       "resizeMode": "contain"
     },
@@ -18,8 +20,12 @@
     "android": {
       "package": "com.moohiit.expensetracker",
       "adaptiveIcon": {
-        "backgroundColor": "#05060a"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4f46e5"
       }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
