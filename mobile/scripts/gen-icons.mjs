@@ -6,7 +6,8 @@ import { mkdirSync } from "fs";
 const dir = "assets";
 mkdirSync(dir, { recursive: true });
 
-// Full app icon: brand gradient + a tilted white "card" with a gold chip.
+// Full app icon: brand gradient + a white "card" with a gold chip + wordmark.
+const FONT = "Arial, 'Segoe UI', 'Helvetica Neue', Helvetica, sans-serif";
 const iconSvg = `
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -17,12 +18,16 @@ const iconSvg = `
     </linearGradient>
   </defs>
   <rect width="1024" height="1024" fill="url(#g)"/>
-  <g transform="rotate(-8 512 512)">
-    <rect x="216" y="360" width="592" height="372" rx="46" fill="#ffffff"/>
-    <rect x="284" y="440" width="120" height="86" rx="14" fill="#fbbf24"/>
-    <rect x="284" y="590" width="468" height="34" rx="17" fill="#c7d2fe"/>
-    <rect x="284" y="642" width="300" height="28" rx="14" fill="#e5e7eb"/>
+  <g transform="rotate(-7 512 392)">
+    <rect x="266" y="214" width="492" height="316" rx="40" fill="#ffffff"/>
+    <rect x="322" y="276" width="104" height="76" rx="14" fill="#fbbf24"/>
+    <rect x="322" y="408" width="384" height="30" rx="15" fill="#c7d2fe"/>
+    <rect x="322" y="456" width="248" height="24" rx="12" fill="#e5e7eb"/>
   </g>
+  <text x="512" y="730" text-anchor="middle" font-family="${FONT}"
+        font-size="150" font-weight="800" fill="#ffffff" letter-spacing="-2">Expense</text>
+  <text x="512" y="872" text-anchor="middle" font-family="${FONT}"
+        font-size="150" font-weight="800" fill="#ffffff" letter-spacing="-2">Tracker</text>
 </svg>`;
 
 // Android adaptive foreground / splash: same card, transparent bg, sized to
