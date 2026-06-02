@@ -6,7 +6,7 @@ import { mkdirSync } from "fs";
 const dir = "assets";
 mkdirSync(dir, { recursive: true });
 
-// Full app icon: brand gradient + a white "card" with a gold chip + wordmark.
+// Full app icon: brand gradient + a white "card" with the wordmark inside it.
 const FONT = "Arial, 'Segoe UI', 'Helvetica Neue', Helvetica, sans-serif";
 const iconSvg = `
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
@@ -16,18 +16,20 @@ const iconSvg = `
       <stop offset="0.55" stop-color="#7c3aed"/>
       <stop offset="1" stop-color="#db2777"/>
     </linearGradient>
+    <linearGradient id="t" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#db2777"/>
+    </linearGradient>
   </defs>
   <rect width="1024" height="1024" fill="url(#g)"/>
-  <g transform="rotate(-7 512 392)">
-    <rect x="266" y="214" width="492" height="316" rx="40" fill="#ffffff"/>
-    <rect x="322" y="276" width="104" height="76" rx="14" fill="#fbbf24"/>
-    <rect x="322" y="408" width="384" height="30" rx="15" fill="#c7d2fe"/>
-    <rect x="322" y="456" width="248" height="24" rx="12" fill="#e5e7eb"/>
-  </g>
-  <text x="512" y="730" text-anchor="middle" font-family="${FONT}"
-        font-size="150" font-weight="800" fill="#ffffff" letter-spacing="-2">Expense</text>
-  <text x="512" y="872" text-anchor="middle" font-family="${FONT}"
-        font-size="150" font-weight="800" fill="#ffffff" letter-spacing="-2">Tracker</text>
+  <!-- card -->
+  <rect x="150" y="286" width="724" height="452" rx="56" fill="#ffffff"/>
+  <rect x="214" y="350" width="104" height="76" rx="14" fill="#fbbf24"/>
+  <!-- wordmark inside the card -->
+  <text x="512" y="560" text-anchor="middle" font-family="${FONT}"
+        font-size="132" font-weight="800" fill="url(#t)" letter-spacing="-3">Expense</text>
+  <text x="512" y="688" text-anchor="middle" font-family="${FONT}"
+        font-size="132" font-weight="800" fill="url(#t)" letter-spacing="-3">Tracker</text>
 </svg>`;
 
 // Android adaptive foreground / splash: same card, transparent bg, sized to
