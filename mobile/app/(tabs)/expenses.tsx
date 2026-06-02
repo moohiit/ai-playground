@@ -20,6 +20,7 @@ import {
   type Summary,
 } from "../../lib/types";
 import { AppBackground } from "../../components/ui";
+import { categoryColor } from "../../lib/colors";
 
 type ViewMode = "all" | "personal" | "group";
 type RangeKey = "all" | "month" | "30d" | "7d";
@@ -166,7 +167,7 @@ export default function ExpensesScreen() {
         ListHeaderComponent={
           <View className="mb-2 gap-4">
             <View className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-              <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+              <Text className="text-[13px] uppercase tracking-wider text-zinc-500">
                 {hasFilters ? "Filtered Total" : "Total Expenses"}
               </Text>
               <Text className="mt-1 text-3xl font-bold text-zinc-50">
@@ -179,7 +180,7 @@ export default function ExpensesScreen() {
 
             <View className="gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
               <View className="flex-row items-center justify-between">
-                <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+                <Text className="text-[13px] uppercase tracking-wider text-zinc-500">
                   Filters
                 </Text>
                 {hasFilters && (
@@ -384,7 +385,7 @@ function ExpenseCard({
             }`}
           >
             <Text
-              className={`text-[10px] font-medium uppercase ${
+              className={`text-[12px] font-medium uppercase ${
                 e.type === "group" ? "text-brand-400" : "text-zinc-400"
               }`}
             >
@@ -395,11 +396,19 @@ function ExpenseCard({
       </View>
 
       <View className="mt-3 flex-row flex-wrap items-center gap-2">
-        <View className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-0.5">
-          <Text className="text-[11px] text-zinc-300">{e.category}</Text>
+        <View
+          className="rounded-md border px-2 py-0.5"
+          style={{
+            borderColor: `${categoryColor(e.category)}66`,
+            backgroundColor: `${categoryColor(e.category)}22`,
+          }}
+        >
+          <Text className="text-[13px]" style={{ color: categoryColor(e.category) }}>
+            {e.category}
+          </Text>
         </View>
         {splitNames && (
-          <Text className="flex-1 text-[11px] text-zinc-500" numberOfLines={1}>
+          <Text className="flex-1 text-[13px] text-zinc-500" numberOfLines={1}>
             Split: {splitNames}
           </Text>
         )}

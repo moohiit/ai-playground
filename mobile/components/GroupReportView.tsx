@@ -111,7 +111,7 @@ export function GroupReportView({
       {/* Filters card */}
       <View className="gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <View className="flex-row items-center justify-between">
-          <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+          <Text className="text-[13px] uppercase tracking-wider text-zinc-500">
             Filters
           </Text>
           {summary && summary.totalCount > 0 && (
@@ -128,7 +128,7 @@ export function GroupReportView({
         </View>
 
         <View className="gap-2">
-          <Text className="text-[10px] uppercase tracking-wider text-zinc-500">
+          <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
             Show
           </Text>
           <View className="flex-row gap-2">
@@ -149,14 +149,14 @@ export function GroupReportView({
                 >
                   {s.label}
                 </Text>
-                <Text className="mt-0.5 text-[9px] text-zinc-500">{s.sub}</Text>
+                <Text className="mt-0.5 text-[11px] text-zinc-500">{s.sub}</Text>
               </Pressable>
             ))}
           </View>
         </View>
 
         <View className="gap-2">
-          <Text className="text-[10px] uppercase tracking-wider text-zinc-500">
+          <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
             Time range
           </Text>
           <View className="flex-row flex-wrap gap-2">

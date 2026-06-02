@@ -254,7 +254,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-zinc-100">
                   Active Expenses{" "}
-                  <span className="ml-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+                  <span className="ml-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[12px] font-medium text-zinc-400">
                     {expenseTotal}
                   </span>
                 </h3>
@@ -375,7 +375,7 @@ function MembersSection({
                 tone
               )}
             >
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-brand-500/30 to-fuchsia-500/20 text-[10px] font-semibold text-zinc-200">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-brand-500/30 to-fuchsia-500/20 text-[12px] font-semibold text-zinc-200">
                 {m.name.charAt(0).toUpperCase()}
               </span>
               <span className="text-sm text-zinc-200">{m.name}</span>
@@ -487,17 +487,17 @@ function ExpenseRow({
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-zinc-100">{e.description}</span>
-          <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
+          <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-1.5 py-0.5 text-[12px] text-zinc-400">
             {e.category}
           </span>
         </div>
-        <span className="text-[11px] text-zinc-500">
+        <span className="text-[13px] text-zinc-500">
           Paid by{" "}
           <span className="font-medium text-zinc-300">{e.paidBy.name}</span> ·
           Split {e.splitAmong.length} ways ·{" "}
           {new Date(e.date).toLocaleDateString()}
         </span>
-        <span className="truncate text-[11px] text-zinc-600">
+        <span className="truncate text-[13px] text-zinc-600">
           {e.splitAmong.map((m) => m.name).join(", ")}
         </span>
       </div>
@@ -507,13 +507,13 @@ function ExpenseRow({
         </span>
         <button
           onClick={onEdit}
-          className="text-[11px] text-zinc-500 transition-colors hover:text-brand-400"
+          className="text-[13px] text-zinc-500 transition-colors hover:text-brand-400"
         >
           Edit
         </button>
         <button
           onClick={onDelete}
-          className="text-[11px] text-zinc-500 transition-colors hover:text-red-400"
+          className="text-[13px] text-zinc-500 transition-colors hover:text-red-400"
         >
           Delete
         </button>
@@ -560,7 +560,7 @@ function SettledHistoryView({ history }: { history: SettlementRecord[] }) {
                 minute: "2-digit",
               })}
             </h3>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-400 ring-1 ring-emerald-500/30">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[12px] font-medium text-emerald-400 ring-1 ring-emerald-500/30">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
               {record.expenses.length} expenses
             </span>

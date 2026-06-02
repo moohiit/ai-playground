@@ -334,29 +334,29 @@ export default function GroupDetailScreen() {
 
                 {/* Calculation details */}
                 <View className="mt-4 border-t border-amber-500/20 pt-3">
-                  <Text className="mb-2 text-[11px] uppercase tracking-wider text-amber-300/80">
+                  <Text className="mb-2 text-[13px] uppercase tracking-wider text-amber-300/80">
                     How it's calculated
                   </Text>
                   <View className="flex-row border-b border-white/10 pb-1" style={{ gap: 8 }}>
-                    <Text style={{ flex: 1 }} className="text-[10px] uppercase text-zinc-500">Member</Text>
-                    <Text style={{ width: 58 }} className="text-right text-[10px] uppercase text-zinc-500">Paid</Text>
-                    <Text style={{ width: 58 }} className="text-right text-[10px] uppercase text-zinc-500">Share</Text>
-                    <Text style={{ width: 66 }} className="text-right text-[10px] uppercase text-zinc-500">Net</Text>
+                    <Text style={{ flex: 1 }} className="text-[12px] uppercase text-zinc-500">Member</Text>
+                    <Text style={{ width: 58 }} className="text-right text-[12px] uppercase text-zinc-500">Paid</Text>
+                    <Text style={{ width: 58 }} className="text-right text-[12px] uppercase text-zinc-500">Share</Text>
+                    <Text style={{ width: 66 }} className="text-right text-[12px] uppercase text-zinc-500">Net</Text>
                   </View>
                   {balances.map((b) => (
                     <View key={b.memberId} className="flex-row border-b border-white/5 py-1.5" style={{ gap: 8 }}>
                       <Text style={{ flex: 1 }} className="text-xs text-zinc-200" numberOfLines={1}>
                         {b.name}
                       </Text>
-                      <Text style={{ width: 58 }} className="text-right text-[11px] text-zinc-300">
+                      <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
                         ₹{b.totalPaid.toFixed(2)}
                       </Text>
-                      <Text style={{ width: 58 }} className="text-right text-[11px] text-zinc-300">
+                      <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
                         ₹{b.totalOwed.toFixed(2)}
                       </Text>
                       <Text
                         style={{ width: 66 }}
-                        className={`text-right text-[11px] ${
+                        className={`text-right text-[13px] ${
                           b.netBalance > 0.01
                             ? "text-emerald-400"
                             : b.netBalance < -0.01
@@ -368,7 +368,7 @@ export default function GroupDetailScreen() {
                       </Text>
                     </View>
                   ))}
-                  <Text className="mt-2 text-[10px] leading-4 text-zinc-500">
+                  <Text className="mt-2 text-[12px] leading-4 text-zinc-500">
                     Net = Paid − Share. Positive → owed to them; negative → they
                     owe. The plan above settles everyone with the fewest transfers.
                   </Text>
@@ -409,7 +409,7 @@ export default function GroupDetailScreen() {
                         {e.splitAmong?.length ?? 0} ways
                       </Text>
                       {e.splitAmong && e.splitAmong.length > 0 && (
-                        <Text className="mt-0.5 text-[11px] text-zinc-600" numberOfLines={2}>
+                        <Text className="mt-0.5 text-[13px] text-zinc-600" numberOfLines={2}>
                           Split: {e.splitAmong.map((m) => m.name).join(", ")}
                         </Text>
                       )}
@@ -505,10 +505,10 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
       {/* Member calculation table */}
       <View className="overflow-hidden rounded-xl border border-white/10">
         <View className="flex-row bg-zinc-900/60 px-3 py-2" style={{ gap: 8 }}>
-          <Text style={{ flex: 1 }} className="text-[10px] uppercase text-zinc-500">Member</Text>
-          <Text style={{ width: 58 }} className="text-right text-[10px] uppercase text-zinc-500">Paid</Text>
-          <Text style={{ width: 58 }} className="text-right text-[10px] uppercase text-zinc-500">Share</Text>
-          <Text style={{ width: 64 }} className="text-right text-[10px] uppercase text-zinc-500">Net</Text>
+          <Text style={{ flex: 1 }} className="text-[12px] uppercase text-zinc-500">Member</Text>
+          <Text style={{ width: 58 }} className="text-right text-[12px] uppercase text-zinc-500">Paid</Text>
+          <Text style={{ width: 58 }} className="text-right text-[12px] uppercase text-zinc-500">Share</Text>
+          <Text style={{ width: 64 }} className="text-right text-[12px] uppercase text-zinc-500">Net</Text>
         </View>
         {members.map((m) => {
           const net = m.paid - m.share;
@@ -517,15 +517,15 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
               <Text style={{ flex: 1 }} className="text-xs text-zinc-200" numberOfLines={1}>
                 {m.name}
               </Text>
-              <Text style={{ width: 58 }} className="text-right text-[11px] text-zinc-300">
+              <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
                 ₹{m.paid.toFixed(2)}
               </Text>
-              <Text style={{ width: 58 }} className="text-right text-[11px] text-zinc-300">
+              <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
                 ₹{m.share.toFixed(2)}
               </Text>
               <Text
                 style={{ width: 64 }}
-                className={`text-right text-[11px] ${
+                className={`text-right text-[13px] ${
                   net > 0.01
                     ? "text-emerald-400"
                     : net < -0.01
@@ -540,13 +540,13 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
         })}
         <View className="flex-row border-t border-white/10 bg-zinc-900/40 px-3 py-2" style={{ gap: 8 }}>
           <Text style={{ flex: 1 }} className="text-xs font-semibold text-zinc-200">Total</Text>
-          <Text style={{ width: 58 }} className="text-right text-[11px] font-semibold text-zinc-200">
+          <Text style={{ width: 58 }} className="text-right text-[13px] font-semibold text-zinc-200">
             ₹{total.toFixed(2)}
           </Text>
-          <Text style={{ width: 58 }} className="text-right text-[11px] font-semibold text-zinc-200">
+          <Text style={{ width: 58 }} className="text-right text-[13px] font-semibold text-zinc-200">
             ₹{totalShare.toFixed(2)}
           </Text>
-          <Text style={{ width: 64 }} className="text-right text-[11px] text-zinc-500">—</Text>
+          <Text style={{ width: 64 }} className="text-right text-[13px] text-zinc-500">—</Text>
         </View>
       </View>
 
@@ -561,7 +561,7 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
               <Text className="text-xs text-zinc-200" numberOfLines={1}>
                 {e.description}
               </Text>
-              <Text className="mt-0.5 text-[10px] text-zinc-500" numberOfLines={1}>
+              <Text className="mt-0.5 text-[12px] text-zinc-500" numberOfLines={1}>
                 Paid by {e.paidBy.name} · {new Date(e.date).toLocaleDateString()}
                 {e.splitAmong && e.splitAmong.length > 0
                   ? ` · ${e.splitAmong.map((m) => m.name).join(", ")}`

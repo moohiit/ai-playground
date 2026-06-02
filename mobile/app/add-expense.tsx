@@ -247,7 +247,7 @@ export default function AddExpenseScreen() {
               <Text className="mt-2 text-sm font-medium text-zinc-200">
                 {scanning ? "Scanning receipt…" : "Scan receipt"}
               </Text>
-              <Text className="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-500">
+              <Text className="mt-0.5 text-[12px] uppercase tracking-wider text-zinc-500">
                 Auto-fill with Gemini Vision
               </Text>
             </Pressable>
@@ -450,7 +450,7 @@ function Field({
 }) {
   return (
     <View className="gap-1.5">
-      <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+      <Text className="text-[13px] uppercase tracking-wider text-zinc-500">
         {label}
       </Text>
       {children}

@@ -5,6 +5,7 @@ import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { AddExpenseModal } from "../components/AddExpenseModal";
+import { categoryColor } from "../colors";
 
 type Expense = {
   _id: string;
@@ -246,7 +247,7 @@ export function Dashboard() {
       <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-3 backdrop-blur-sm sm:p-4">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <div className="flex items-center gap-2">
-            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+            <span className="hidden text-[13px] uppercase tracking-wider text-zinc-500 sm:inline">
               Type
             </span>
             <div className="flex gap-1.5">
@@ -263,7 +264,7 @@ export function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+            <span className="hidden text-[13px] uppercase tracking-wider text-zinc-500 sm:inline">
               Status
             </span>
             <div className="flex gap-1.5">
@@ -284,7 +285,7 @@ export function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+            <span className="hidden text-[13px] uppercase tracking-wider text-zinc-500 sm:inline">
               When
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -301,7 +302,7 @@ export function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+            <span className="hidden text-[13px] uppercase tracking-wider text-zinc-500 sm:inline">
               Category
             </span>
             <select
@@ -401,7 +402,14 @@ export function Dashboard() {
                   </td>
                   <td className="px-4 py-3 text-zinc-100">{e.description}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[11px] text-zinc-300">
+                    <span
+                      className="rounded-md border px-2 py-0.5 text-[13px]"
+                      style={{
+                        color: categoryColor(e.category),
+                        borderColor: `${categoryColor(e.category)}66`,
+                        backgroundColor: `${categoryColor(e.category)}1f`,
+                      }}
+                    >
                       {e.category}
                     </span>
                   </td>
@@ -417,7 +425,7 @@ export function Dashboard() {
                   <td className="px-4 py-3">
                     <span
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ring-1",
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-medium uppercase ring-1",
                         e.type === "group"
                           ? "bg-brand-500/10 text-brand-500 ring-brand-500/30"
                           : "bg-zinc-800/60 text-zinc-400 ring-zinc-700"
@@ -504,7 +512,7 @@ function StatCard({
           accent ?? "from-brand-500/40"
         )}
       />
-      <div className="text-[11px] uppercase tracking-wider text-zinc-500">
+      <div className="text-[13px] uppercase tracking-wider text-zinc-500">
         {label}
       </div>
       <div className="mt-1 text-2xl font-bold tabular-nums text-zinc-100">
@@ -556,13 +564,13 @@ function BreakdownCard({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+          <div className="text-[12px] uppercase tracking-wider text-zinc-500">
             Active
           </div>
           <div className="mt-0.5 text-xl font-bold tabular-nums text-zinc-100">
             ₹{activeAmount.toFixed(2)}
           </div>
-          <div className="mt-0.5 text-[11px] text-zinc-500">
+          <div className="mt-0.5 text-[13px] text-zinc-500">
             {activeCount} {activeCount === 1 ? "entry" : "entries"}
             {since
               ? ` · since ${new Date(since).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
@@ -570,13 +578,13 @@ function BreakdownCard({
           </div>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+          <div className="text-[12px] uppercase tracking-wider text-zinc-500">
             Total
           </div>
           <div className="mt-0.5 text-xl font-bold tabular-nums text-zinc-100">
             ₹{totalAmount.toFixed(2)}
           </div>
-          <div className="mt-0.5 text-[11px] text-zinc-500">all time</div>
+          <div className="mt-0.5 text-[13px] text-zinc-500">all time</div>
         </div>
       </div>
     </div>
@@ -644,7 +652,7 @@ function ExpenseCard({
           </div>
           <span
             className={cn(
-              "mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ring-1",
+              "mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium uppercase ring-1",
               e.type === "group"
                 ? "bg-brand-500/10 text-brand-500 ring-brand-500/30"
                 : "bg-zinc-800/60 text-zinc-400 ring-zinc-700"
@@ -656,11 +664,11 @@ function ExpenseCard({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[11px] text-zinc-300">
+        <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[13px] text-zinc-300">
           {e.category}
         </span>
         {splitNames && (
-          <span className="truncate text-[11px] text-zinc-500">
+          <span className="truncate text-[13px] text-zinc-500">
             Split: {splitNames}
           </span>
         )}

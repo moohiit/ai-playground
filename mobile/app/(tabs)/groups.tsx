@@ -126,7 +126,7 @@ export default function GroupsTab() {
                 keyboardType="email-address"
                 className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
               />
-              <Text className="text-[11px] text-zinc-500">
+              <Text className="text-[13px] text-zinc-500">
                 Members must already have an account.
               </Text>
               {error && (
@@ -161,7 +161,7 @@ export default function GroupsTab() {
                 {item.description}
               </Text>
             ) : null}
-            <Text className="mt-2 text-[11px] text-zinc-500">
+            <Text className="mt-2 text-[13px] text-zinc-500">
               {item.members.length}{" "}
               {item.members.length === 1 ? "member" : "members"}
             </Text>

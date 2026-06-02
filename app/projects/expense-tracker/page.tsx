@@ -22,7 +22,7 @@ export default function ExpenseTrackerPage() {
           <span className="transition-transform group-hover:-translate-x-1">←</span>
           Back to projects
         </Link>
-        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-400/90 backdrop-blur">
+        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-[13px] uppercase tracking-[0.18em] text-emerald-400/90 backdrop-blur">
           <span className="relative flex h-1.5 w-1.5">
             <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 animate-pulse-ring" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />

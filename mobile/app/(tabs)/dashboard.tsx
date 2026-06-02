@@ -15,11 +15,8 @@ import { useAuth } from "../../lib/auth";
 import type { Summary } from "../../lib/types";
 import { Donut } from "../../components/Donut";
 import { AppBackground, GradientButton, GradientHero } from "../../components/ui";
+import { categoryColor } from "../../lib/colors";
 
-const COLORS = [
-  "#818cf8", "#34d399", "#fbbf24", "#f87171", "#a78bfa",
-  "#f472b6", "#22d3ee", "#fb923c", "#2dd4bf", "#c084fc",
-];
 const fmt = (n: number) => `₹${n.toFixed(2)}`;
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
@@ -150,7 +147,7 @@ export default function Dashboard() {
             {/* Hero */}
             <Animated.View entering={FadeInDown.duration(400)}>
               <GradientHero>
-                <Text className="text-[11px] uppercase tracking-wider text-zinc-300">
+                <Text className="text-[13px] uppercase tracking-wider text-zinc-300">
                   Total Spend (all time)
                 </Text>
                 <Text className="mt-1 text-4xl font-extrabold text-white">
@@ -203,7 +200,7 @@ export default function Dashboard() {
                       disabled={settling}
                       className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1"
                     >
-                      <Text className="text-[11px] font-semibold text-amber-300">
+                      <Text className="text-[13px] font-semibold text-amber-300">
                         {settling ? "Settling…" : "Settle"}
                       </Text>
                     </Pressable>
@@ -277,7 +274,7 @@ export default function Dashboard() {
             {topCats.length > 0 && (
               <Panel title="Top categories">
                 <View className="gap-2.5">
-                  {topCats.map((c, i) => (
+                  {topCats.map((c) => (
                     <View key={c.category}>
                       <View className="flex-row justify-between">
                         <Text className="text-xs text-zinc-300">{c.category}</Text>
@@ -288,7 +285,7 @@ export default function Dashboard() {
                           className="h-full rounded-full"
                           style={{
                             width: `${maxCat > 0 ? (c.total / maxCat) * 100 : 0}%`,
-                            backgroundColor: COLORS[i % COLORS.length],
+                            backgroundColor: categoryColor(c.category),
                           }}
                         />
                       </View>
@@ -321,7 +318,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <View className="min-w-[45%] flex-1 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, backgroundColor: accent }} />
-      <Text className="text-[10px] uppercase tracking-wider text-zinc-500">
+      <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
         {label}
       </Text>
       <Text className="mt-1 text-lg font-bold text-zinc-50">{value}</Text>
@@ -340,9 +337,9 @@ function MiniStat({
 }) {
   return (
     <View className="flex-1 rounded-xl border border-white/10 bg-zinc-950/40 p-3">
-      <Text className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</Text>
+      <Text className="text-[12px] uppercase tracking-wider text-zinc-500">{label}</Text>
       <Text className="mt-0.5 text-base font-bold text-zinc-50">{value}</Text>
-      {hint && <Text className="mt-0.5 text-[10px] text-zinc-500">{hint}</Text>}
+      {hint && <Text className="mt-0.5 text-[12px] text-zinc-500">{hint}</Text>}
     </View>
   );
 }

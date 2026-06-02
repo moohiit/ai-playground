@@ -198,7 +198,7 @@ export function DateField({
 }) {
   return (
     <View className="flex-1 gap-1.5">
-      <Text className="text-[11px] uppercase tracking-wider text-zinc-500">{label}</Text>
+      <Text className="text-[13px] uppercase tracking-wider text-zinc-500">{label}</Text>
       <Pressable
         onPress={onPress}
         className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3"

@@ -2,11 +2,8 @@ import { Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import type { Summary } from "../lib/types";
 import { Donut } from "./Donut";
+import { categoryColor } from "../lib/colors";
 
-const COLORS = [
-  "#818cf8", "#34d399", "#fbbf24", "#f87171", "#a78bfa",
-  "#f472b6", "#22d3ee", "#fb923c", "#2dd4bf", "#c084fc",
-];
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -118,7 +115,7 @@ export function ReportBody({ summary }: { summary: Summary }) {
                     style={{ height: Math.max(2, (x.total / maxDow) * 80) }}
                   />
                 </View>
-                <Text className="text-[9px] text-zinc-500">{DOW[x.day]}</Text>
+                <Text className="text-[11px] text-zinc-500">{DOW[x.day]}</Text>
               </View>
             ))}
           </View>
@@ -129,10 +126,10 @@ export function ReportBody({ summary }: { summary: Summary }) {
       {summary.byCategory.length > 0 && (
         <Panel title="By category">
           <DonutWithLegend
-            data={summary.byCategory.map((c, i) => ({
+            data={summary.byCategory.map((c) => ({
               label: c.category,
               value: c.total,
-              color: COLORS[i % COLORS.length],
+              color: categoryColor(c.category),
             }))}
           />
         </Panel>
@@ -163,7 +160,7 @@ export function ReportBody({ summary }: { summary: Summary }) {
       {summary.byCategory.length > 0 && (
         <Panel title="Category breakdown">
           <View className="gap-2.5">
-            {summary.byCategory.map((c, i) => {
+            {summary.byCategory.map((c) => {
               const pct = (c.total / (summary.totalAmount || 1)) * 100;
               return (
                 <View key={c.category}>
@@ -175,7 +172,7 @@ export function ReportBody({ summary }: { summary: Summary }) {
                       {fmt(c.total)} · {pct.toFixed(1)}%
                     </Text>
                   </View>
-                  <Bar pct={maxCat > 0 ? (c.total / maxCat) * 100 : 0} colorHex={COLORS[i % COLORS.length]} />
+                  <Bar pct={maxCat > 0 ? (c.total / maxCat) * 100 : 0} colorHex={categoryColor(c.category)} />
                 </View>
               );
             })}
@@ -236,9 +233,9 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
       className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
       style={{ flexBasis: "47%", flexGrow: 1 }}
     >
-      <Text className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</Text>
+      <Text className="text-[12px] uppercase tracking-wider text-zinc-500">{label}</Text>
       <Text className="mt-1 text-xl font-bold text-zinc-50">{value}</Text>
-      {hint && <Text className="mt-0.5 text-[10px] text-zinc-500">{hint}</Text>}
+      {hint && <Text className="mt-0.5 text-[12px] text-zinc-500">{hint}</Text>}
     </View>
   );
 }

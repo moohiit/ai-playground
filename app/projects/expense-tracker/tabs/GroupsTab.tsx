@@ -114,7 +114,7 @@ export function GroupsTab() {
                     </p>
                   )}
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium uppercase text-brand-500 ring-1 ring-brand-500/30">
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[12px] font-medium uppercase text-brand-500 ring-1 ring-brand-500/30">
                   {g.members.length} members
                 </span>
               </div>
@@ -122,13 +122,13 @@ export function GroupsTab() {
                 {g.members.slice(0, 6).map((m) => (
                   <span
                     key={m.userId}
-                    className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[11px] text-zinc-400 transition-colors group-hover:border-brand-500/30"
+                    className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[13px] text-zinc-400 transition-colors group-hover:border-brand-500/30"
                   >
                     {m.name}
                   </span>
                 ))}
                 {g.members.length > 6 && (
-                  <span className="rounded-md bg-zinc-800/60 px-2 py-0.5 text-[11px] text-zinc-500">
+                  <span className="rounded-md bg-zinc-800/60 px-2 py-0.5 text-[13px] text-zinc-500">
                     +{g.members.length - 6}
                   </span>
                 )}
@@ -233,7 +233,7 @@ function CreateGroupForm({
           <div className="flex flex-col gap-2">
             {memberEmails.map((m, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-900/80 text-[10px] font-semibold text-zinc-500">
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-900/80 text-[12px] font-semibold text-zinc-500">
                   {i + 1}
                 </span>
                 <input
