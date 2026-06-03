@@ -96,6 +96,36 @@ export default function Dashboard() {
     setRefreshing(false);
   }, [fetchSummary]);
 
+  function handleDeleteAccount() {
+    Alert.alert(
+      "Delete account",
+      "This permanently deletes your account and all your data (personal expenses and groups you created). This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await authFetch("/api/auth/account", {
+                method: "DELETE",
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.error ?? "Failed to delete account");
+              await logout();
+              router.replace("/login");
+            } catch (err) {
+              Alert.alert(
+                "Error",
+                err instanceof Error ? err.message : "Failed to delete account"
+              );
+            }
+          },
+        },
+      ]
+    );
+  }
+
   // "This month" from the byMonth series.
   const now = new Date();
   const thisMonth =
@@ -299,6 +329,15 @@ export default function Dashboard() {
                 </Pressable>
               </Panel>
             )}
+
+            <Pressable
+              onPress={handleDeleteAccount}
+              className="mt-2 items-center rounded-xl border border-red-500/30 bg-red-500/5 py-3"
+            >
+              <Text className="text-sm font-medium text-red-400">
+                Delete account
+              </Text>
+            </Pressable>
           </>
         )}
       </ScrollView>

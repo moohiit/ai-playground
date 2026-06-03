@@ -750,6 +750,40 @@ export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
   return Array.from(grouped.values());
 }
 
+// ── Account deletion ────────────────────────────────
+
+export async function deleteAccount(auth: JWTPayload) {
+  await connectDB();
+  const userId = auth.userId;
+
+  // Groups the user created — these and their expenses are removed entirely.
+  const ownGroups = await Group.find({ createdBy: userId }, { _id: 1 }).lean();
+  const ownGroupIds = ownGroups.map((g) => g._id);
+
+  // Delete the user's personal expenses + all expenses in groups they own.
+  await Expense.deleteMany({
+    $or: [
+      { createdBy: userId, type: "personal" },
+      { groupId: { $in: ownGroupIds } },
+    ],
+  });
+
+  // Delete the groups they own.
+  await Group.deleteMany({ createdBy: userId });
+
+  // Remove the user from groups owned by others (their past group expenses
+  // stay for those groups' balance accuracy, per the privacy policy).
+  await Group.updateMany(
+    { "members.userId": userId },
+    { $pull: { members: { userId } } } as never
+  );
+
+  // Finally, delete the account itself.
+  await User.findByIdAndDelete(userId);
+
+  return { deleted: true };
+}
+
 // ── Personal settlement ─────────────────────────────
 
 export async function settlePersonal(auth: JWTPayload) {

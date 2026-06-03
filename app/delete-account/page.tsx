@@ -44,7 +44,12 @@ export default function DeleteAccountPage() {
         </Section>
 
         <Section title="Delete your entire account">
-          <p>To permanently delete your account and all associated data:</p>
+          <p>
+            <b>In the app (fastest):</b> open the <b>Dashboard</b> tab, scroll to
+            the bottom, tap <b>Delete account</b>, and confirm. Your account and
+            data are removed immediately.
+          </p>
+          <p className="mt-3">Or request it by email:</p>
           <ol className="ml-5 mt-2 list-decimal space-y-1.5">
             <li>
               Send an email to{" "}
