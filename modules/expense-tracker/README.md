@@ -4,7 +4,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 
 ## What it does
 
-- **Personal expenses** — log, edit, categorize, and report on your own spending
+- **Personal expenses** — log, edit, categorize, free-text search, and report on your own spending
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -15,9 +15,10 @@ Grouped by concern:
 
 ### Expenses
 - `POST /api/projects/expense-tracker/expenses` — create (personal or group)
-- `GET /api/projects/expense-tracker/expenses` — list with filters (type, group, category, date range)
+- `GET /api/projects/expense-tracker/expenses` — list with filters (type, group, category, date range, free-text `q`)
 - `PATCH /api/projects/expense-tracker/expenses/:id` — update
 - `DELETE /api/projects/expense-tracker/expenses/:id` — delete
+- `GET /api/projects/expense-tracker/expenses/export` — download the filtered rows as CSV (same filters as list; 5000-row cap)
 
 ### Groups
 - `POST /api/projects/expense-tracker/groups` — create (members added by registered email)
@@ -33,6 +34,10 @@ Grouped by concern:
 
 ### Reports
 - `GET /api/projects/expense-tracker/reports` — aggregations by category, month, and group
+
+### Preferences
+- `GET /api/projects/expense-tracker/prefs` — read per-user prefs (`baseCurrency`, `locale`, `weekStart`); returns defaults if none saved
+- `PATCH /api/projects/expense-tracker/prefs` — update one or more prefs (upsert)
 
 ## Architecture
 
@@ -72,6 +77,7 @@ Stored in MongoDB (see [models.ts](models.ts)):
 
 - **Group** — `{ name, description, createdBy, members: [{ userId, name, email, isActive }] }`
 - **Expense** — `{ type, groupId?, paidBy, amount, description, category, date, splitAmong[], items[], ... }`
+- **UserPrefs** — `{ userId (unique), baseCurrency, locale, weekStart }` — per-user settings (scaffold for multi-currency)
 
 All group operations verify the requesting user is a member before returning or mutating data.
 

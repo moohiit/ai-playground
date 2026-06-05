@@ -134,3 +134,31 @@ expenseSchema.index({ date: -1, groupId: 1 });
 export const Expense: Model<ExpenseDoc> =
   (mongoose.models.Expense as Model<ExpenseDoc>) ||
   mongoose.model<ExpenseDoc>("Expense", expenseSchema);
+
+// Per-user preferences for the expense tracker. Scaffolded in Phase 0 so Phase 1B
+// (multi-currency) has a home for `baseCurrency`. `baseCurrency` defaults to "INR" for
+// continuity with the current ₹-hardcoded UI; Phase 1B replaces the implicit default with
+// an explicit onboarding selection (Decision D-3: user picks, no silent INR assumption).
+export type UserPrefsDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  baseCurrency: string;
+  locale: string;
+  weekStart: number; // 0 = Sunday, 1 = Monday
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const userPrefsSchema = new Schema<UserPrefsDoc>(
+  {
+    userId: { type: String, required: true, unique: true, index: true },
+    baseCurrency: { type: String, default: "INR" },
+    locale: { type: String, default: "en-IN" },
+    weekStart: { type: Number, default: 1 },
+  },
+  { timestamps: true }
+);
+
+export const UserPrefs: Model<UserPrefsDoc> =
+  (mongoose.models.UserPrefs as Model<UserPrefsDoc>) ||
+  mongoose.model<UserPrefsDoc>("UserPrefs", userPrefsSchema);

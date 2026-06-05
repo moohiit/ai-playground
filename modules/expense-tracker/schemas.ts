@@ -83,6 +83,7 @@ export const expenseFilterSchema = z.object({
   groupId: z.string().optional(),
   type: z.enum(["personal", "group"]).optional(),
   category: z.string().optional(),
+  q: z.string().trim().max(100).optional(),
   dateFrom: isoDate,
   dateTo: isoDate,
   settled: z.enum(["true", "false", "all"]).optional().default("false"),
@@ -95,6 +96,7 @@ export type ExpenseFilter = z.infer<typeof expenseFilterSchema>;
 export const reportFilterSchema = z.object({
   groupId: z.string().optional(),
   category: z.string().optional(),
+  q: z.string().trim().max(100).optional(),
   dateFrom: isoDate,
   dateTo: isoDate,
   settled: z.enum(["true", "false", "all"]).optional().default("all"),
@@ -102,6 +104,28 @@ export const reportFilterSchema = z.object({
 });
 
 export type ReportFilter = z.infer<typeof reportFilterSchema>;
+
+export const DEFAULT_PREFS = {
+  baseCurrency: "INR",
+  locale: "en-IN",
+  weekStart: 1,
+} as const;
+
+// Phase 0 scaffold for Phase 1B (multi-currency). All fields optional so the client can
+// PATCH a single preference. `baseCurrency` validated as an ISO-4217-style 3-letter code.
+export const updatePrefsSchema = z
+  .object({
+    baseCurrency: z
+      .string()
+      .regex(/^[A-Za-z]{3}$/, "Use a 3-letter currency code (e.g. INR)")
+      .transform((s) => s.toUpperCase())
+      .optional(),
+    locale: z.string().min(2).max(35).optional(),
+    weekStart: z.union([z.literal(0), z.literal(1)]).optional(),
+  })
+  .strict();
+
+export type UpdatePrefsInput = z.infer<typeof updatePrefsSchema>;
 
 export const geminiReceiptSchema: Schema = {
   type: SchemaType.OBJECT,

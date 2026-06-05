@@ -3,7 +3,7 @@ import { vision } from "@/lib/llm";
 import type { JWTPayload } from "@/lib/auth";
 import { User } from "@/models/User";
 import mongoose from "mongoose";
-import { Group, Expense, type ExpenseDoc } from "./models";
+import { Group, Expense, UserPrefs, type ExpenseDoc } from "./models";
 
 function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   if (!mongoose.isValidObjectId(id)) {
@@ -11,14 +11,55 @@ function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   }
   return new mongoose.Types.ObjectId(id);
 }
+
+// Escape user input before using it inside a RegExp (prevents invalid/abusive patterns).
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Quote a CSV field; also neutralises spreadsheet formula injection (=, +, -, @).
+function csvField(value: unknown): string {
+  let s = value == null ? "" : String(value);
+  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function expensesToCsv(expenses: ExpenseDoc[]): string {
+  const headers = [
+    "Date",
+    "Description",
+    "Category",
+    "Type",
+    "Paid By",
+    "Amount",
+    "Split Among",
+    "Settled",
+  ];
+  const rows = expenses.map((e) => [
+    new Date(e.date).toISOString().slice(0, 10),
+    e.description,
+    e.category,
+    e.type,
+    e.paidBy?.name ?? "",
+    e.amount.toFixed(2),
+    (e.splitAmong ?? []).map((m) => m.name).join("; "),
+    e.settledAt ? "yes" : "no",
+  ]);
+  return [headers, ...rows]
+    .map((cols) => cols.map(csvField).join(","))
+    .join("\r\n");
+}
 import {
   type CreateGroupInput,
   type CreateExpenseInput,
   type ExpenseFilter,
   type ReportFilter,
   type ReceiptResult,
+  type UpdatePrefsInput,
   geminiReceiptSchema,
   receiptResultSchema,
+  DEFAULT_PREFS,
 } from "./schemas";
 import {
   calculateSplits,
@@ -214,12 +255,17 @@ export async function createExpense(
   return expense.toObject();
 }
 
-export async function listExpenses(
-  filter: ExpenseFilter,
-  auth: JWTPayload
-) {
-  await connectDB();
+// Shared query builder for the expense list + CSV export, so both apply identical
+// scoping/filtering. Verifies group access; does NOT page (callers add skip/limit).
+type ExpenseQueryFilter = Pick<
+  ExpenseFilter,
+  "groupId" | "type" | "category" | "q" | "dateFrom" | "dateTo" | "settled"
+>;
 
+async function buildExpenseQuery(
+  filter: ExpenseQueryFilter,
+  auth: JWTPayload
+): Promise<Record<string, unknown>> {
   if (filter.groupId) {
     const group = await Group.findById(filter.groupId).lean();
     if (!group || !group.members.some((m) => m.userId === auth.userId)) {
@@ -261,6 +307,15 @@ export async function listExpenses(
   }
 
   if (filter.category) query.category = filter.category;
+  if (filter.q) {
+    // Case-insensitive substring search across description, line items, and category.
+    // Regex (not a $text index) so partial words match ("coff" → "coffee") with no migration.
+    const rx = new RegExp(escapeRegex(filter.q), "i");
+    query.$and = [
+      ...(Array.isArray(query.$and) ? query.$and : []),
+      { $or: [{ description: rx }, { "items.name": rx }, { category: rx }] },
+    ];
+  }
   if (filter.dateFrom || filter.dateTo) {
     query.date = {};
     if (filter.dateFrom)
@@ -268,6 +323,16 @@ export async function listExpenses(
     if (filter.dateTo)
       (query.date as Record<string, unknown>).$lte = new Date(filter.dateTo);
   }
+
+  return query;
+}
+
+export async function listExpenses(
+  filter: ExpenseFilter,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const query = await buildExpenseQuery(filter, auth);
 
   const skip = (filter.page - 1) * filter.limit;
   const [expenses, total] = await Promise.all([
@@ -285,6 +350,22 @@ export async function listExpenses(
     page: filter.page,
     totalPages: Math.ceil(total / filter.limit),
   };
+}
+
+// Hard cap on a single CSV export to bound memory/response size.
+const CSV_EXPORT_LIMIT = 5000;
+
+export async function exportExpensesCsv(
+  filter: ExpenseQueryFilter,
+  auth: JWTPayload
+): Promise<string> {
+  await connectDB();
+  const query = await buildExpenseQuery(filter, auth);
+  const expenses = await Expense.find(query)
+    .sort({ date: -1 })
+    .limit(CSV_EXPORT_LIMIT)
+    .lean();
+  return expensesToCsv(expenses);
 }
 
 export async function updateExpense(
@@ -448,6 +529,13 @@ export async function getSummary(
   }
 
   if (filter.category) match.category = filter.category;
+  if (filter.q) {
+    const rx = new RegExp(escapeRegex(filter.q), "i");
+    match.$and = [
+      ...((match.$and as unknown[]) ?? []),
+      { $or: [{ description: rx }, { "items.name": rx }, { category: rx }] },
+    ];
+  }
 
   if (filter.dateFrom || filter.dateTo) {
     match.date = {};
@@ -842,4 +930,31 @@ export async function getPersonalSettlementHistory(auth: JWTPayload) {
   }
 
   return Array.from(grouped.values());
+}
+
+// ── Preferences ─────────────────────────────────────
+
+export async function getPrefs(auth: JWTPayload) {
+  await connectDB();
+  const prefs = await UserPrefs.findOne({ userId: auth.userId }).lean();
+  // No row yet → return defaults without persisting; first write upserts.
+  return {
+    baseCurrency: prefs?.baseCurrency ?? DEFAULT_PREFS.baseCurrency,
+    locale: prefs?.locale ?? DEFAULT_PREFS.locale,
+    weekStart: prefs?.weekStart ?? DEFAULT_PREFS.weekStart,
+  };
+}
+
+export async function updatePrefs(input: UpdatePrefsInput, auth: JWTPayload) {
+  await connectDB();
+  const prefs = await UserPrefs.findOneAndUpdate(
+    { userId: auth.userId },
+    { $set: input },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+  return {
+    baseCurrency: prefs!.baseCurrency,
+    locale: prefs!.locale,
+    weekStart: prefs!.weekStart,
+  };
 }

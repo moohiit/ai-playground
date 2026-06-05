@@ -16,6 +16,7 @@
     "expo": "^54.0.35",
     "expo-asset": "~12.0.13",
     "expo-constants": "~18.0.13",
+    "expo-file-system": "~19.0.23",
     "expo-image-picker": "~17.0.11",
     "expo-linear-gradient": "~15.0.8",
     "expo-linking": "~8.0.12",

@@ -63,12 +63,15 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("all");
   const [category, setCategory] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [range, setRange] = useState<RangeKey>("all");
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
   const [settling, setSettling] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [settled, setSettled] = useState<"false" | "true" | "all">("false");
 
   const fetchExpenses = useCallback(async () => {
@@ -81,12 +84,14 @@ export function Dashboard() {
     });
     if (view !== "all") params.set("type", view);
     if (category) params.set("category", category);
+    if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
     params.set("settled", settled);
 
     // Keep the Total Expenses card consistent with the listed rows.
     const summaryParams = new URLSearchParams({ scope: view, settled });
     if (category) summaryParams.set("category", category);
+    if (debouncedSearch) summaryParams.set("q", debouncedSearch);
     if (dateFrom) summaryParams.set("dateFrom", dateFrom);
 
     try {
@@ -106,7 +111,7 @@ export function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [view, category, range, settled, page, authFetch]);
+  }, [view, category, debouncedSearch, range, settled, page, authFetch]);
 
   const fetchBreakdown = useCallback(async () => {
     const [allRes, pRes, gRes, hRes] = await Promise.all([
@@ -140,12 +145,22 @@ export function Dashboard() {
     fetchBreakdown();
   }, [fetchBreakdown]);
 
+  // Debounce the search box so we don't fire a request on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   useEffect(() => {
     setPage(1);
-  }, [view, category, range, settled]);
+  }, [view, category, debouncedSearch, range, settled]);
 
   const hasActiveFilters =
-    view !== "all" || category !== "" || range !== "all" || settled !== "false";
+    view !== "all" ||
+    category !== "" ||
+    search !== "" ||
+    range !== "all" ||
+    settled !== "false";
 
   async function handleSettlePersonal() {
     const count = breakdown?.personalActiveCount ?? 0;
@@ -179,6 +194,37 @@ export function Dashboard() {
       method: "DELETE",
     });
     fetchExpenses();
+  }
+
+  async function handleExportCsv() {
+    if (exporting || total === 0) return;
+    setExporting(true);
+    const dateFrom = rangeToDateFrom(range);
+    const params = new URLSearchParams();
+    if (view !== "all") params.set("type", view);
+    if (category) params.set("category", category);
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    params.set("settled", settled);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/expenses/export?${params}`
+      );
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -245,6 +291,34 @@ export function Dashboard() {
       )}
 
       <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-3 backdrop-blur-sm sm:p-4">
+        <div className="relative">
+          <svg
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+            width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search description, items, or category…"
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 py-2 pl-9 pr-9 text-sm text-zinc-200 outline-none transition-colors placeholder:text-zinc-600 hover:border-zinc-600 focus:border-brand-500/60"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-zinc-200"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <div className="flex items-center gap-2">
             <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
@@ -319,22 +393,36 @@ export function Dashboard() {
             </select>
           </div>
 
-          {hasActiveFilters && (
+          <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={() => {
-                setView("all");
-                setCategory("");
-                setRange("all");
-                setSettled("false");
-              }}
-              className="ml-auto inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+              onClick={handleExportCsv}
+              disabled={exporting || total === 0}
+              title="Export the filtered expenses as CSV"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 6 6 18M6 6l12 12" />
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
               </svg>
-              Clear
+              {exporting ? "Exporting…" : "CSV"}
             </button>
-          )}
+            {hasActiveFilters && (
+              <button
+                onClick={() => {
+                  setView("all");
+                  setCategory("");
+                  setSearch("");
+                  setRange("all");
+                  setSettled("false");
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+                Clear
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

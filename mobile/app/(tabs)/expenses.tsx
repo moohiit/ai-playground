@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -21,6 +22,7 @@ import {
 } from "../../lib/types";
 import { AppBackground } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
+import { exportExpensesCsv } from "../../lib/csv";
 
 type ViewMode = "all" | "personal" | "group";
 type RangeKey = "all" | "month" | "30d" | "7d";
@@ -55,11 +57,14 @@ export default function ExpensesScreen() {
   const [totalAmount, setTotalAmount] = useState(0);
   const [view, setView] = useState<ViewMode>("all");
   const [category, setCategory] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [range, setRange] = useState<RangeKey>("all");
   const [settled, setSettled] = useState<"false" | "true" | "all">("false");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const fetchExpenses = useCallback(async () => {
     const dateFrom = rangeToDateFrom(range);
@@ -69,12 +74,14 @@ export default function ExpensesScreen() {
     });
     if (view !== "all") params.set("type", view);
     if (category) params.set("category", category);
+    if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
     params.set("settled", settled);
 
     // Keep the headline total consistent with the listed rows.
     const summaryParams = new URLSearchParams({ scope: view, settled });
     if (category) summaryParams.set("category", category);
+    if (debouncedSearch) summaryParams.set("q", debouncedSearch);
     if (dateFrom) summaryParams.set("dateFrom", dateFrom);
 
     try {
@@ -90,7 +97,7 @@ export default function ExpensesScreen() {
     } catch {
       // keep last good state on transient errors
     }
-  }, [view, category, range, settled, page, authFetch]);
+  }, [view, category, debouncedSearch, range, settled, page, authFetch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -99,15 +106,40 @@ export default function ExpensesScreen() {
     }, [fetchExpenses])
   );
 
+  // Debounce the search box so we don't fire a request on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   useEffect(() => {
     setPage(1);
-  }, [view, category, range, settled]);
+  }, [view, category, debouncedSearch, range, settled]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchExpenses();
     setRefreshing(false);
   }, [fetchExpenses]);
+
+  async function handleExportCsv() {
+    if (exporting || total === 0) return;
+    setExporting(true);
+    const dateFrom = rangeToDateFrom(range);
+    const params = new URLSearchParams();
+    if (view !== "all") params.set("type", view);
+    if (category) params.set("category", category);
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    params.set("settled", settled);
+    try {
+      await exportExpensesCsv({ authFetch, params });
+    } catch {
+      Alert.alert("Export failed", "Could not export expenses. Try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function handleEdit(e: Expense) {
     router.push({
@@ -138,19 +170,36 @@ export default function ExpensesScreen() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasFilters =
-    view !== "all" || category !== "" || range !== "all" || settled !== "false";
+    view !== "all" ||
+    category !== "" ||
+    search !== "" ||
+    range !== "all" ||
+    settled !== "false";
 
   return (
     <SafeAreaView className="flex-1" edges={["top"]}>
       <AppBackground />
       <View className="flex-row items-center justify-between px-5 pb-2 pt-2">
         <Text className="text-xl font-bold text-zinc-50">Expenses</Text>
-        <Pressable
-          onPress={() => router.push("/add-expense")}
-          className="rounded-lg bg-brand-600 px-3 py-1.5"
-        >
-          <Text className="text-xs font-semibold text-white">+ New</Text>
-        </Pressable>
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            onPress={handleExportCsv}
+            disabled={exporting || total === 0}
+            className={`rounded-lg border border-white/10 bg-zinc-900/40 px-3 py-1.5 ${
+              exporting || total === 0 ? "opacity-40" : ""
+            }`}
+          >
+            <Text className="text-xs font-semibold text-zinc-300">
+              {exporting ? "Exporting…" : "CSV"}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push("/add-expense")}
+            className="rounded-lg bg-brand-600 px-3 py-1.5"
+          >
+            <Text className="text-xs font-semibold text-white">+ New</Text>
+          </Pressable>
+        </View>
       </View>
 
       <FlatList
@@ -188,12 +237,31 @@ export default function ExpensesScreen() {
                     onPress={() => {
                       setView("all");
                       setCategory("");
+                      setSearch("");
                       setRange("all");
                       setSettled("false");
                     }}
                     hitSlop={8}
                   >
                     <Text className="text-xs text-zinc-400">Clear</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              <View className="flex-row items-center gap-2 rounded-lg border border-white/10 bg-zinc-900/40 px-3">
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Search description, items, category…"
+                  placeholderTextColor="#52525b"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  className="flex-1 py-2 text-sm text-zinc-200"
+                />
+                {search !== "" && (
+                  <Pressable onPress={() => setSearch("")} hitSlop={8}>
+                    <Text className="text-base text-zinc-500">✕</Text>
                   </Pressable>
                 )}
               </View>
