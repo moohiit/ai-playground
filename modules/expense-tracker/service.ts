@@ -34,6 +34,8 @@ function expensesToCsv(expenses: ExpenseDoc[]): string {
     "Type",
     "Paid By",
     "Amount",
+    "Currency",
+    "Amount (base)",
     "Split Among",
     "Settled",
   ];
@@ -45,6 +47,8 @@ function expensesToCsv(expenses: ExpenseDoc[]): string {
     e.type,
     e.paidBy?.name ?? "",
     e.amount.toFixed(2),
+    e.currency ?? "INR",
+    (e.amountBase ?? e.amount).toFixed(2),
     (e.splitAmong ?? []).map((m) => m.name).join("; "),
     e.settledAt ? "yes" : "no",
   ]);
@@ -72,6 +76,7 @@ import {
   type Settlement,
 } from "./balance";
 import { RECEIPT_SYSTEM_PROMPT, RECEIPT_PROMPT } from "./prompts";
+import { convert } from "./rates";
 
 // ── Groups ──────────────────────────────────────────
 
@@ -241,6 +246,11 @@ export async function createExpense(
     splitAmong = [];
   }
 
+  // Currency: default to the creator's base; freeze amountBase at write time.
+  const { baseCurrency } = await getPrefs(auth);
+  const currency = input.currency ?? baseCurrency;
+  const amountBase = await convert(input.amount, currency, baseCurrency);
+
   const expense = await Expense.create({
     type: input.type,
     direction: input.direction ?? "expense",
@@ -248,6 +258,8 @@ export async function createExpense(
     createdBy: auth.userId,
     paidBy: input.paidBy,
     amount: input.amount,
+    currency,
+    amountBase,
     description: input.description,
     category: input.category,
     date: new Date(input.date),
@@ -461,6 +473,19 @@ export async function updateExpense(
   expense.type = newType;
   expense.direction = newDirection;
 
+  // Re-freeze the base-currency amount whenever amount/currency changes (or backfill
+  // a pre-1B row that has no amountBase yet).
+  const { baseCurrency } = await getPrefs(auth);
+  const newCurrency = input.currency ?? expense.currency ?? baseCurrency;
+  expense.currency = newCurrency;
+  if (
+    input.amount !== undefined ||
+    input.currency !== undefined ||
+    expense.amountBase == null
+  ) {
+    expense.amountBase = await convert(expense.amount, newCurrency, baseCurrency);
+  }
+
   // Guard: a row marked income must carry an income category (covers partial
   // PATCHes that flip direction without resending a matching category).
   if (
@@ -633,31 +658,37 @@ export async function getSummary(
   let maxDate = -Infinity;
 
   for (const e of expenses) {
+    // All aggregation is in the viewer's base currency. `amountBase` is frozen at
+    // write; pre-1B rows fall back to `amount`. Split amounts are stored in the
+    // entry currency, so scale them by the same base/entry ratio.
+    const baseAmt = e.amountBase ?? e.amount;
+    const ratio = e.amount > 0 ? baseAmt / e.amount : 1;
+
     // Income is tracked separately and never counts toward spending aggregates,
     // breakdowns, or the spending date range (used for averagePerDay).
     if (e.direction === "income") {
-      incomeAmount += e.amount;
+      incomeAmount += baseAmt;
       incomeCount += 1;
       continue;
     }
 
-    totalAmount += e.amount;
+    totalAmount += baseAmt;
 
-    if (e.paidBy?.id === userId) paidByMe += e.amount;
+    if (e.paidBy?.id === userId) paidByMe += baseAmt;
 
     if (e.type === "personal") {
-      personalTotal += e.amount;
-      myShare += e.amount;
+      personalTotal += baseAmt;
+      myShare += baseAmt;
     } else {
-      groupTotal += e.amount;
+      groupTotal += baseAmt;
       const myPart = (e.splits ?? []).find((s) => s.memberId === userId);
-      if (myPart) myShare += myPart.amount;
+      if (myPart) myShare += myPart.amount * ratio;
     }
 
-    if (!largest || e.amount > largest.amount) {
+    if (!largest || baseAmt > largest.amount) {
       largest = {
         description: e.description,
-        amount: e.amount,
+        amount: baseAmt,
         date: new Date(e.date).toISOString(),
         paidBy: e.paidBy?.name ?? "-",
         category: e.category,
@@ -669,7 +700,7 @@ export async function getSummary(
       total: 0,
       count: 0,
     };
-    cat.total += e.amount;
+    cat.total += baseAmt;
     cat.count += 1;
     byCategoryMap.set(e.category, cat);
 
@@ -685,11 +716,11 @@ export async function getSummary(
       total: 0,
       count: 0,
     };
-    m.total += e.amount;
+    m.total += baseAmt;
     m.count += 1;
     byMonthMap.set(monthKey, m);
 
-    byDayOfWeek[d.getUTCDay()].total += e.amount;
+    byDayOfWeek[d.getUTCDay()].total += baseAmt;
     byDayOfWeek[d.getUTCDay()].count += 1;
 
     if (e.type === "group" && e.groupId && !filter.groupId) {
@@ -702,9 +733,9 @@ export async function getSummary(
         myShare: 0,
         count: 0,
       };
-      g.total += e.amount;
+      g.total += baseAmt;
       const myPart = (e.splits ?? []).find((s) => s.memberId === userId);
-      if (myPart) g.myShare += myPart.amount;
+      if (myPart) g.myShare += myPart.amount * ratio;
       g.count += 1;
       byGroupMap.set(gid, g);
     }
@@ -717,7 +748,7 @@ export async function getSummary(
         total: 0,
         count: 0,
       };
-      p.total += e.amount;
+      p.total += baseAmt;
       p.count += 1;
       topPayersMap.set(pid, p);
     }
@@ -988,14 +1019,36 @@ export async function getPrefs(auth: JWTPayload) {
 
 export async function updatePrefs(input: UpdatePrefsInput, auth: JWTPayload) {
   await connectDB();
+  const prev = await UserPrefs.findOne({ userId: auth.userId }).lean();
+  const prevBase = prev?.baseCurrency ?? DEFAULT_PREFS.baseCurrency;
+
   const prefs = await UserPrefs.findOneAndUpdate(
     { userId: auth.userId },
     { $set: input },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   ).lean();
+
+  // Changing the base currency re-freezes every owned row's `amountBase` against
+  // the new base, so historical amounts don't show old numbers with a new symbol.
+  if (input.baseCurrency && input.baseCurrency !== prevBase) {
+    await recomputeAmountBase(auth.userId, prefs!.baseCurrency);
+  }
+
   return {
     baseCurrency: prefs!.baseCurrency,
     locale: prefs!.locale,
     weekStart: prefs!.weekStart,
   };
+}
+
+// Re-convert amountBase for every expense the user owns into `base`. FX rates are
+// cached per source currency, so this is one network call per distinct currency.
+async function recomputeAmountBase(userId: string, base: string) {
+  const docs = await Expense.find({ createdBy: userId })
+    .select("amount currency")
+    .lean();
+  for (const d of docs) {
+    const newBase = await convert(d.amount, d.currency ?? "INR", base);
+    await Expense.updateOne({ _id: d._id }, { $set: { amountBase: newBase } });
+  }
 }

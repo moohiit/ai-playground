@@ -146,7 +146,62 @@ async function main() {
     });
     check("POST income w/ type group → 400", badType.status === 400, `got ${badType.status}`);
 
-    // no filter → all 4 (3 expense + 1 income)
+    // 1B. Multi-currency — create a USD expense, expect conversion to INR base.
+    console.log("\n[currency]");
+    const usdRes = await fetch(`${API}/expenses`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "personal", direction: "expense", currency: "USD", category: "Transport",
+        paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+        amount: 100, description: "USD taxi", date: now.toISOString().slice(0, 10),
+      }),
+    });
+    const usd = await usdRes.json();
+    check("POST USD expense → 201", usdRes.status === 201, `got ${usdRes.status}`);
+    const exp = usd.expense ?? {};
+    check("stored currency is USD", exp.currency === "USD", `currency=${exp.currency}`);
+    check(
+      "amountBase converted to INR (≈ 70–110× )",
+      typeof exp.amountBase === "number" && exp.amountBase > 7000 && exp.amountBase < 11000,
+      `amountBase=${exp.amountBase}`
+    );
+    check("base differs from raw amount", exp.amountBase !== 100);
+
+    // base-currency entries should NOT call FX (amountBase === amount)
+    const inrRes = await fetch(`${API}/expenses`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "personal", direction: "expense", currency: "INR", category: "Transport",
+        paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+        amount: 500, description: "INR auto", date: now.toISOString().slice(0, 10),
+      }),
+    });
+    const inr = (await inrRes.json()).expense ?? {};
+    check("INR entry: amountBase === amount", inr.amountBase === 500, `amountBase=${inr.amountBase}`);
+
+    // unsupported currency rejected
+    const badCur = await fetch(`${API}/expenses`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "personal", currency: "XYZ", category: "Transport",
+        paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+        amount: 10, description: "bad cur", date: now.toISOString().slice(0, 10),
+      }),
+    });
+    check("unsupported currency → 400", badCur.status === 400, `got ${badCur.status}`);
+
+    // summary should sum the converted (base) amount, not the raw 100
+    const csum = await (await fetch(`${API}/reports/summary?scope=personal&settled=all`, { headers: auth })).json();
+    check(
+      "summary spending uses base amounts (USD converted)",
+      csum.totalAmount > 1850 + 500 + 7000,
+      `totalAmount=${csum.totalAmount}`
+    );
+
+    // no filter → all rows (≥4)
     const allRes = await fetch(`${API}/expenses?settled=all`, { headers: auth });
     const allData = await allRes.json();
     check("no-direction list returns all rows (≥4)", allData.total >= 4, `total=${allData.total}`);
@@ -188,11 +243,11 @@ async function main() {
     check("GET /expenses/export → 200", eRes.status === 200, `got ${eRes.status}`);
     check("content-type is text/csv", ctype.includes("text/csv"), ctype);
     check(
-      "CSV header has Direction column",
-      lines[0] === "Date,Description,Category,Direction,Type,Paid By,Amount,Split Among,Settled",
+      "CSV header has Direction + Currency columns",
+      lines[0] === "Date,Description,Category,Direction,Type,Paid By,Amount,Currency,Amount (base),Split Among,Settled",
       lines[0]
     );
-    check("CSV export=expense has 3 data rows", lines.length === 4, `lines=${lines.length}`);
+    check("CSV export=expense has ≥3 data rows", lines.length >= 4, `lines=${lines.length}`);
     check("CSV contains Starbucks row", csv.includes("Coffee at Starbucks"));
     check("CSV (expense) excludes salary income", !csv.includes("Monthly salary"));
 

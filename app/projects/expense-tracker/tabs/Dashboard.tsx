@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
+import { formatMoney, currencySymbol, SUPPORTED_CURRENCIES } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "../components/AddExpenseModal";
 import { categoryColor } from "../colors";
 
@@ -11,6 +12,8 @@ type Expense = {
   _id: string;
   type: "personal" | "group";
   direction?: "expense" | "income";
+  currency?: string;
+  amountBase?: number;
   groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;
@@ -77,6 +80,7 @@ export function Dashboard() {
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
   const [settling, setSettling] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [base, setBase] = useState("INR");
   const [settled, setSettled] = useState<"false" | "true" | "all">("false");
 
   const fetchExpenses = useCallback(async () => {
@@ -154,6 +158,13 @@ export function Dashboard() {
     fetchBreakdown();
   }, [fetchBreakdown]);
 
+  useEffect(() => {
+    authFetch("/api/projects/expense-tracker/prefs")
+      .then((r) => r.json())
+      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
+      .catch(() => {});
+  }, [authFetch]);
+
   // Debounce the search box so we don't fire a request on every keystroke.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -206,6 +217,25 @@ export function Dashboard() {
     fetchExpenses();
   }
 
+  async function handleBaseChange(next: string) {
+    if (next === base) return;
+    const prevBase = base;
+    setBase(next);
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/prefs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseCurrency: next }),
+      });
+      if (!res.ok) throw new Error("Failed to change base currency");
+      // Server re-converts existing rows; refresh to show the new base amounts.
+      await Promise.all([fetchExpenses(), fetchBreakdown()]);
+    } catch {
+      setBase(prevBase);
+      alert("Couldn't change base currency. Try again.");
+    }
+  }
+
   async function handleExportCsv() {
     if (exporting || total === 0) return;
     setExporting(true);
@@ -255,14 +285,14 @@ export function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label={headline.label}
-          value={`₹${headline.value.toFixed(2)}`}
+          value={formatMoney(headline.value, base)}
           hint={`${total} ${total === 1 ? "entry" : "entries"}`}
           accent={headline.accent}
         />
         <StatCard
           label="Net flow"
-          value={`${netAmount < 0 ? "−" : ""}₹${Math.abs(netAmount).toFixed(2)}`}
-          hint={`Income ₹${incomeAmount.toFixed(2)}`}
+          value={formatMoney(netAmount, base)}
+          hint={`Income ${formatMoney(incomeAmount, base)}`}
           accent={netAmount < 0 ? "from-red-500/40" : "from-emerald-500/40"}
         />
         <button
@@ -291,6 +321,7 @@ export function Dashboard() {
           <BreakdownCard
             title="Personal"
             accent="from-emerald-500/40"
+            base={base}
             activeAmount={breakdown.personalActive}
             activeCount={breakdown.personalActiveCount}
             totalAmount={breakdown.personalTotal}
@@ -301,6 +332,7 @@ export function Dashboard() {
           <BreakdownCard
             title="Group"
             accent="from-brand-500/40"
+            base={base}
             activeAmount={breakdown.groupActive}
             activeCount={breakdown.groupActiveCount}
             totalAmount={breakdown.groupTotal}
@@ -433,6 +465,23 @@ export function Dashboard() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+                Base
+              </span>
+              <select
+                value={base}
+                onChange={(e) => handleBaseChange(e.target.value)}
+                title="Your base currency — all totals are shown in this currency"
+                className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-2 py-1.5 text-xs font-medium text-zinc-200 outline-none transition-colors hover:border-zinc-600 focus:border-brand-500/60"
+              >
+                {SUPPORTED_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               onClick={handleExportCsv}
               disabled={exporting || total === 0}
@@ -486,6 +535,7 @@ export function Dashboard() {
                 key={e._id}
                 expense={e}
                 index={i}
+                base={base}
                 onEdit={() => setEditingExpense(e)}
                 onDelete={() => handleDelete(e._id)}
               />
@@ -548,7 +598,14 @@ export function Dashboard() {
                       e.direction === "income" ? "text-emerald-400" : "text-zinc-100"
                     )}
                   >
-                    {e.direction === "income" ? "+" : ""}₹{e.amount.toFixed(2)}
+                    {e.direction === "income" ? "+" : ""}
+                    {formatMoney(e.amountBase ?? e.amount, base)}
+                    {e.currency && e.currency !== base && (
+                      <div className="text-[10px] font-normal text-zinc-500">
+                        {currencySymbol(e.currency)}
+                        {e.amount.toFixed(2)} {e.currency}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-xs text-zinc-500">
                     {e.splitAmong && e.splitAmong.length > 0
@@ -659,6 +716,7 @@ function StatCard({
 function BreakdownCard({
   title,
   accent,
+  base,
   activeAmount,
   activeCount,
   totalAmount,
@@ -668,6 +726,7 @@ function BreakdownCard({
 }: {
   title: string;
   accent?: string;
+  base: string;
   activeAmount: number;
   activeCount: number;
   totalAmount: number;
@@ -701,7 +760,7 @@ function BreakdownCard({
             Active
           </div>
           <div className="mt-0.5 text-xl font-bold tabular-nums text-zinc-100">
-            ₹{activeAmount.toFixed(2)}
+            {formatMoney(activeAmount, base)}
           </div>
           <div className="mt-0.5 text-[11px] text-zinc-500">
             {activeCount} {activeCount === 1 ? "entry" : "entries"}
@@ -715,7 +774,7 @@ function BreakdownCard({
             Total
           </div>
           <div className="mt-0.5 text-xl font-bold tabular-nums text-zinc-100">
-            ₹{totalAmount.toFixed(2)}
+            {formatMoney(totalAmount, base)}
           </div>
           <div className="mt-0.5 text-[11px] text-zinc-500">all time</div>
         </div>
@@ -752,11 +811,13 @@ function FilterChip({
 function ExpenseCard({
   expense: e,
   index,
+  base,
   onEdit,
   onDelete,
 }: {
   expense: Expense;
   index: number;
+  base: string;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -786,8 +847,15 @@ function ExpenseCard({
               e.direction === "income" ? "text-emerald-400" : "text-zinc-100"
             )}
           >
-            {e.direction === "income" ? "+" : ""}₹{e.amount.toFixed(2)}
+            {e.direction === "income" ? "+" : ""}
+            {formatMoney(e.amountBase ?? e.amount, base)}
           </div>
+          {e.currency && e.currency !== base && (
+            <div className="text-[10px] text-zinc-500">
+              {currencySymbol(e.currency)}
+              {e.amount.toFixed(2)} {e.currency}
+            </div>
+          )}
           <span
             className={cn(
               "mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ring-1",

@@ -63,6 +63,11 @@ export type ExpenseDoc = {
   createdBy: string;
   paidBy: { id: string; name: string };
   amount: number;
+  // Phase 1B: currency the amount was entered in, and the amount converted to the
+  // creator's base currency (frozen at write). Pre-1B rows lack both → treated as
+  // base-currency at read time (amountBase falls back to amount).
+  currency: string;
+  amountBase: number;
   description: string;
   category: string;
   date: Date;
@@ -118,6 +123,8 @@ const expenseSchema = new Schema<ExpenseDoc>(
       name: { type: String, required: true },
     },
     amount: { type: Number, required: true },
+    currency: { type: String, default: "INR" },
+    amountBase: { type: Number, default: null },
     description: { type: String, required: true },
     category: { type: String, required: true, index: true },
     date: { type: Date, required: true, index: true },

@@ -10,6 +10,8 @@ export type Expense = {
   _id: string;
   type: ExpenseType;
   direction?: Direction;
+  currency?: string;
+  amountBase?: number;
   groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;

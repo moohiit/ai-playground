@@ -94,11 +94,20 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
 - [x] Verified: 31/31 smoke checks (direction filters, summary math 1850 spend / 50000 income / 48150 net,
       income-category + personal-only validation, CSV direction column). Web + mobile typecheck clean.
 
-**1B. Multi-currency**
-- [ ] Add `currency: string` (ISO-4217, e.g. `"INR"`) + `amountBase: number` (converted to user base) to txns.
-- [ ] `UserPrefs.baseCurrency` (required, no default); `rates.ts` — Frankfurter keyless daily FX, any pair, cached daily (D-3).
-- [ ] Reports/budgets always aggregate on `amountBase`; original `amount`+`currency` shown on the row.
-- [ ] UI: currency picker on add form; per-group default currency.
+**1B. Multi-currency** — ✅ shipped 2026-06-06
+- [x] Added `currency` + `amountBase` to `Expense` (amountBase frozen at write). `rates.ts` wraps Frankfurter
+      (keyless daily ECB rates) with a 12h in-process cache; `currencies.ts` holds the client-safe code/symbol
+      list. Same-currency entries skip the FX call entirely.
+- [x] `getSummary` aggregates spending/income/net/breakdowns on `amountBase` (pre-1B rows fall back to
+      `amount`); group split shares are scaled by the base/entry ratio. Changing base currency re-converts
+      every owned row server-side (`recomputeAmountBase`) so history isn't shown with a mismatched symbol.
+- [x] UI: currency picker on web `AddExpenseModal` + mobile `add-expense`; **Base** currency switcher on web
+      Dashboard + mobile Expenses; rows show the original `currency` amount when it differs from base; web
+      Dashboard + Reports formatted via `formatMoney(base)`. CSV gained `Currency` + `Amount (base)` columns.
+- [x] Verified: 38/38 smoke checks incl. live USD→INR conversion, base==amount short-circuit, unsupported
+      currency → 400, summary on base amounts. Web + mobile typecheck clean.
+- [ ] **Deferred (1B.2):** group expenses still settle in a single (entry) currency — cross-currency group
+      splitting + group default currency, and PDF/mobile-dashboard symbol theming, are a follow-up.
 
 **1C. Accounts / Wallets**
 - [ ] New `Account` model `{ userId, name, kind:"cash"|"bank"|"card"|"wallet", currency, openingBalance, archived }`.
@@ -200,6 +209,11 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-06 — **Phase 1B (multi-currency) shipped.** `currency` + `amountBase` on expenses; `rates.ts`
+  (Frankfurter, cached) + `currencies.ts`; reports aggregate on base; base-currency switcher with
+  server-side recompute; currency picker + original-currency rows on web & mobile; CSV currency columns.
+  38/38 smoke (live FX). Deferred: cross-currency group splitting, PDF/mobile-dashboard symbol theming (1B.2).
 
 - 2026-06-05 — **Phase 1A (income tracking) COMPLETE.** `direction` field (lazy-defaulted, no migration),
   income/net in summary, direction filter on list + CSV export, income/expense toggle + Net cards on web &

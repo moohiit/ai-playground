@@ -5,6 +5,7 @@ import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { ExportPdfButton } from "../components/ExportPdf";
 import { categoryColor } from "../colors";
+import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 import {
   PieChart,
   Pie,
@@ -90,8 +91,11 @@ function quickRangeToDates(r: QuickRange): { from: string; to: string } {
   return { from: start.toISOString().slice(0, 10), to };
 }
 
-const fmt = (n: number) =>
-  `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// `reportBase` is set on each ReportsTab render so the formatter sub-components
+// below (charts/tables) can read the active base currency without threading it
+// through every component. getSummary returns all amounts already in base.
+let reportBase = "INR";
+const fmt = (n: number) => formatMoney(n, reportBase);
 
 export function ReportsTab() {
   const { authFetch } = useAuth();
@@ -101,6 +105,15 @@ export function ReportsTab() {
   const [scope, setScope] = useState<Scope>("all");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [base, setBase] = useState("INR");
+  reportBase = base;
+
+  useEffect(() => {
+    authFetch("/api/projects/expense-tracker/prefs")
+      .then((r) => r.json())
+      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
+      .catch(() => {});
+  }, [authFetch]);
 
   function applyQuick(r: QuickRange) {
     setQuickRange(r);
@@ -519,7 +532,7 @@ function DayOfWeekCard({ summary }: { summary: Summary }) {
               tick={{ fill: "#71717a", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v) => `₹${v}`}
+              tickFormatter={(v) => `${currencySymbol(reportBase)}${v}`}
             />
             <Tooltip
               cursor={{ fill: "rgba(34,211,238,0.08)" }}
@@ -679,7 +692,7 @@ function MonthlyTrendCard({ summary }: { summary: Summary }) {
               tick={{ fill: "#71717a", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v) => `₹${v}`}
+              tickFormatter={(v) => `${currencySymbol(reportBase)}${v}`}
             />
             <Tooltip
               cursor={{ fill: "rgba(99,102,241,0.08)" }}

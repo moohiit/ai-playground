@@ -22,6 +22,7 @@ import {
   type Expense,
   type Group,
 } from "../lib/types";
+import { SUPPORTED_CURRENCIES } from "../lib/currency";
 import { AppBackground, GradientButton } from "../components/ui";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -74,6 +75,7 @@ export default function AddExpenseScreen() {
   const [amount, setAmount] = useState(
     editExpense ? String(editExpense.amount) : ""
   );
+  const [currency, setCurrency] = useState(editExpense?.currency ?? "INR");
   const [description, setDescription] = useState(editExpense?.description ?? "");
   const [category, setCategory] = useState<string>(
     editExpense?.category ?? CATEGORIES[0]
@@ -97,6 +99,15 @@ export default function AddExpenseScreen() {
       .then((d) => setGroups(d.groups ?? []))
       .catch(() => {});
   }, [authFetch]);
+
+  // Default a new entry's currency to the user's base currency.
+  useEffect(() => {
+    if (isEdit) return;
+    authFetch("/api/projects/expense-tracker/prefs")
+      .then((r) => r.json())
+      .then((d) => d.prefs?.baseCurrency && setCurrency(d.prefs.baseCurrency))
+      .catch(() => {});
+  }, [authFetch, isEdit]);
 
   const selectedGroup = useMemo(
     () => groups.find((g) => g._id === groupId),
@@ -222,6 +233,7 @@ export default function AddExpenseScreen() {
         body: JSON.stringify({
           type: effectiveType,
           direction,
+          currency,
           groupId: effectiveType === "group" ? groupId : undefined,
           paidBy: payer,
           amount: amt,
@@ -460,6 +472,23 @@ export default function AddExpenseScreen() {
               }}
             />
           )}
+
+          <Field label="Currency">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <Chip
+                  key={c}
+                  active={currency === c}
+                  label={c}
+                  onPress={() => setCurrency(c)}
+                />
+              ))}
+            </ScrollView>
+          </Field>
 
           <Field label="Description">
             <TextInput

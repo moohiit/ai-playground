@@ -23,6 +23,7 @@ import {
 import { AppBackground } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
 import { exportExpensesCsv } from "../../lib/csv";
+import { formatMoney, currencySymbol, SUPPORTED_CURRENCIES } from "../../lib/currency";
 
 type ViewMode = "all" | "personal" | "group";
 type DirectionFilter = "expense" | "income" | "all";
@@ -69,6 +70,7 @@ export default function ExpensesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [base, setBase] = useState("INR");
 
   const fetchExpenses = useCallback(async () => {
     const dateFrom = rangeToDateFrom(range);
@@ -118,6 +120,31 @@ export default function ExpensesScreen() {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => {
+    authFetch("/api/projects/expense-tracker/prefs")
+      .then((r) => r.json())
+      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
+      .catch(() => {});
+  }, [authFetch]);
+
+  async function handleBaseChange(next: string) {
+    if (next === base) return;
+    const prev = base;
+    setBase(next);
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/prefs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseCurrency: next }),
+      });
+      if (!res.ok) throw new Error("failed");
+      await fetchExpenses();
+    } catch {
+      setBase(prev);
+      Alert.alert("Couldn't change base currency", "Please try again.");
+    }
+  }
 
   useEffect(() => {
     setPage(1);
@@ -241,7 +268,8 @@ export default function ExpensesScreen() {
                   direction === "income" ? "text-emerald-400" : "text-zinc-50"
                 }`}
               >
-                {direction === "income" ? "+" : ""}₹{headline.value.toFixed(2)}
+                {direction === "income" ? "+" : ""}
+                {formatMoney(headline.value, base)}
               </Text>
               <Text className="mt-0.5 text-xs text-zinc-500">
                 {total} {total === 1 ? "entry" : "entries"} · {view}
@@ -250,7 +278,7 @@ export default function ExpensesScreen() {
                 <Text className="text-xs text-zinc-400">
                   Income{" "}
                   <Text className="font-semibold text-emerald-400">
-                    ₹{incomeAmount.toFixed(2)}
+                    {formatMoney(incomeAmount, base)}
                   </Text>
                 </Text>
                 <Text className="text-xs text-zinc-400">
@@ -260,7 +288,7 @@ export default function ExpensesScreen() {
                       netAmount < 0 ? "text-red-400" : "text-emerald-400"
                     }`}
                   >
-                    {netAmount < 0 ? "−" : ""}₹{Math.abs(netAmount).toFixed(2)}
+                    {formatMoney(netAmount, base)}
                   </Text>
                 </Text>
               </View>
@@ -375,6 +403,26 @@ export default function ExpensesScreen() {
                   />
                 ))}
               </ScrollView>
+
+              <View className="flex-row items-center gap-2 border-t border-white/5 pt-3">
+                <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
+                  Base
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8 }}
+                >
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <Chip
+                      key={c}
+                      label={c}
+                      active={base === c}
+                      onPress={() => handleBaseChange(c)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
             </View>
           </View>
         }
@@ -382,6 +430,7 @@ export default function ExpensesScreen() {
           <Animated.View entering={FadeInDown.duration(300).delay(Math.min(index, 8) * 40)}>
             <ExpenseCard
               expense={item}
+              base={base}
               onEdit={() => handleEdit(item)}
               onDelete={() => handleDelete(item)}
             />
@@ -475,10 +524,12 @@ function PageBtn({
 
 function ExpenseCard({
   expense: e,
+  base,
   onEdit,
   onDelete,
 }: {
   expense: Expense;
+  base: string;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -504,8 +555,15 @@ function ExpenseCard({
               e.direction === "income" ? "text-emerald-400" : "text-zinc-100"
             }`}
           >
-            {e.direction === "income" ? "+" : ""}₹{e.amount.toFixed(2)}
+            {e.direction === "income" ? "+" : ""}
+            {formatMoney(e.amountBase ?? e.amount, base)}
           </Text>
+          {e.currency && e.currency !== base && (
+            <Text className="text-[10px] text-zinc-500">
+              {currencySymbol(e.currency)}
+              {e.amount.toFixed(2)} {e.currency}
+            </Text>
+          )}
           <View
             className={`mt-1 rounded-full px-2 py-0.5 ${
               e.direction === "income"

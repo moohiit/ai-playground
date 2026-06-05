@@ -6,6 +6,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 
 - **Personal expenses** — log, edit, categorize, free-text search, and report on your own spending
 - **Income tracking** — mark a personal entry as income (its own category set); reports show income, spending, and net (income − spend), all filterable by flow (expense / income / all)
+- **Multi-currency** — enter an expense in any supported currency; it's converted to your base currency (Frankfurter daily FX, frozen at write) so all totals/reports aggregate in one currency. Switch base currency anytime and existing rows are re-converted.
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -77,8 +78,8 @@ The only LLM-driven step is receipt OCR. See [prompts.ts](prompts.ts):
 Stored in MongoDB (see [models.ts](models.ts)):
 
 - **Group** — `{ name, description, createdBy, members: [{ userId, name, email, isActive }] }`
-- **Expense** — `{ type, direction:"expense"|"income", groupId?, paidBy, amount, description, category, date, splitAmong[], items[], ... }`
-- **UserPrefs** — `{ userId (unique), baseCurrency, locale, weekStart }` — per-user settings (scaffold for multi-currency)
+- **Expense** — `{ type, direction:"expense"|"income", currency, amountBase, groupId?, paidBy, amount, description, category, date, splitAmong[], items[], ... }`
+- **UserPrefs** — `{ userId (unique), baseCurrency, locale, weekStart }` — per-user settings; `baseCurrency` drives all conversion/display
 
 All group operations verify the requesting user is a member before returning or mutating data.
 
@@ -86,7 +87,7 @@ All group operations verify the requesting user is a member before returning or 
 
 - Group members must already have a registered account (lookup by email). Inviting via email isn't implemented.
 - Receipt scan accuracy drops on crumpled/blurry images and handwritten totals. Always shown to the user for confirmation before saving.
-- No currency conversion — amounts are stored as a single number with no currency field; assumes one currency per user.
+- Multi-currency is per **personal** expense; group expenses settle in a single (entry) currency — cross-currency group splitting isn't implemented yet. FX rates are daily (Frankfurter) and `amountBase` is frozen at write; changing your base currency re-converts existing rows.
 - Settlement suggestions minimize transaction count but don't currently record partial payments against a specific expense — they're recorded as standalone settlement events.
 - Auth required — this is the only portfolio project that gates the whole feature behind login.
 
@@ -94,6 +95,8 @@ All group operations verify the requesting user is a member before returning or 
 
 - [service.ts](service.ts) — all CRUD + aggregation logic (groups, expenses, scan, reports, balances, settlements)
 - [balance.ts](balance.ts) — pure split/balance/settlement math
+- [rates.ts](rates.ts) — Frankfurter FX fetch + cache + `convert()`
+- [currencies.ts](currencies.ts) — client-safe currency codes, symbols, `formatMoney()`
 - [models.ts](models.ts) — Mongoose schemas
 - [prompts.ts](prompts.ts) — receipt OCR prompt
 - [schemas.ts](schemas.ts) — Zod validation for every input + Gemini `responseSchema`

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SchemaType, type Schema } from "@google/generative-ai";
+import { SUPPORTED_CURRENCIES } from "./currencies";
 
 export const CATEGORIES = [
   "Food & Groceries",
@@ -58,6 +59,7 @@ const expenseObjectSchema = z
   .object({
     type: z.enum(["personal", "group"]),
     direction: z.enum(["expense", "income"]).default("expense"),
+    currency: z.enum(SUPPORTED_CURRENCIES).optional(),
     groupId: z.string().optional(),
     paidBy: z.object({
       id: z.string().min(1),
@@ -181,8 +183,8 @@ export const updatePrefsSchema = z
   .object({
     baseCurrency: z
       .string()
-      .regex(/^[A-Za-z]{3}$/, "Use a 3-letter currency code (e.g. INR)")
       .transform((s) => s.toUpperCase())
+      .pipe(z.enum(SUPPORTED_CURRENCIES, { message: "Unsupported currency" }))
       .optional(),
     locale: z.string().min(2).max(35).optional(),
     weekStart: z.union([z.literal(0), z.literal(1)]).optional(),

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
+import { SUPPORTED_CURRENCIES, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 
 type Direction = "expense" | "income";
 
@@ -18,6 +19,7 @@ type EditExpense = {
   _id: string;
   type: "personal" | "group";
   direction?: Direction;
+  currency?: string;
   groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;
@@ -67,6 +69,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   const [paidByName, setPaidByName] = useState(editExpense?.paidBy?.name ?? "");
   const [paidById, setPaidById] = useState(editExpense?.paidBy?.id ?? user?.userId ?? "");
   const [amount, setAmount] = useState(editExpense ? String(editExpense.amount) : "");
+  const [currency, setCurrency] = useState(editExpense?.currency ?? "INR");
   const [description, setDescription] = useState(editExpense?.description ?? "");
   const [category, setCategory] = useState(editExpense?.category ?? CATEGORIES[0]);
   const [date, setDate] = useState(
@@ -83,6 +86,17 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
     authFetch("/api/projects/expense-tracker/groups")
       .then((r) => r.json())
       .then((d) => setGroups(d.groups ?? []));
+  }, []);
+
+  // Default a new entry's currency to the user's base currency.
+  useEffect(() => {
+    if (isEdit) return;
+    authFetch("/api/projects/expense-tracker/prefs")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.prefs?.baseCurrency) setCurrency(d.prefs.baseCurrency);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -183,6 +197,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
         body: JSON.stringify({
           type: direction === "income" ? "personal" : type,
           direction,
+          currency,
           groupId: direction === "expense" && type === "group" ? groupId : undefined,
           paidBy: payer,
           amount: parseFloat(amount),
@@ -407,9 +422,9 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                   Amount
                 </label>
-                <div className="relative">
+                <div className="relative flex">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
-                    ₹
+                    {currencySymbol(currency)}
                   </span>
                   <input
                     type="number"
@@ -418,8 +433,20 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="0.00"
                     required
-                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 pl-7 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                    className="w-full rounded-l-lg border border-r-0 border-zinc-800 bg-zinc-950/70 px-3 py-2 pl-8 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
                   />
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    aria-label="Currency"
+                    className="rounded-r-lg border border-zinc-800 bg-zinc-900/80 px-2 text-xs font-medium text-zinc-300 outline-none transition-colors hover:border-zinc-600 focus:border-brand-500"
+                  >
+                    {SUPPORTED_CURRENCIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div>
