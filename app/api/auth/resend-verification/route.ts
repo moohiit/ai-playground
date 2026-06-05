@@ -4,8 +4,9 @@ import { connectDB } from "@/lib/db";
 import { User } from "@/models/User";
 import { handleRouteError } from "@/lib/apiError";
 import { rateLimit } from "@/lib/rateLimit";
-import { generateToken, expiryFromNow, TOKEN_TTL } from "@/lib/tokens";
-import { sendVerificationEmail } from "@/lib/emailTemplates";
+import { hashPassword } from "@/lib/auth";
+import { generateOtp, expiryFromNow, TOKEN_TTL } from "@/lib/tokens";
+import { sendVerificationOtpEmail } from "@/lib/emailTemplates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ const schema = z.object({
 const GENERIC_OK = {
   ok: true,
   message:
-    "If that email has an unverified account, we just sent a new verification link.",
+    "If that email has an unverified account, we just sent a new verification code.",
 };
 
 export async function POST(req: Request) {
@@ -42,15 +43,16 @@ export async function POST(req: Request) {
       return NextResponse.json(GENERIC_OK);
     }
 
-    const token = generateToken();
-    user.emailVerificationToken = token;
-    user.emailVerificationTokenExpiresAt = expiryFromNow(
-      TOKEN_TTL.emailVerification
+    const otp = generateOtp(6);
+    user.emailVerificationOtpHash = await hashPassword(otp);
+    user.emailVerificationOtpExpiresAt = expiryFromNow(
+      TOKEN_TTL.emailVerificationOtp
     );
+    user.emailVerificationOtpAttempts = 0;
     await user.save();
 
     try {
-      await sendVerificationEmail({ to: user.email, name: user.name, token });
+      await sendVerificationOtpEmail({ to: user.email, name: user.name, otp });
     } catch (emailErr) {
       console.error("[auth/resend] failed to send", emailErr);
     }

@@ -42,6 +42,24 @@ export async function sendPendingEmailChangeEmail(opts: {
   });
 }
 
+export async function sendVerificationOtpEmail(opts: {
+  to: string;
+  name: string;
+  otp: string;
+}): Promise<void> {
+  const html = renderBrandedEmail({
+    heading: `Welcome, ${escapeHtml(opts.name)} — verify your email`,
+    bodyHtml: `<p>Thanks for signing up for AI Playground. Enter the 6-digit code below in the app to verify your email address.</p>
+      <div style="margin:24px 0;padding:16px 20px;border:1px solid #27272a;border-radius:10px;background:#18181b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:26px;letter-spacing:0.4em;color:#fafafa;text-align:center;">${opts.otp}</div>
+      <p style="font-size:12px;color:#a1a1aa;">This code expires in 15 minutes. If you didn't sign up, you can safely ignore this email.</p>`,
+  });
+  await sendEmail({
+    to: opts.to,
+    subject: "Your AI Playground verification code",
+    html,
+  });
+}
+
 export async function sendPasswordResetOtpEmail(opts: {
   to: string;
   name: string;

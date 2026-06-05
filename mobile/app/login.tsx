@@ -12,12 +12,13 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { AuthApiError, useAuth } from "../lib/auth";
 import { AppBackground, GradientButton } from "../components/ui";
+import { apiUrl } from "../lib/api";
 
 type Mode = "login" | "register";
 type VerificationPrompt = { email: string; message: string };
 
 export default function LoginScreen() {
-  const { user, login, register } = useAuth();
+  const { user, login, register, applyAuth } = useAuth();
   const router = useRouter();
 
   const [mode, setMode] = useState<Mode>("login");
@@ -27,6 +28,9 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [prompt, setPrompt] = useState<VerificationPrompt | null>(null);
+  const [otp, setOtp] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) router.replace("/dashboard");
@@ -51,15 +55,59 @@ export default function LoginScreen() {
       }
     } catch (err) {
       if (err instanceof AuthApiError && err.code === "EMAIL_NOT_VERIFIED") {
+        setOtp("");
+        setInfo(null);
         setPrompt({
           email: err.email ?? email,
           message:
-            "Your email isn't verified yet. Check your inbox for the verification link.",
+            "Your email isn't verified yet. Enter the 6-digit code we emailed you, or resend a new one.",
         });
       } else {
         setError(err instanceof Error ? err.message : "Something went wrong");
       }
       setLoading(false);
+    }
+  }
+
+  async function handleVerifyOtp() {
+    if (!prompt) return;
+    setError(null);
+    if (!/^\d{6}$/.test(otp.trim())) return setError("Enter the 6-digit code");
+    setVerifying(true);
+    try {
+      const res = await fetch(apiUrl("/api/auth/verify-email-otp"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: prompt.email, otp: otp.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Verification failed");
+      await applyAuth(data.token, {
+        userId: data.user.id,
+        email: data.user.email,
+        name: data.user.name,
+      });
+      router.replace("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function handleResend() {
+    if (!prompt) return;
+    setError(null);
+    setInfo(null);
+    try {
+      await fetch(apiUrl("/api/auth/resend-verification"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: prompt.email }),
+      });
+      setInfo("A new code has been sent to your email.");
+    } catch {
+      setInfo("Couldn't resend right now — try again shortly.");
     }
   }
 
@@ -78,28 +126,65 @@ export default function LoginScreen() {
           <Animated.View entering={FadeInDown.duration(500)}>
             <View className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.05] p-6">
             {prompt ? (
-              <View className="items-center">
-                <View className="mb-4 h-12 w-12 items-center justify-center rounded-2xl border border-brand-500/30 bg-brand-500/15">
-                  <Text className="text-xl">✉️</Text>
+              <View>
+                <View className="mb-5 items-center">
+                  <View className="mb-4 h-12 w-12 items-center justify-center rounded-2xl border border-brand-500/30 bg-brand-500/15">
+                    <Text className="text-xl">✉️</Text>
+                  </View>
+                  <Text className="text-lg font-semibold text-zinc-100">
+                    Verify your email
+                  </Text>
+                  <Text className="mt-2 text-center text-sm text-zinc-400">
+                    {prompt.message}
+                  </Text>
+                  <Text className="mt-1 text-xs text-zinc-500">
+                    Sent to {prompt.email}
+                  </Text>
                 </View>
-                <Text className="text-lg font-semibold text-zinc-100">
-                  Check your inbox
-                </Text>
-                <Text className="mt-2 text-center text-sm text-zinc-400">
-                  {prompt.message}
-                </Text>
-                <Text className="mt-1 text-xs text-zinc-500">
-                  Sent to {prompt.email}
-                </Text>
-                <Pressable
-                  onPress={() => {
-                    setPrompt(null);
-                    setMode("login");
-                  }}
-                  className="mt-6"
-                >
-                  <Text className="text-xs text-zinc-500">← Back to sign in</Text>
-                </Pressable>
+
+                <View className="gap-3">
+                  <TextInput
+                    value={otp}
+                    onChangeText={setOtp}
+                    placeholder="6-digit code"
+                    placeholderTextColor="#71717a"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-center text-lg tracking-[8px] text-zinc-100"
+                  />
+
+                  {info && (
+                    <Text className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+                      {info}
+                    </Text>
+                  )}
+                  {error && (
+                    <Text className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                      {error}
+                    </Text>
+                  )}
+
+                  <GradientButton
+                    label="Verify & sign in"
+                    onPress={handleVerifyOtp}
+                    loading={verifying}
+                  />
+
+                  <Pressable onPress={handleResend} className="items-center pt-1">
+                    <Text className="text-xs text-zinc-400">Resend code</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setPrompt(null);
+                      setError(null);
+                      setInfo(null);
+                      setMode("login");
+                    }}
+                    className="items-center"
+                  >
+                    <Text className="text-xs text-zinc-500">← Back to sign in</Text>
+                  </Pressable>
+                </View>
               </View>
             ) : (
               <>

@@ -78,7 +78,7 @@ function Field({
 }
 
 function LoginContent() {
-  const { login, register, user } = useAuth();
+  const { login, register, user, applyExistingToken } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -96,6 +96,37 @@ function LoginContent() {
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent">(
     "idle"
   );
+  const [otp, setOtp] = useState("");
+  const [verifying, setVerifying] = useState(false);
+
+  async function handleVerifyOtp(e: FormEvent) {
+    e.preventDefault();
+    if (!prompt) return;
+    setError(null);
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setError("Enter the 6-digit code");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const res = await fetch("/api/auth/verify-email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: prompt.email, otp: otp.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Verification failed");
+      applyExistingToken(data.token, {
+        userId: data.user.id,
+        email: data.user.email,
+        name: data.user.name,
+      });
+      router.replace(redirectTo);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+      setVerifying(false);
+    }
+  }
 
   useEffect(() => {
     if (user) router.replace(redirectTo);
@@ -137,10 +168,11 @@ function LoginContent() {
       }
     } catch (err) {
       if (err instanceof AuthApiError && err.code === "EMAIL_NOT_VERIFIED") {
+        setOtp("");
         setPrompt({
           email: err.email ?? email,
           message:
-            "Your email isn't verified yet. Check your inbox or resend the verification link.",
+            "Your email isn't verified yet. Enter the 6-digit code we emailed you, or resend a new one.",
         });
       } else {
         setError(err instanceof Error ? err.message : "Something went wrong");
@@ -162,25 +194,44 @@ function LoginContent() {
               </svg>
             </div>
             <h1 className="text-lg font-semibold text-zinc-100">
-              Check your inbox
+              Verify your email
             </h1>
             <p className="mt-2 text-sm text-zinc-400">{prompt.message}</p>
             <p className="mt-1 text-xs text-zinc-500">
               Sent to <span className="text-zinc-300">{prompt.email}</span>
             </p>
 
-            <div className="mt-6 flex flex-col gap-2">
+            <form onSubmit={handleVerifyOtp} className="mt-6 flex flex-col gap-3">
+              <input
+                inputMode="numeric"
+                maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                placeholder="6-digit code"
+                className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-center text-lg tracking-[0.5em] text-zinc-100 placeholder:tracking-normal placeholder:text-zinc-500 focus:border-brand-500/60 focus:outline-none"
+              />
+
+              {error && <p className="text-xs text-red-400">{error}</p>}
+
+              <button
+                type="submit"
+                disabled={verifying}
+                className="rounded-xl bg-gradient-to-r from-brand-600 via-brand-500 to-fuchsia-500 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/30 transition-transform hover:scale-[1.02] disabled:opacity-60"
+              >
+                {verifying ? "Verifying…" : "Verify & sign in"}
+              </button>
+
               <button
                 type="button"
                 onClick={() => handleResend(prompt.email)}
                 disabled={resendState !== "idle"}
                 className={cn(
-                  "rounded-xl border border-white/10 bg-zinc-950/50 py-2.5 text-xs font-medium transition hover:border-brand-500/40 hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-60",
-                  resendState === "sent" ? "text-emerald-400" : "text-zinc-300"
+                  "text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60",
+                  resendState === "sent" ? "text-emerald-400" : "text-zinc-400 hover:text-brand-300"
                 )}
               >
                 {resendState === "idle"
-                  ? "Resend verification email"
+                  ? "Resend code"
                   : resendState === "sending"
                   ? "Sending…"
                   : "Sent — check your inbox"}
@@ -191,12 +242,13 @@ function LoginContent() {
                   setPrompt(null);
                   setMode("login");
                   setResendState("idle");
+                  setError(null);
                 }}
                 className="text-xs text-zinc-500 transition hover:text-zinc-300"
               >
                 ← Back to sign in
               </button>
-            </div>
+            </form>
           </div>
         </AuthCard>
       </>

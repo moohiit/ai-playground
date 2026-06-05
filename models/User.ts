@@ -10,6 +10,9 @@ export type UserDoc = {
   profilePhotoPublicId?: string;
   emailVerificationToken?: string;
   emailVerificationTokenExpiresAt?: Date;
+  emailVerificationOtpHash?: string;
+  emailVerificationOtpExpiresAt?: Date;
+  emailVerificationOtpAttempts?: number;
   passwordResetOtpHash?: string;
   passwordResetOtpExpiresAt?: Date;
   passwordResetOtpAttempts?: number;
@@ -31,6 +34,9 @@ const userSchema = new Schema<UserDoc>(
     profilePhotoPublicId: { type: String },
     emailVerificationToken: { type: String, index: true },
     emailVerificationTokenExpiresAt: { type: Date },
+    emailVerificationOtpHash: { type: String },
+    emailVerificationOtpExpiresAt: { type: Date },
+    emailVerificationOtpAttempts: { type: Number, default: 0 },
     passwordResetOtpHash: { type: String },
     passwordResetOtpExpiresAt: { type: Date },
     passwordResetOtpAttempts: { type: Number, default: 0 },

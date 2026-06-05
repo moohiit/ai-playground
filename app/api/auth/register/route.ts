@@ -4,8 +4,8 @@ import { connectDB } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { User } from "@/models/User";
 import { ApiError, handleRouteError } from "@/lib/apiError";
-import { generateToken, expiryFromNow, TOKEN_TTL } from "@/lib/tokens";
-import { sendVerificationEmail } from "@/lib/emailTemplates";
+import { generateOtp, expiryFromNow, TOKEN_TTL } from "@/lib/tokens";
+import { sendVerificationOtpEmail } from "@/lib/emailTemplates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,22 +33,23 @@ export async function POST(req: Request) {
     }
 
     const passwordHash = await hashPassword(parsed.data.password);
-    const verificationToken = generateToken();
+    const otp = generateOtp(6);
 
     const user = await User.create({
       name: parsed.data.name,
       email,
       passwordHash,
       emailVerified: false,
-      emailVerificationToken: verificationToken,
-      emailVerificationTokenExpiresAt: expiryFromNow(TOKEN_TTL.emailVerification),
+      emailVerificationOtpHash: await hashPassword(otp),
+      emailVerificationOtpExpiresAt: expiryFromNow(TOKEN_TTL.emailVerificationOtp),
+      emailVerificationOtpAttempts: 0,
     });
 
     try {
-      await sendVerificationEmail({
+      await sendVerificationOtpEmail({
         to: user.email,
         name: user.name,
-        token: verificationToken,
+        otp,
       });
     } catch (emailErr) {
       console.error("[auth/register] failed to send verification email", emailErr);
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
         needsVerification: true,
         email: user.email,
         message:
-          "Account created. Check your email for a verification link to finish signing in.",
+          "Account created. Enter the 6-digit code we emailed you to verify your account.",
       },
       { status: 201 }
     );

@@ -16,6 +16,7 @@ export function expiryFromNow(ms: number): Date {
 
 export const TOKEN_TTL = {
   emailVerification: 24 * 60 * 60 * 1000,
+  emailVerificationOtp: 15 * 60 * 1000,
   pendingEmail: 24 * 60 * 60 * 1000,
   passwordResetOtp: 15 * 60 * 1000,
 };
