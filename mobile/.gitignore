@@ -5,3 +5,8 @@ web-build/
 *.log
 .env
 expo-env.d.ts
+
+# Google Play service-account key (SECRET — never commit)
+expense-tracker-*.json
+*service-account*.json
+google*service*account*.json
