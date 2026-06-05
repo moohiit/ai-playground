@@ -210,6 +210,13 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-06-06 — **Settings & account panel.** Added a Settings tab (web) / screen (mobile): base-currency
+  switcher (moved out of the Dashboard filter bar) + week-start; **delete account** (web gap filled, moved off
+  the mobile dashboard); mobile **Profile** (name edit, change password, profile-photo upload/remove) mirroring
+  the web `/profile`; mobile "Open web app" link. New `scripts/smoke-account.ts` (profile/password/delete) —
+  10/10; feature smoke still 46/46. Both platforms typecheck clean. Note: `GET/PATCH /api/profile` return
+  `{ user }` (not `{ profile }`); changing display name does not rewrite denormalized `paidBy.name`/group members.
+
 - 2026-06-06 — **Phase 1B (multi-currency) shipped.** `currency` + `amountBase` on expenses; `rates.ts`
   (Frankfurter, cached) + `currencies.ts`; reports aggregate on base; base-currency switcher with
   server-side recompute; currency picker + original-currency rows on web & mobile; CSV currency columns.

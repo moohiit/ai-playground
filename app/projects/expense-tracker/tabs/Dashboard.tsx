@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
-import { formatMoney, currencySymbol, SUPPORTED_CURRENCIES } from "../../../../modules/expense-tracker/currencies";
+import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "../components/AddExpenseModal";
 import { categoryColor } from "../colors";
 
@@ -215,25 +215,6 @@ export function Dashboard() {
       method: "DELETE",
     });
     fetchExpenses();
-  }
-
-  async function handleBaseChange(next: string) {
-    if (next === base) return;
-    const prevBase = base;
-    setBase(next);
-    try {
-      const res = await authFetch("/api/projects/expense-tracker/prefs", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseCurrency: next }),
-      });
-      if (!res.ok) throw new Error("Failed to change base currency");
-      // Server re-converts existing rows; refresh to show the new base amounts.
-      await Promise.all([fetchExpenses(), fetchBreakdown()]);
-    } catch {
-      setBase(prevBase);
-      alert("Couldn't change base currency. Try again.");
-    }
   }
 
   async function handleExportCsv() {
@@ -465,23 +446,6 @@ export function Dashboard() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
-                Base
-              </span>
-              <select
-                value={base}
-                onChange={(e) => handleBaseChange(e.target.value)}
-                title="Your base currency — all totals are shown in this currency"
-                className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-2 py-1.5 text-xs font-medium text-zinc-200 outline-none transition-colors hover:border-zinc-600 focus:border-brand-500/60"
-              >
-                {SUPPORTED_CURRENCIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
             <button
               onClick={handleExportCsv}
               disabled={exporting || total === 0}

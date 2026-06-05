@@ -23,7 +23,7 @@ import {
 import { AppBackground } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
 import { exportExpensesCsv } from "../../lib/csv";
-import { formatMoney, currencySymbol, SUPPORTED_CURRENCIES } from "../../lib/currency";
+import { formatMoney, currencySymbol } from "../../lib/currency";
 
 type ViewMode = "all" | "personal" | "group";
 type DirectionFilter = "expense" | "income" | "all";
@@ -127,24 +127,6 @@ export default function ExpensesScreen() {
       .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
       .catch(() => {});
   }, [authFetch]);
-
-  async function handleBaseChange(next: string) {
-    if (next === base) return;
-    const prev = base;
-    setBase(next);
-    try {
-      const res = await authFetch("/api/projects/expense-tracker/prefs", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseCurrency: next }),
-      });
-      if (!res.ok) throw new Error("failed");
-      await fetchExpenses();
-    } catch {
-      setBase(prev);
-      Alert.alert("Couldn't change base currency", "Please try again.");
-    }
-  }
 
   useEffect(() => {
     setPage(1);
@@ -404,25 +386,6 @@ export default function ExpensesScreen() {
                 ))}
               </ScrollView>
 
-              <View className="flex-row items-center gap-2 border-t border-white/5 pt-3">
-                <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
-                  Base
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 8 }}
-                >
-                  {SUPPORTED_CURRENCIES.map((c) => (
-                    <Chip
-                      key={c}
-                      label={c}
-                      active={base === c}
-                      onPress={() => handleBaseChange(c)}
-                    />
-                  ))}
-                </ScrollView>
-              </View>
             </View>
           </View>
         }

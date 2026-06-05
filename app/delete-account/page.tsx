@@ -45,9 +45,9 @@ export default function DeleteAccountPage() {
 
         <Section title="Delete your entire account">
           <p>
-            <b>In the app (fastest):</b> open the <b>Dashboard</b> tab, scroll to
-            the bottom, tap <b>Delete account</b>, and confirm. Your account and
-            data are removed immediately.
+            <b>In the app (fastest):</b> open the <b>Settings</b> tab, find the{" "}
+            <b>Account</b> section, tap <b>Delete account</b>, and confirm. Your
+            account and data are removed immediately.
           </p>
           <p className="mt-3">Or request it by email:</p>
           <ol className="ml-5 mt-2 list-decimal space-y-1.5">

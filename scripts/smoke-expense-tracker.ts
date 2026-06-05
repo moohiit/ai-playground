@@ -206,6 +206,36 @@ async function main() {
     const allData = await allRes.json();
     check("no-direction list returns all rows (≥4)", allData.total >= 4, `total=${allData.total}`);
 
+    // CORE. Update + delete + settle (flows touched by recent phases)
+    console.log("\n[crud + settle]");
+    const usdId = exp._id;
+    const upd = await fetch(`${API}/expenses/${usdId}`, {
+      method: "PUT",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: 50, currency: "EUR" }),
+    });
+    const updData = await upd.json();
+    check("PUT update → 200", upd.status === 200, `got ${upd.status}`);
+    check("update re-stored currency EUR", updData.expense?.currency === "EUR", `currency=${updData.expense?.currency}`);
+    check(
+      "update recomputed amountBase (EUR→INR)",
+      updData.expense?.amountBase > 3000 && updData.expense?.amountBase < 7000,
+      `amountBase=${updData.expense?.amountBase}`
+    );
+
+    const del = await fetch(`${API}/expenses/${usdId}`, { method: "DELETE", headers: auth });
+    check("DELETE → 200", del.status === 200, `got ${del.status}`);
+    const afterDel = await (await fetch(`${API}/expenses?settled=all`, { headers: auth })).json();
+    check("deleted row is gone", !(afterDel.expenses ?? []).some((e: any) => e._id === usdId));
+
+    // Personal settle moves active personal entries into settled history.
+    const settle = await fetch(`${API}/personal/settle`, { method: "POST", headers: auth });
+    check("personal settle → 200", settle.status === 200, `got ${settle.status}`);
+    const histData = await (await fetch(`${API}/personal/history`, { headers: auth })).json();
+    check("settlement appears in history", (histData.history?.length ?? 0) >= 1, `history=${histData.history?.length}`);
+    const activeAfter = await (await fetch(`${API}/expenses?direction=expense&settled=false`, { headers: auth })).json();
+    check("no active personal expenses after settle", activeAfter.total === 0, `active=${activeAfter.total}`);
+
     // 2. Prefs — defaults, then update, then persistence.
     console.log("\n[prefs]");
     const pRes = await fetch(`${API}/prefs`, { headers: auth });
