@@ -182,7 +182,7 @@ export function GroupReport({ groupId, groupName }: Props) {
 
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <div className="text-[13px] uppercase tracking-[0.18em] text-fuchsia-400/90">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-fuchsia-400/90">
               Report scope
             </div>
             <h3 className="text-base font-semibold text-zinc-100">
@@ -204,7 +204,7 @@ export function GroupReport({ groupId, groupName }: Props) {
         </div>
 
         <div className="mb-4">
-          <div className="mb-2 text-[13px] uppercase tracking-wider text-zinc-500">
+          <div className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">
             Show
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
@@ -228,7 +228,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                 >
                   {s.label}
                 </div>
-                <div className="text-[13px] text-zinc-500">{s.hint}</div>
+                <div className="text-[11px] text-zinc-500">{s.hint}</div>
               </button>
             ))}
           </div>
@@ -241,13 +241,13 @@ export function GroupReport({ groupId, groupName }: Props) {
           )}
         >
           <div className="mb-2 flex items-center justify-between">
-            <div className="text-[13px] uppercase tracking-wider text-zinc-500">
+            <div className="text-[11px] uppercase tracking-wider text-zinc-500">
               Time range
             </div>
             {(dateFrom || dateTo) && !settledDisabled && (
               <button
                 onClick={clearDates}
-                className="text-[13px] text-zinc-500 transition-colors hover:text-zinc-300"
+                className="text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
               >
                 Clear
               </button>
@@ -273,7 +273,7 @@ export function GroupReport({ groupId, groupName }: Props) {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+              <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                 From
               </label>
               <input
@@ -285,7 +285,7 @@ export function GroupReport({ groupId, groupName }: Props) {
               />
             </div>
             <div>
-              <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+              <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                 To
               </label>
               <input
@@ -373,7 +373,7 @@ export function GroupReport({ groupId, groupName }: Props) {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-[13px] uppercase tracking-wider text-zinc-500">
+                    <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
                       <th className="pb-2 text-left font-semibold">Member</th>
                       <th className="pb-2 text-right font-semibold">Entries</th>
                       <th className="pb-2 text-right font-semibold">Total Paid</th>
@@ -404,7 +404,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                                   style={{ width: `${pctPaid}%` }}
                                 />
                               </div>
-                              <span className="text-[13px] tabular-nums text-zinc-500">
+                              <span className="text-[11px] tabular-nums text-zinc-500">
                                 {pctPaid.toFixed(0)}%
                               </span>
                             </div>
@@ -594,7 +594,7 @@ export function GroupReport({ groupId, groupName }: Props) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-[13px] uppercase tracking-wider text-zinc-500">
+                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
                     <th className="pb-2 text-left font-semibold">Category</th>
                     <th className="pb-2 text-right font-semibold">Count</th>
                     <th className="pb-2 text-right font-semibold">Total</th>
@@ -696,7 +696,7 @@ function HeroStat({
           accent ?? "from-brand-500/40"
         )}
       />
-      <div className="text-[13px] uppercase tracking-wider text-zinc-500">
+      <div className="text-[11px] uppercase tracking-wider text-zinc-500">
         {label}
       </div>
       <div
@@ -723,14 +723,14 @@ function MiniStat({
 }) {
   return (
     <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4 backdrop-blur-sm">
-      <div className="text-[12px] uppercase tracking-wider text-zinc-500">
+      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
         {label}
       </div>
       <div className="mt-1 font-mono text-base font-semibold tabular-nums text-zinc-100">
         {value}
       </div>
       {hint && (
-        <div className="mt-1 line-clamp-1 text-[13px] text-zinc-500">{hint}</div>
+        <div className="mt-1 line-clamp-1 text-[11px] text-zinc-500">{hint}</div>
       )}
     </div>
   );

@@ -234,7 +234,7 @@ function FilterBar({
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-fuchsia-500/60 to-transparent" />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-[13px] uppercase tracking-[0.18em] text-fuchsia-400/90">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-fuchsia-400/90">
             Reports
           </div>
           <div className="text-xs text-zinc-500">{rangeLabel}</div>
@@ -277,7 +277,7 @@ function FilterBar({
         {(dateFrom || dateTo) && (
           <button
             onClick={clearDates}
-            className="rounded-md border border-zinc-800 px-2.5 py-1 text-[13px] text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+            className="rounded-md border border-zinc-800 px-2.5 py-1 text-[11px] text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
           >
             Clear
           </button>
@@ -285,7 +285,7 @@ function FilterBar({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+          <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
             From
           </label>
           <input
@@ -296,7 +296,7 @@ function FilterBar({
           />
         </div>
         <div>
-          <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+          <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
             To
           </label>
           <input
@@ -552,7 +552,7 @@ function TopGroupsCard({ summary }: { summary: Summary }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[13px] uppercase tracking-wider text-zinc-500">
+            <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
               <th className="pb-2 text-left font-semibold">Group</th>
               <th className="pb-2 text-right font-semibold">Entries</th>
               <th className="pb-2 text-right font-semibold">Total</th>
@@ -707,7 +707,7 @@ function CategoryBreakdownCard({ summary }: { summary: Summary }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[13px] uppercase tracking-wider text-zinc-500">
+            <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
               <th className="pb-2 text-left font-semibold">Category</th>
               <th className="pb-2 text-right font-semibold">Count</th>
               <th className="pb-2 text-right font-semibold">Total</th>
@@ -786,7 +786,7 @@ function StatCard({
           accent ?? "from-brand-500/40"
         )}
       />
-      <div className="text-[13px] uppercase tracking-wider text-zinc-500">
+      <div className="text-[11px] uppercase tracking-wider text-zinc-500">
         {label}
       </div>
       <div
@@ -817,14 +817,14 @@ function MiniStat({
     <div className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4 backdrop-blur-sm">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="text-[12px] uppercase tracking-wider text-zinc-500">
+          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
             {label}
           </div>
           <div className="mt-1 font-mono text-base font-semibold tabular-nums text-zinc-100">
             {value}
           </div>
           {hint && (
-            <div className="mt-1 line-clamp-1 text-[13px] text-zinc-500">
+            <div className="mt-1 line-clamp-1 text-[11px] text-zinc-500">
               {hint}
             </div>
           )}

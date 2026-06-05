@@ -192,7 +192,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
 
         <div className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/95 px-6 py-4 backdrop-blur">
           <div>
-            <div className="text-[13px] uppercase tracking-[0.18em] text-brand-500/90">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-brand-500/90">
               {isEdit ? "Update" : "Quick add"}
             </div>
             <h2 className="text-lg font-semibold text-zinc-100">
@@ -238,7 +238,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
             {type === "group" && (
               <>
                 <div>
-                  <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+                  <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                     Group
                   </label>
                   <select
@@ -258,7 +258,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 {selectedGroup && (
                   <>
                     <div>
-                      <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+                      <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                         Paid by
                       </label>
                       <select
@@ -282,7 +282,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+                      <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                         Split among
                         <span className="ml-1 normal-case text-zinc-600">
                           (uncheck absent members)
@@ -336,7 +336,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
 
             {type === "personal" && (
               <div>
-                <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+                <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                   Your name <span className="normal-case text-zinc-600">(optional)</span>
                 </label>
                 <input
@@ -351,7 +351,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+                <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                   Amount
                 </label>
                 <div className="relative">
@@ -370,7 +370,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+                <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                   Date
                 </label>
                 <input
@@ -384,7 +384,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
             </div>
 
             <div>
-              <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+              <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                 Description
               </label>
               <input
@@ -398,7 +398,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
             </div>
 
             <div>
-              <label className="mb-1 block text-[13px] uppercase tracking-wider text-zinc-500">
+              <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                 Category
               </label>
               <select
@@ -443,7 +443,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
               <div className="text-xs font-medium text-zinc-300">
                 {scanning ? "Scanning receipt..." : "Upload receipt image"}
               </div>
-              <div className="text-[12px] uppercase tracking-wider text-zinc-500">
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">
                 Auto-fill with Gemini Vision
               </div>
             </label>
