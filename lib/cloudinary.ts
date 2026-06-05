@@ -24,6 +24,15 @@ function ensureConfigured() {
 
 const PROFILE_FOLDER = "ai-playground/profile-photos";
 
+// Resize/crop is applied on DELIVERY (baked into the URL) rather than at upload
+// time, so the upload returns as soon as the bytes are stored instead of waiting
+// on Cloudinary's face-detection + transform. Avoids upload timeouts on slow
+// connections; the transform is processed + CDN-cached on first fetch.
+const PROFILE_TRANSFORM = [
+  { width: 512, height: 512, crop: "fill", gravity: "face" },
+  { quality: "auto", fetch_format: "auto" },
+];
+
 export async function uploadProfilePhoto(
   buffer: Buffer,
   userId: string
@@ -37,10 +46,7 @@ export async function uploadProfilePhoto(
         public_id: `user_${userId}_${Date.now()}`,
         resource_type: "image",
         overwrite: true,
-        transformation: [
-          { width: 512, height: 512, crop: "fill", gravity: "face" },
-          { quality: "auto", fetch_format: "auto" },
-        ],
+        timeout: 60000,
       },
       (err, res) => {
         if (err || !res) return reject(err ?? new Error("Upload failed"));
@@ -50,7 +56,13 @@ export async function uploadProfilePhoto(
     stream.end(buffer);
   });
 
-  return { url: result.secure_url, publicId: result.public_id };
+  const url = cloudinary.url(result.public_id, {
+    secure: true,
+    transformation: PROFILE_TRANSFORM,
+    version: result.version,
+  });
+
+  return { url, publicId: result.public_id };
 }
 
 export async function deleteProfilePhoto(publicId: string): Promise<void> {
