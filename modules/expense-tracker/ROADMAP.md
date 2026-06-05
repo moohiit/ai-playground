@@ -80,12 +80,19 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
 > **Scope (D-6): personal-only for v1.** Income, currency, accounts apply to personal transactions; group
 > flows keep their existing split/settle model untouched.
 
-**1A. Income tracking**
-- [ ] Add `direction: "expense" | "income"` to `Expense` (default `"expense"`; backfill existing → expense).
-      Consider renaming the concept to **Transaction** in docs/UI while keeping the `Expense` collection
-      name to avoid a data migration (see Decision Log D-2).
-- [ ] Income excluded from "spending" reports but included in **net** (income − expense), **savings rate**.
-- [ ] UI: add/edit form gets an income/expense toggle; Dashboard shows Income / Expense / Net cards.
+**1A. Income tracking** — ✅ shipped 2026-06-05
+- [x] Added `direction: "expense" | "income"` to `Expense` (default `"expense"`, indexed). Pre-1A rows lack
+      the field and are treated as expense at read time + via query `$or` — **no migration run** (D-2 kept the
+      collection name). Income is personal-only (D-6); `INCOME_CATEGORIES` is a separate set so spending
+      breakdowns don't fragment.
+- [x] `getSummary` excludes income from spending totals/breakdowns and returns `incomeAmount`, `incomeCount`,
+      `netAmount` (income − spend). List + CSV export gained a `direction` filter (expense/income/all);
+      CSV has a `Direction` column.
+- [x] UI: income/expense toggle on web `AddExpenseModal` + mobile `add-expense` (income hides group/split/scan,
+      switches to income categories). Dashboard + mobile Expenses got a **Flow** filter, an adaptive headline,
+      a **Net flow** card, and emerald income-row styling.
+- [x] Verified: 31/31 smoke checks (direction filters, summary math 1850 spend / 50000 income / 48150 net,
+      income-category + personal-only validation, CSV direction column). Web + mobile typecheck clean.
 
 **1B. Multi-currency**
 - [ ] Add `currency: string` (ISO-4217, e.g. `"INR"`) + `amountBase: number` (converted to user base) to txns.
@@ -181,7 +188,7 @@ A feature is **done** only when all of these are true:
 | ID | Date | Decision | Rationale | Status |
 |----|------|----------|-----------|--------|
 | D-1 | 2026-06-05 | Build features in dependency order: money primitives → planning → AI → engagement. | Budgets/recurring/AI all read currency, accounts, and income; building them first avoids rework. | Active |
-| D-2 | 2026-06-05 | Keep the `Expense` **collection** name; add `direction` instead of a new `Income` collection. | Avoids a data migration + duplicate query paths; "Transaction" is a UI/doc rename only. | Proposed |
+| D-2 | 2026-06-05 | Keep the `Expense` **collection** name; add `direction` instead of a new `Income` collection. | Avoids a data migration + duplicate query paths; "Transaction" is a UI/doc rename only. | Realized (1A) |
 | D-3 | 2026-06-05 | FX rates: **Frankfurter** (keyless, daily ECB rates) as provider; **multi-region day one** — `UserPrefs.baseCurrency` is required (no INR default), convert between any pair. Cache rates once daily; store `amount`+`currency`+`amountBase`. | Free + no API key to leak; multi-region keeps the app usable for any audience; storing all three keeps history auditable when rates move. | Active |
 | D-4 | 2026-06-05 | Recurring generation: **Vercel Cron (daily)** via a thin route that calls a **pure `now`-parameterized generator** in the service layer. | Cron is free on Vercel Hobby (100 jobs, once/day, ±59min) — adequate for bills. Pure generator stays unit-testable and lets lazy-on-open reuse the same logic as a fallback. | Active |
 | D-5 | 2026-06-05 | **AI v1 = NL entry + month-end forecast first; Spending Coach chat deferred** to a later iteration. | Cheaper + lower-risk: NL entry mirrors the existing receipt-scan structured-output pattern, forecast is pure math. Chat needs careful context-building & cost control — ship the wins first. | Active |
@@ -193,6 +200,10 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-05 — **Phase 1A (income tracking) COMPLETE.** `direction` field (lazy-defaulted, no migration),
+  income/net in summary, direction filter on list + CSV export, income/expense toggle + Net cards on web &
+  mobile. 31/31 smoke checks; both platforms typecheck clean. D-2 realized (kept `Expense` collection).
 
 - 2026-06-05 — **Phase 0 COMPLETE:** CSV export added (filtered rows, `/expenses/export`, web blob download +
   mobile share via new `expo-file-system` dep). Search + `UserPrefs` scaffold shipped earlier same day. Web &

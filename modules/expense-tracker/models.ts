@@ -58,6 +58,7 @@ export type ExpenseItem = {
 export type ExpenseDoc = {
   _id: Types.ObjectId;
   type: "personal" | "group";
+  direction: "expense" | "income";
   groupId: Types.ObjectId | null;
   createdBy: string;
   paidBy: { id: string; name: string };
@@ -97,6 +98,14 @@ const expenseItemSchema = new Schema<ExpenseItem>(
 const expenseSchema = new Schema<ExpenseDoc>(
   {
     type: { type: String, enum: ["personal", "group"], required: true },
+    // Phase 1A: income tracking. Defaults to "expense"; pre-existing rows with no
+    // field are treated as "expense" at read time (no migration required).
+    direction: {
+      type: String,
+      enum: ["expense", "income"],
+      default: "expense",
+      index: true,
+    },
     groupId: {
       type: Schema.Types.ObjectId,
       ref: "Group",

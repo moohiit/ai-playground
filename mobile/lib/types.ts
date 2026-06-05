@@ -4,10 +4,12 @@
 // inferred types here instead.
 
 export type ExpenseType = "personal" | "group";
+export type Direction = "expense" | "income";
 
 export type Expense = {
   _id: string;
   type: ExpenseType;
+  direction?: Direction;
   groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;
@@ -79,6 +81,9 @@ export type PayerStat = { id: string; name: string; total: number; count: number
 export type Summary = {
   totalAmount: number;
   totalCount: number;
+  incomeAmount: number;
+  incomeCount: number;
+  netAmount: number;
   myShare: number;
   paidByMe: number;
   paidByOthers: number;
@@ -112,5 +117,15 @@ export const CATEGORIES = [
   "Health",
   "Education",
   "Subscriptions",
+  "Other",
+] as const;
+
+export const INCOME_CATEGORIES = [
+  "Salary",
+  "Business",
+  "Investments",
+  "Freelance",
+  "Gifts",
+  "Refunds",
   "Other",
 ] as const;

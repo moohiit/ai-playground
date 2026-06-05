@@ -10,6 +10,7 @@ import { categoryColor } from "../colors";
 type Expense = {
   _id: string;
   type: "personal" | "group";
+  direction?: "expense" | "income";
   groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;
@@ -21,6 +22,7 @@ type Expense = {
 };
 
 type ViewMode = "all" | "personal" | "group";
+type DirectionFilter = "expense" | "income" | "all";
 type RangeKey = "all" | "month" | "30d" | "7d";
 
 type Breakdown = {
@@ -60,8 +62,11 @@ export function Dashboard() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [incomeAmount, setIncomeAmount] = useState(0);
+  const [netAmount, setNetAmount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("all");
+  const [direction, setDirection] = useState<DirectionFilter>("expense");
   const [category, setCategory] = useState<string>("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -83,12 +88,14 @@ export function Dashboard() {
       page: String(page),
     });
     if (view !== "all") params.set("type", view);
+    params.set("direction", direction);
     if (category) params.set("category", category);
     if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
     params.set("settled", settled);
 
-    // Keep the Total Expenses card consistent with the listed rows.
+    // Summary is intentionally direction-agnostic so the Expense/Income/Net
+    // cards always show the full picture regardless of the list's direction filter.
     const summaryParams = new URLSearchParams({ scope: view, settled });
     if (category) summaryParams.set("category", category);
     if (debouncedSearch) summaryParams.set("q", debouncedSearch);
@@ -106,12 +113,14 @@ export function Dashboard() {
       setExpenses(expData.expenses ?? []);
       setTotal(expData.total ?? 0);
       setTotalAmount(sumData.totalAmount ?? 0);
+      setIncomeAmount(sumData.incomeAmount ?? 0);
+      setNetAmount(sumData.netAmount ?? 0);
     } catch {
       // leave the last good state in place
     } finally {
       setLoading(false);
     }
-  }, [view, category, debouncedSearch, range, settled, page, authFetch]);
+  }, [view, direction, category, debouncedSearch, range, settled, page, authFetch]);
 
   const fetchBreakdown = useCallback(async () => {
     const [allRes, pRes, gRes, hRes] = await Promise.all([
@@ -153,10 +162,11 @@ export function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [view, category, debouncedSearch, range, settled]);
+  }, [view, direction, category, debouncedSearch, range, settled]);
 
   const hasActiveFilters =
     view !== "all" ||
+    direction !== "expense" ||
     category !== "" ||
     search !== "" ||
     range !== "all" ||
@@ -202,6 +212,7 @@ export function Dashboard() {
     const dateFrom = rangeToDateFrom(range);
     const params = new URLSearchParams();
     if (view !== "all") params.set("type", view);
+    params.set("direction", direction);
     if (category) params.set("category", category);
     if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
@@ -229,6 +240,13 @@ export function Dashboard() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const showPagination = total > PAGE_SIZE;
+  // Headline card follows the active direction filter so it matches the listed rows.
+  const headline =
+    direction === "income"
+      ? { label: "Total Income", value: incomeAmount, accent: "from-emerald-500/40" }
+      : direction === "all"
+        ? { label: "Net (income − spend)", value: netAmount, accent: "from-brand-500/40" }
+        : { label: "Total Expenses", value: totalAmount, accent: "from-brand-500/40" };
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(total, page * PAGE_SIZE);
 
@@ -236,16 +254,16 @@ export function Dashboard() {
     <div className="flex flex-col gap-6">
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
-          label="Total Expenses"
-          value={`₹${totalAmount.toFixed(2)}`}
-          hint={`${total} entries`}
-          accent="from-brand-500/40"
+          label={headline.label}
+          value={`₹${headline.value.toFixed(2)}`}
+          hint={`${total} ${total === 1 ? "entry" : "entries"}`}
+          accent={headline.accent}
         />
         <StatCard
-          label={showPagination ? `Page ${page} of ${totalPages}` : "View"}
-          value={view.charAt(0).toUpperCase() + view.slice(1)}
-          hint={showPagination ? "Filter mode" : "Filter mode"}
-          accent="from-fuchsia-500/40"
+          label="Net flow"
+          value={`${netAmount < 0 ? "−" : ""}₹${Math.abs(netAmount).toFixed(2)}`}
+          hint={`Income ₹${incomeAmount.toFixed(2)}`}
+          accent={netAmount < 0 ? "from-red-500/40" : "from-emerald-500/40"}
         />
         <button
           onClick={() => setShowAdd(true)}
@@ -339,6 +357,27 @@ export function Dashboard() {
 
           <div className="flex items-center gap-2">
             <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+              Flow
+            </span>
+            <div className="flex gap-1.5">
+              {([
+                ["expense", "Expense"],
+                ["income", "Income"],
+                ["all", "All"],
+              ] as const).map(([val, label]) => (
+                <FilterChip
+                  key={val}
+                  active={direction === val}
+                  onClick={() => setDirection(val)}
+                >
+                  {label}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
               Status
             </span>
             <div className="flex gap-1.5">
@@ -409,6 +448,7 @@ export function Dashboard() {
               <button
                 onClick={() => {
                   setView("all");
+                  setDirection("expense");
                   setCategory("");
                   setSearch("");
                   setRange("all");
@@ -502,8 +542,13 @@ export function Dashboard() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-zinc-300">{e.paidBy.name}</td>
-                  <td className="px-4 py-3 text-right font-mono tabular-nums text-zinc-100">
-                    ₹{e.amount.toFixed(2)}
+                  <td
+                    className={cn(
+                      "px-4 py-3 text-right font-mono tabular-nums",
+                      e.direction === "income" ? "text-emerald-400" : "text-zinc-100"
+                    )}
+                  >
+                    {e.direction === "income" ? "+" : ""}₹{e.amount.toFixed(2)}
                   </td>
                   <td className="px-4 py-3 text-xs text-zinc-500">
                     {e.splitAmong && e.splitAmong.length > 0
@@ -735,18 +780,25 @@ function ExpenseCard({
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <div className="font-mono tabular-nums text-base font-semibold text-zinc-100">
-            ₹{e.amount.toFixed(2)}
+          <div
+            className={cn(
+              "font-mono tabular-nums text-base font-semibold",
+              e.direction === "income" ? "text-emerald-400" : "text-zinc-100"
+            )}
+          >
+            {e.direction === "income" ? "+" : ""}₹{e.amount.toFixed(2)}
           </div>
           <span
             className={cn(
               "mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ring-1",
-              e.type === "group"
-                ? "bg-brand-500/10 text-brand-500 ring-brand-500/30"
-                : "bg-zinc-800/60 text-zinc-400 ring-zinc-700"
+              e.direction === "income"
+                ? "bg-emerald-500/10 text-emerald-400 ring-emerald-500/30"
+                : e.type === "group"
+                  ? "bg-brand-500/10 text-brand-500 ring-brand-500/30"
+                  : "bg-zinc-800/60 text-zinc-400 ring-zinc-700"
             )}
           >
-            {e.type}
+            {e.direction === "income" ? "income" : e.type}
           </span>
         </div>
       </div>

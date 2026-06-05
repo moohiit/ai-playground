@@ -25,6 +25,7 @@ import { categoryColor } from "../../lib/colors";
 import { exportExpensesCsv } from "../../lib/csv";
 
 type ViewMode = "all" | "personal" | "group";
+type DirectionFilter = "expense" | "income" | "all";
 type RangeKey = "all" | "month" | "30d" | "7d";
 const PAGE_SIZE = 25;
 
@@ -55,7 +56,10 @@ export default function ExpensesScreen() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [incomeAmount, setIncomeAmount] = useState(0);
+  const [netAmount, setNetAmount] = useState(0);
   const [view, setView] = useState<ViewMode>("all");
+  const [direction, setDirection] = useState<DirectionFilter>("expense");
   const [category, setCategory] = useState<string>("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -73,12 +77,13 @@ export default function ExpensesScreen() {
       page: String(page),
     });
     if (view !== "all") params.set("type", view);
+    params.set("direction", direction);
     if (category) params.set("category", category);
     if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
     params.set("settled", settled);
 
-    // Keep the headline total consistent with the listed rows.
+    // Summary is direction-agnostic so Income/Net always reflect the full picture.
     const summaryParams = new URLSearchParams({ scope: view, settled });
     if (category) summaryParams.set("category", category);
     if (debouncedSearch) summaryParams.set("q", debouncedSearch);
@@ -94,10 +99,12 @@ export default function ExpensesScreen() {
       setExpenses(expData.expenses ?? []);
       setTotal(expData.total ?? 0);
       setTotalAmount(sumData.totalAmount ?? 0);
+      setIncomeAmount(sumData.incomeAmount ?? 0);
+      setNetAmount(sumData.netAmount ?? 0);
     } catch {
       // keep last good state on transient errors
     }
-  }, [view, category, debouncedSearch, range, settled, page, authFetch]);
+  }, [view, direction, category, debouncedSearch, range, settled, page, authFetch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -114,7 +121,7 @@ export default function ExpensesScreen() {
 
   useEffect(() => {
     setPage(1);
-  }, [view, category, debouncedSearch, range, settled]);
+  }, [view, direction, category, debouncedSearch, range, settled]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -128,6 +135,7 @@ export default function ExpensesScreen() {
     const dateFrom = rangeToDateFrom(range);
     const params = new URLSearchParams();
     if (view !== "all") params.set("type", view);
+    params.set("direction", direction);
     if (category) params.set("category", category);
     if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
@@ -171,10 +179,19 @@ export default function ExpensesScreen() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasFilters =
     view !== "all" ||
+    direction !== "expense" ||
     category !== "" ||
     search !== "" ||
     range !== "all" ||
     settled !== "false";
+
+  // Headline follows the active flow filter so it matches the listed rows.
+  const headline =
+    direction === "income"
+      ? { label: "Total Income", value: incomeAmount }
+      : direction === "all"
+        ? { label: "Net (income − spend)", value: netAmount }
+        : { label: hasFilters ? "Filtered Total" : "Total Expenses", value: totalAmount };
 
   return (
     <SafeAreaView className="flex-1" edges={["top"]}>
@@ -217,14 +234,36 @@ export default function ExpensesScreen() {
           <View className="mb-2 gap-4">
             <View className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-5">
               <Text className="text-[13px] uppercase tracking-wider text-zinc-500">
-                {hasFilters ? "Filtered Total" : "Total Expenses"}
+                {headline.label}
               </Text>
-              <Text className="mt-1 text-3xl font-bold text-zinc-50">
-                ₹{totalAmount.toFixed(2)}
+              <Text
+                className={`mt-1 text-3xl font-bold ${
+                  direction === "income" ? "text-emerald-400" : "text-zinc-50"
+                }`}
+              >
+                {direction === "income" ? "+" : ""}₹{headline.value.toFixed(2)}
               </Text>
               <Text className="mt-0.5 text-xs text-zinc-500">
                 {total} {total === 1 ? "entry" : "entries"} · {view}
               </Text>
+              <View className="mt-3 flex-row gap-4 border-t border-white/5 pt-3">
+                <Text className="text-xs text-zinc-400">
+                  Income{" "}
+                  <Text className="font-semibold text-emerald-400">
+                    ₹{incomeAmount.toFixed(2)}
+                  </Text>
+                </Text>
+                <Text className="text-xs text-zinc-400">
+                  Net{" "}
+                  <Text
+                    className={`font-semibold ${
+                      netAmount < 0 ? "text-red-400" : "text-emerald-400"
+                    }`}
+                  >
+                    {netAmount < 0 ? "−" : ""}₹{Math.abs(netAmount).toFixed(2)}
+                  </Text>
+                </Text>
+              </View>
             </View>
 
             <View className="gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -236,6 +275,7 @@ export default function ExpensesScreen() {
                   <Pressable
                     onPress={() => {
                       setView("all");
+                      setDirection("expense");
                       setCategory("");
                       setSearch("");
                       setRange("all");
@@ -269,6 +309,21 @@ export default function ExpensesScreen() {
               <View className="flex-row gap-2">
                 {(["all", "personal", "group"] as const).map((v) => (
                   <Chip key={v} label={v} active={view === v} onPress={() => setView(v)} />
+                ))}
+              </View>
+
+              <View className="flex-row gap-2">
+                {([
+                  ["expense", "Expense"],
+                  ["income", "Income"],
+                  ["all", "All flows"],
+                ] as const).map(([val, label]) => (
+                  <Chip
+                    key={val}
+                    label={label}
+                    active={direction === val}
+                    onPress={() => setDirection(val)}
+                  />
                 ))}
               </View>
 
@@ -444,20 +499,32 @@ function ExpenseCard({
           </Text>
         </View>
         <View className="items-end">
-          <Text className="text-base font-semibold text-zinc-100">
-            ₹{e.amount.toFixed(2)}
+          <Text
+            className={`text-base font-semibold ${
+              e.direction === "income" ? "text-emerald-400" : "text-zinc-100"
+            }`}
+          >
+            {e.direction === "income" ? "+" : ""}₹{e.amount.toFixed(2)}
           </Text>
           <View
             className={`mt-1 rounded-full px-2 py-0.5 ${
-              e.type === "group" ? "bg-brand-500/15" : "bg-zinc-800/60"
+              e.direction === "income"
+                ? "bg-emerald-500/15"
+                : e.type === "group"
+                  ? "bg-brand-500/15"
+                  : "bg-zinc-800/60"
             }`}
           >
             <Text
               className={`text-[12px] font-medium uppercase ${
-                e.type === "group" ? "text-brand-400" : "text-zinc-400"
+                e.direction === "income"
+                  ? "text-emerald-400"
+                  : e.type === "group"
+                    ? "text-brand-400"
+                    : "text-zinc-400"
               }`}
             >
-              {e.type}
+              {e.direction === "income" ? "income" : e.type}
             </Text>
           </View>
         </View>

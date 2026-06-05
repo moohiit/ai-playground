@@ -4,7 +4,9 @@ import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
-import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
+import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
+
+type Direction = "expense" | "income";
 
 type Group = {
   _id: string;
@@ -15,6 +17,7 @@ type Group = {
 type EditExpense = {
   _id: string;
   type: "personal" | "group";
+  direction?: Direction;
   groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;
@@ -34,9 +37,31 @@ type Props = {
 export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpense }: Props) {
   const { authFetch, user } = useAuth();
   const isEdit = !!editExpense;
+  const [direction, setDirection] = useState<Direction>(
+    editExpense?.direction ?? "expense"
+  );
   const [type, setType] = useState<"personal" | "group">(
     editExpense?.type ?? (preselectedGroupId ? "group" : "personal")
   );
+  const categoryList = direction === "income" ? INCOME_CATEGORIES : CATEGORIES;
+
+  // Income is personal-only and uses its own category set; keep state consistent
+  // when the user flips direction.
+  function changeDirection(d: Direction) {
+    setDirection(d);
+    if (d === "income") {
+      setType("personal");
+      setCategory((c) =>
+        (INCOME_CATEGORIES as readonly string[]).includes(c)
+          ? c
+          : INCOME_CATEGORIES[0]
+      );
+    } else {
+      setCategory((c) =>
+        (CATEGORIES as readonly string[]).includes(c) ? c : CATEGORIES[0]
+      );
+    }
+  }
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState(editExpense?.groupId ?? preselectedGroupId ?? "");
   const [paidByName, setPaidByName] = useState(editExpense?.paidBy?.name ?? "");
@@ -156,8 +181,9 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type,
-          groupId: type === "group" ? groupId : undefined,
+          type: direction === "income" ? "personal" : type,
+          direction,
+          groupId: direction === "expense" && type === "group" ? groupId : undefined,
           paidBy: payer,
           amount: parseFloat(amount),
           description,
@@ -217,25 +243,52 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
           className="max-h-[calc(100vh-15rem)] overflow-y-auto px-6 py-5"
         >
           <div className="flex flex-col gap-4">
-            <div className="flex gap-2">
-              {(["personal", "group"] as const).map((t) => (
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  ["expense", "Expense"],
+                  ["income", "Income"],
+                ] as const
+              ).map(([d, label]) => (
                 <button
-                  key={t}
+                  key={d}
                   type="button"
-                  onClick={() => setType(t)}
+                  onClick={() => changeDirection(d)}
                   className={cn(
-                    "flex-1 rounded-lg border px-3 py-2 text-xs font-medium capitalize transition-all",
-                    type === t
-                      ? "border-brand-500/60 bg-brand-500/15 text-brand-500 shadow-[0_0_20px_-5px_rgba(99,102,241,0.5)]"
+                    "rounded-lg border px-3 py-2 text-xs font-semibold transition-all",
+                    direction === d
+                      ? d === "income"
+                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-400 shadow-[0_0_20px_-5px_rgba(16,185,129,0.5)]"
+                        : "border-brand-500/60 bg-brand-500/15 text-brand-500 shadow-[0_0_20px_-5px_rgba(99,102,241,0.5)]"
                       : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
                   )}
                 >
-                  {t}
+                  {label}
                 </button>
               ))}
             </div>
 
-            {type === "group" && (
+            {direction === "expense" && (
+              <div className="flex gap-2">
+                {(["personal", "group"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setType(t)}
+                    className={cn(
+                      "flex-1 rounded-lg border px-3 py-2 text-xs font-medium capitalize transition-all",
+                      type === t
+                        ? "border-brand-500/60 bg-brand-500/15 text-brand-500 shadow-[0_0_20px_-5px_rgba(99,102,241,0.5)]"
+                        : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                    )}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {direction === "expense" && type === "group" && (
               <>
                 <div>
                   <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
@@ -406,7 +459,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
               >
-                {CATEGORIES.map((c) => (
+                {categoryList.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -414,6 +467,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
               </select>
             </div>
 
+            {direction === "expense" && (
             <label
               className={cn(
                 "group relative flex cursor-pointer flex-col items-center gap-2 overflow-hidden rounded-lg border border-dashed border-zinc-700 bg-zinc-900/40 p-4 text-center transition-colors hover:border-brand-500/60 hover:bg-brand-500/5",
@@ -447,6 +501,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 Auto-fill with Gemini Vision
               </div>
             </label>
+            )}
 
             {error && (
               <p className="rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400">

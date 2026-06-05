@@ -30,6 +30,7 @@ function expensesToCsv(expenses: ExpenseDoc[]): string {
     "Date",
     "Description",
     "Category",
+    "Direction",
     "Type",
     "Paid By",
     "Amount",
@@ -40,6 +41,7 @@ function expensesToCsv(expenses: ExpenseDoc[]): string {
     new Date(e.date).toISOString().slice(0, 10),
     e.description,
     e.category,
+    e.direction ?? "expense",
     e.type,
     e.paidBy?.name ?? "",
     e.amount.toFixed(2),
@@ -60,6 +62,7 @@ import {
   geminiReceiptSchema,
   receiptResultSchema,
   DEFAULT_PREFS,
+  INCOME_CATEGORIES,
 } from "./schemas";
 import {
   calculateSplits,
@@ -240,6 +243,7 @@ export async function createExpense(
 
   const expense = await Expense.create({
     type: input.type,
+    direction: input.direction ?? "expense",
     groupId: input.type === "group" ? input.groupId ?? null : null,
     createdBy: auth.userId,
     paidBy: input.paidBy,
@@ -259,7 +263,7 @@ export async function createExpense(
 // scoping/filtering. Verifies group access; does NOT page (callers add skip/limit).
 type ExpenseQueryFilter = Pick<
   ExpenseFilter,
-  "groupId" | "type" | "category" | "q" | "dateFrom" | "dateTo" | "settled"
+  "groupId" | "type" | "direction" | "category" | "q" | "dateFrom" | "dateTo" | "settled"
 >;
 
 async function buildExpenseQuery(
@@ -303,6 +307,17 @@ async function buildExpenseQuery(
     query.$and = [
       ...(Array.isArray(query.$and) ? query.$and : []),
       { $or: [{ settledAt: null }, { settledAt: { $exists: false } }] },
+    ];
+  }
+
+  // Direction filter. Pre-1A rows have no `direction` field, so "expense" also
+  // matches missing/null. "all" (or undefined) applies no direction constraint.
+  if (filter.direction === "income") {
+    query.direction = "income";
+  } else if (filter.direction === "expense") {
+    query.$and = [
+      ...(Array.isArray(query.$and) ? query.$and : []),
+      { $or: [{ direction: "expense" }, { direction: { $exists: false } }, { direction: null }] },
     ];
   }
 
@@ -387,8 +402,11 @@ export async function updateExpense(
     throw new Error("Access denied");
   }
 
-  // 2. Determine the effective target (type/group) after this update.
-  const newType = input.type ?? expense.type;
+  // 2. Determine the effective target (direction/type/group) after this update.
+  // Income is personal-only (D-6), so it always forces type "personal".
+  const newDirection = input.direction ?? expense.direction ?? "expense";
+  const newType =
+    newDirection === "income" ? "personal" : input.type ?? expense.type;
   const currentGroupId = expense.groupId ? expense.groupId.toString() : null;
   const newGroupId =
     input.groupId !== undefined ? input.groupId || null : currentGroupId;
@@ -441,6 +459,16 @@ export async function updateExpense(
   if (input.date !== undefined) expense.date = new Date(input.date);
   if (input.paidBy !== undefined) expense.paidBy = input.paidBy;
   expense.type = newType;
+  expense.direction = newDirection;
+
+  // Guard: a row marked income must carry an income category (covers partial
+  // PATCHes that flip direction without resending a matching category).
+  if (
+    newDirection === "income" &&
+    !(INCOME_CATEGORIES as readonly string[]).includes(expense.category)
+  ) {
+    throw new Error("Income must use an income category");
+  }
 
   await expense.save();
   return expense.toObject();
@@ -558,7 +586,9 @@ export async function getSummary(
   const userId = auth.userId;
   const round = (n: number) => Math.round(n * 100) / 100;
 
-  let totalAmount = 0;
+  let totalAmount = 0; // spending only (excludes income)
+  let incomeAmount = 0;
+  let incomeCount = 0;
   let myShare = 0;
   let paidByMe = 0;
   let personalTotal = 0;
@@ -603,6 +633,14 @@ export async function getSummary(
   let maxDate = -Infinity;
 
   for (const e of expenses) {
+    // Income is tracked separately and never counts toward spending aggregates,
+    // breakdowns, or the spending date range (used for averagePerDay).
+    if (e.direction === "income") {
+      incomeAmount += e.amount;
+      incomeCount += 1;
+      continue;
+    }
+
     totalAmount += e.amount;
 
     if (e.paidBy?.id === userId) paidByMe += e.amount;
@@ -699,7 +737,7 @@ export async function getSummary(
     days = Math.max(1, Math.round((maxDate - minDate) / 86400000) + 1);
   }
 
-  const totalCount = expenses.length;
+  const totalCount = expenses.length - incomeCount; // spending entries only
   const paidByOthers = totalAmount - paidByMe;
   const averagePerTransaction = totalCount > 0 ? totalAmount / totalCount : 0;
   const averagePerDay = days > 0 ? totalAmount / days : 0;
@@ -707,6 +745,9 @@ export async function getSummary(
   return {
     totalAmount: round(totalAmount),
     totalCount,
+    incomeAmount: round(incomeAmount),
+    incomeCount,
+    netAmount: round(incomeAmount - totalAmount),
     myShare: round(myShare),
     paidByMe: round(paidByMe),
     paidByOthers: round(paidByOthers),

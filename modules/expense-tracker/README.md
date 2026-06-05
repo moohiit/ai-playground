@@ -5,6 +5,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 ## What it does
 
 - **Personal expenses** — log, edit, categorize, free-text search, and report on your own spending
+- **Income tracking** — mark a personal entry as income (its own category set); reports show income, spending, and net (income − spend), all filterable by flow (expense / income / all)
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -15,7 +16,7 @@ Grouped by concern:
 
 ### Expenses
 - `POST /api/projects/expense-tracker/expenses` — create (personal or group)
-- `GET /api/projects/expense-tracker/expenses` — list with filters (type, group, category, date range, free-text `q`)
+- `GET /api/projects/expense-tracker/expenses` — list with filters (type, group, category, date range, free-text `q`, `direction`=expense/income/all)
 - `PATCH /api/projects/expense-tracker/expenses/:id` — update
 - `DELETE /api/projects/expense-tracker/expenses/:id` — delete
 - `GET /api/projects/expense-tracker/expenses/export` — download the filtered rows as CSV (same filters as list; 5000-row cap)
@@ -76,7 +77,7 @@ The only LLM-driven step is receipt OCR. See [prompts.ts](prompts.ts):
 Stored in MongoDB (see [models.ts](models.ts)):
 
 - **Group** — `{ name, description, createdBy, members: [{ userId, name, email, isActive }] }`
-- **Expense** — `{ type, groupId?, paidBy, amount, description, category, date, splitAmong[], items[], ... }`
+- **Expense** — `{ type, direction:"expense"|"income", groupId?, paidBy, amount, description, category, date, splitAmong[], items[], ... }`
 - **UserPrefs** — `{ userId (unique), baseCurrency, locale, weekStart }` — per-user settings (scaffold for multi-currency)
 
 All group operations verify the requesting user is a member before returning or mutating data.

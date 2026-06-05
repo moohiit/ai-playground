@@ -15,7 +15,13 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../lib/auth";
-import { CATEGORIES, type Expense, type Group } from "../lib/types";
+import {
+  CATEGORIES,
+  INCOME_CATEGORIES,
+  type Direction,
+  type Expense,
+  type Group,
+} from "../lib/types";
 import { AppBackground, GradientButton } from "../components/ui";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -36,9 +42,29 @@ export default function AddExpenseScreen() {
   const isEdit = !!editExpense;
   const preGroupId = typeof params.groupId === "string" ? params.groupId : "";
 
+  const [direction, setDirection] = useState<Direction>(
+    editExpense?.direction ?? "expense"
+  );
   const [type, setType] = useState<"personal" | "group">(
     editExpense?.type ?? (preGroupId ? "group" : "personal")
   );
+  const categoryList = direction === "income" ? INCOME_CATEGORIES : CATEGORIES;
+
+  function changeDirection(d: Direction) {
+    setDirection(d);
+    if (d === "income") {
+      setType("personal");
+      setCategory((c) =>
+        (INCOME_CATEGORIES as readonly string[]).includes(c)
+          ? c
+          : INCOME_CATEGORIES[0]
+      );
+    } else {
+      setCategory((c) =>
+        (CATEGORIES as readonly string[]).includes(c) ? c : CATEGORIES[0]
+      );
+    }
+  }
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState(editExpense?.groupId ?? preGroupId ?? "");
   const [paidById, setPaidById] = useState(
@@ -162,21 +188,22 @@ export default function AddExpenseScreen() {
   async function handleSave() {
     setError(null);
     const amt = parseFloat(amount);
+    const effectiveType = direction === "income" ? "personal" : type;
     if (!amt || amt <= 0) return setError("Enter a valid amount");
     if (!description.trim()) return setError("Enter a description");
-    if (type === "group" && !groupId) return setError("Select a group");
+    if (effectiveType === "group" && !groupId) return setError("Select a group");
 
     setSaving(true);
     try {
       const splitAmong =
-        type === "group" && selectedGroup
+        effectiveType === "group" && selectedGroup
           ? selectedGroup.members
               .filter((m) => present.has(m.userId))
               .map((m) => ({ memberId: m.userId, name: m.name }))
           : undefined;
 
       const payer =
-        type === "group" && selectedGroup
+        effectiveType === "group" && selectedGroup
           ? {
               id: paidById,
               name:
@@ -193,8 +220,9 @@ export default function AddExpenseScreen() {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type,
-          groupId: type === "group" ? groupId : undefined,
+          type: effectiveType,
+          direction,
+          groupId: effectiveType === "group" ? groupId : undefined,
           paidBy: payer,
           amount: amt,
           description: description.trim(),
@@ -233,7 +261,43 @@ export default function AddExpenseScreen() {
           contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
         >
-          {!isEdit && (
+          <View className="flex-row gap-2">
+            {(
+              [
+                ["expense", "Expense"],
+                ["income", "Income"],
+              ] as const
+            ).map(([d, label]) => {
+              const on = direction === d;
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => changeDirection(d)}
+                  className={`flex-1 items-center rounded-xl border py-2.5 ${
+                    on
+                      ? d === "income"
+                        ? "border-emerald-500/60 bg-emerald-500/15"
+                        : "border-brand-500/60 bg-brand-500/15"
+                      : "border-white/10 bg-zinc-900/40"
+                  }`}
+                >
+                  <Text
+                    className={`text-sm font-semibold ${
+                      on
+                        ? d === "income"
+                          ? "text-emerald-400"
+                          : "text-brand-400"
+                        : "text-zinc-400"
+                    }`}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {!isEdit && direction === "expense" && (
             <Pressable
               onPress={onScanPress}
               disabled={scanning}
@@ -253,29 +317,31 @@ export default function AddExpenseScreen() {
             </Pressable>
           )}
 
-          <View className="flex-row gap-2">
-            {(["personal", "group"] as const).map((t) => (
-              <Pressable
-                key={t}
-                onPress={() => setType(t)}
-                className={`flex-1 items-center rounded-xl border py-2.5 ${
-                  type === t
-                    ? "border-brand-500/60 bg-brand-500/15"
-                    : "border-white/10 bg-zinc-900/40"
-                }`}
-              >
-                <Text
-                  className={`text-sm font-medium capitalize ${
-                    type === t ? "text-brand-400" : "text-zinc-400"
+          {direction === "expense" && (
+            <View className="flex-row gap-2">
+              {(["personal", "group"] as const).map((t) => (
+                <Pressable
+                  key={t}
+                  onPress={() => setType(t)}
+                  className={`flex-1 items-center rounded-xl border py-2.5 ${
+                    type === t
+                      ? "border-brand-500/60 bg-brand-500/15"
+                      : "border-white/10 bg-zinc-900/40"
                   }`}
                 >
-                  {t}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+                  <Text
+                    className={`text-sm font-medium capitalize ${
+                      type === t ? "text-brand-400" : "text-zinc-400"
+                    }`}
+                  >
+                    {t}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
 
-          {type === "group" && (
+          {direction === "expense" && type === "group" && (
             <View className="gap-3">
               <Field label="Group">
                 {groups.length === 0 ? (
@@ -411,7 +477,7 @@ export default function AddExpenseScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 8 }}
             >
-              {CATEGORIES.map((c) => (
+              {categoryList.map((c) => (
                 <Chip
                   key={c}
                   active={category === c}

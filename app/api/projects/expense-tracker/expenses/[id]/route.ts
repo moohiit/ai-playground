@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteExpense, updateExpense } from "@/modules/expense-tracker/service";
-import { createExpenseSchema } from "@/modules/expense-tracker/schemas";
+import { updateExpenseSchema } from "@/modules/expense-tracker/schemas";
 import { requireAuth } from "@/lib/auth";
 import { ApiError, handleRouteError } from "@/lib/apiError";
 
@@ -14,7 +14,7 @@ export async function PUT(req: Request, { params }: Params) {
   try {
     const auth = await requireAuth(req);
     const body = await req.json().catch(() => null);
-    const parsed = createExpenseSchema.partial().safeParse(body);
+    const parsed = updateExpenseSchema.safeParse(body);
     if (!parsed.success) {
       throw new ApiError(400, parsed.error.issues[0]?.message ?? "Invalid input");
     }

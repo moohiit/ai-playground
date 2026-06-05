@@ -15,6 +15,17 @@ export const CATEGORIES = [
   "Other",
 ] as const;
 
+// Phase 1A: income categories are a separate set so spending reports don't fragment.
+export const INCOME_CATEGORIES = [
+  "Salary",
+  "Business",
+  "Investments",
+  "Freelance",
+  "Gifts",
+  "Refunds",
+  "Other",
+] as const;
+
 export const createGroupSchema = z
   .object({
     name: z.string().min(1).max(100),
@@ -40,9 +51,13 @@ export const addMemberSchema = z
   })
   .strict();
 
-export const createExpenseSchema = z
+// Category is validated against the right set in a refine (depends on `direction`).
+const ALL_CATEGORIES = [...CATEGORIES, ...INCOME_CATEGORIES] as const;
+
+const expenseObjectSchema = z
   .object({
     type: z.enum(["personal", "group"]),
+    direction: z.enum(["expense", "income"]).default("expense"),
     groupId: z.string().optional(),
     paidBy: z.object({
       id: z.string().min(1),
@@ -50,7 +65,7 @@ export const createExpenseSchema = z
     }),
     amount: z.number().positive("Amount must be positive"),
     description: z.string().min(1).max(500),
-    category: z.enum(CATEGORIES),
+    category: z.enum(ALL_CATEGORIES),
     date: z.string().refine((d) => !isNaN(Date.parse(d)), "Invalid date"),
     splitAmong: z
       .array(
@@ -72,6 +87,54 @@ export const createExpenseSchema = z
   })
   .strict();
 
+// Validate the category against the right set, given the (possibly partial) direction.
+// `currentType`/`currentDirection` let updates fall back to the stored values.
+function refineDirectionCategory(
+  val: { type?: string; direction?: string; category?: string },
+  ctx: z.RefinementCtx
+) {
+  if (val.direction === "income") {
+    if (val.type !== undefined && val.type !== "personal") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Income must be a personal entry",
+        path: ["type"],
+      });
+    }
+    if (
+      val.category !== undefined &&
+      !(INCOME_CATEGORIES as readonly string[]).includes(val.category)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Choose an income category",
+        path: ["category"],
+      });
+    }
+  } else if (val.direction === "expense" || val.direction === undefined) {
+    if (
+      val.category !== undefined &&
+      val.direction !== undefined &&
+      !(CATEGORIES as readonly string[]).includes(val.category)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Choose an expense category",
+        path: ["category"],
+      });
+    }
+  }
+}
+
+export const createExpenseSchema =
+  expenseObjectSchema.superRefine(refineDirectionCategory);
+
+// PATCH: every field optional. Category/direction consistency is re-validated in the
+// service against the stored row, since a partial update may omit `direction`.
+export const updateExpenseSchema = expenseObjectSchema
+  .partial()
+  .superRefine(refineDirectionCategory);
+
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 
 const isoDate = z
@@ -82,6 +145,7 @@ const isoDate = z
 export const expenseFilterSchema = z.object({
   groupId: z.string().optional(),
   type: z.enum(["personal", "group"]).optional(),
+  direction: z.enum(["expense", "income", "all"]).optional(),
   category: z.string().optional(),
   q: z.string().trim().max(100).optional(),
   dateFrom: isoDate,

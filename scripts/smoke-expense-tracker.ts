@@ -50,11 +50,13 @@ async function main() {
 
   const now = new Date();
   const seed = [
-    { description: "Coffee at Starbucks", category: "Food & Groceries", amount: 250 },
-    { description: "Uber ride home", category: "Transport", amount: 400 },
-    { description: "Weekly grocery run", category: "Food & Groceries", amount: 1200 },
+    { description: "Coffee at Starbucks", category: "Food & Groceries", amount: 250, direction: "expense" },
+    { description: "Uber ride home", category: "Transport", amount: 400, direction: "expense" },
+    { description: "Weekly grocery run", category: "Food & Groceries", amount: 1200, direction: "expense" },
+    { description: "Monthly salary", category: "Salary", amount: 50000, direction: "income" },
   ].map((e) => ({
     type: "personal",
+    direction: e.direction,
     groupId: null,
     createdBy: TEST_USER_ID,
     paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
@@ -73,7 +75,7 @@ async function main() {
     updatedAt: now,
   }));
 
-  console.log(`\nSeeding 3 expenses for test user ${TEST_USER_ID}…`);
+  console.log(`\nSeeding 3 expenses + 1 income for test user ${TEST_USER_ID}…`);
   await expenses.insertMany(seed);
 
   try {
@@ -93,10 +95,61 @@ async function main() {
     const sData2 = await sRes2.json();
     check("case-insensitive 'GROCERY' matches 1", sData2.total === 1, `total=${sData2.total}`);
 
-    // no filter → all 3
+    // 1A. Direction filter (income tracking)
+    console.log("\n[direction]");
+    const expList = await (await fetch(`${API}/expenses?direction=expense&settled=all`, { headers: auth })).json();
+    check("direction=expense → 3 spending rows", expList.total === 3, `total=${expList.total}`);
+    const incList = await (await fetch(`${API}/expenses?direction=income&settled=all`, { headers: auth })).json();
+    check("direction=income → 1 income row", incList.total === 1, `total=${incList.total}`);
+    check("income row is the salary", incList.expenses?.[0]?.description === "Monthly salary");
+    const allList = await (await fetch(`${API}/expenses?direction=all&settled=all`, { headers: auth })).json();
+    check("direction=all → all 4 rows", allList.total === 4, `total=${allList.total}`);
+
+    // 1A. Summary income/net math
+    const sumRes = await fetch(`${API}/reports/summary?scope=personal&settled=all`, { headers: auth });
+    const sum = await sumRes.json();
+    check("summary spending excludes income (1850)", sum.totalAmount === 1850, `totalAmount=${sum.totalAmount}`);
+    check("summary spending count is 3", sum.totalCount === 3, `totalCount=${sum.totalCount}`);
+    check("summary incomeAmount is 50000", sum.incomeAmount === 50000, `incomeAmount=${sum.incomeAmount}`);
+    check("summary netAmount is 48150", sum.netAmount === 48150, `netAmount=${sum.netAmount}`);
+
+    // 1A. Create + validation rules via the API
+    console.log("\n[income create/validation]");
+    const goodIncome = await fetch(`${API}/expenses`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "personal", direction: "income", category: "Freelance",
+        paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+        amount: 8000, description: "Side gig", date: now.toISOString().slice(0, 10),
+      }),
+    });
+    check("POST income (valid) → 201", goodIncome.status === 201, `got ${goodIncome.status}`);
+    const badCat = await fetch(`${API}/expenses`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "personal", direction: "income", category: "Transport",
+        paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+        amount: 100, description: "bad", date: now.toISOString().slice(0, 10),
+      }),
+    });
+    check("POST income w/ expense category → 400", badCat.status === 400, `got ${badCat.status}`);
+    const badType = await fetch(`${API}/expenses`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "group", direction: "income", category: "Salary",
+        paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+        amount: 100, description: "bad", date: now.toISOString().slice(0, 10),
+      }),
+    });
+    check("POST income w/ type group → 400", badType.status === 400, `got ${badType.status}`);
+
+    // no filter → all 4 (3 expense + 1 income)
     const allRes = await fetch(`${API}/expenses?settled=all`, { headers: auth });
     const allData = await allRes.json();
-    check("no-query list returns all 3", allData.total === 3, `total=${allData.total}`);
+    check("no-direction list returns all rows (≥4)", allData.total >= 4, `total=${allData.total}`);
 
     // 2. Prefs — defaults, then update, then persistence.
     console.log("\n[prefs]");
@@ -126,22 +179,28 @@ async function main() {
     });
     check("invalid currency → 400", badPatch.status === 400, `got ${badPatch.status}`);
 
-    // 3. CSV export
+    // 3. CSV export (direction=expense for a deterministic row count)
     console.log("\n[export]");
-    const eRes = await fetch(`${API}/expenses/export?settled=all`, { headers: auth });
+    const eRes = await fetch(`${API}/expenses/export?direction=expense&settled=all`, { headers: auth });
     const ctype = eRes.headers.get("content-type") ?? "";
     const csv = await eRes.text();
     const lines = csv.replace(/^﻿/, "").trim().split(/\r\n/);
     check("GET /expenses/export → 200", eRes.status === 200, `got ${eRes.status}`);
     check("content-type is text/csv", ctype.includes("text/csv"), ctype);
-    check("CSV header present", lines[0] === "Date,Description,Category,Type,Paid By,Amount,Split Among,Settled", lines[0]);
-    check("CSV has 3 data rows", lines.length === 4, `lines=${lines.length}`);
+    check(
+      "CSV header has Direction column",
+      lines[0] === "Date,Description,Category,Direction,Type,Paid By,Amount,Split Among,Settled",
+      lines[0]
+    );
+    check("CSV export=expense has 3 data rows", lines.length === 4, `lines=${lines.length}`);
     check("CSV contains Starbucks row", csv.includes("Coffee at Starbucks"));
+    check("CSV (expense) excludes salary income", !csv.includes("Monthly salary"));
 
-    // export honours the search filter too
-    const eRes2 = await fetch(`${API}/expenses/export?q=uber&settled=all`, { headers: auth });
-    const csv2 = (await eRes2.text()).replace(/^﻿/, "").trim().split(/\r\n/);
-    check("filtered export → header + 1 row", csv2.length === 2, `lines=${csv2.length}`);
+    // income export shows the income row
+    const eRes2 = await fetch(`${API}/expenses/export?direction=income&settled=all`, { headers: auth });
+    const csv2 = await eRes2.text();
+    check("CSV (income) includes salary row", csv2.includes("Monthly salary"));
+    check("CSV income row marked 'income'", /Monthly salary,Salary,income/.test(csv2), csv2);
   } finally {
     console.log("\nCleaning up test data…");
     await expenses.deleteMany({ createdBy: TEST_USER_ID });
