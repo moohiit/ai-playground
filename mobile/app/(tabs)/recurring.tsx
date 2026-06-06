@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import {
@@ -146,6 +147,8 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
   const [category, setCategory] = useState<string>(CATEGORIES[0]);
   const [description, setDescription] = useState("");
   const [cadence, setCadence] = useState<"weekly" | "monthly" | "yearly">("monthly");
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [showDate, setShowDate] = useState(false);
   const [autoPost, setAutoPost] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -153,6 +156,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
 
   useEffect(() => {
     if (visible) {
+      setStartDate(new Date().toISOString().slice(0, 10));
       authFetch("/api/projects/expense-tracker/prefs")
         .then((r) => r.json())
         .then((d) => d.prefs?.baseCurrency && setCurrency(d.prefs.baseCurrency))
@@ -177,7 +181,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: amt, currency, category, description: description.trim(),
-          direction, cadence, startDate: new Date().toISOString().slice(0, 10), autoPost,
+          direction, cadence, startDate, autoPost,
         }),
       });
       if (!res.ok) {
@@ -214,9 +218,14 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
               ))}
             </View>
 
-            <View className="flex-row gap-2">
-              <TextInput value={amount} onChangeText={setAmount} placeholder="Amount" keyboardType="decimal-pad" placeholderTextColor="#71717a"
-                className="flex-1 rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
+            <View className="gap-1.5">
+              <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Amount</Text>
+              <TextInput value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" placeholderTextColor="#71717a"
+                className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-lg text-zinc-100" />
+            </View>
+
+            <View className="gap-1.5">
+              <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Currency</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: "center" }}>
                 {SUPPORTED_CURRENCIES.map((c) => (
                   <Pressable key={c} onPress={() => setCurrency(c)} className={chip(currency === c)}>
@@ -226,24 +235,51 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
               </ScrollView>
             </View>
 
-            <TextInput value={description} onChangeText={setDescription} placeholder="Description (e.g. Netflix, Rent)" placeholderTextColor="#71717a"
-              className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              {categoryList.map((c) => (
-                <Pressable key={c} onPress={() => setCategory(c)} className={chip(category === c)}>
-                  <Text className={chipTxt(category === c)}>{c}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-
-            <View className="flex-row gap-2">
-              {(["weekly", "monthly", "yearly"] as const).map((c) => (
-                <Pressable key={c} onPress={() => setCadence(c)} className={`flex-1 items-center ${chip(cadence === c)}`}>
-                  <Text className={chipTxt(cadence === c)}>{c}</Text>
-                </Pressable>
-              ))}
+            <View className="gap-1.5">
+              <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Description</Text>
+              <TextInput value={description} onChangeText={setDescription} placeholder="e.g. Netflix, Rent" placeholderTextColor="#71717a"
+                className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
             </View>
+
+            <View className="gap-1.5">
+              <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {categoryList.map((c) => (
+                  <Pressable key={c} onPress={() => setCategory(c)} className={chip(category === c)}>
+                    <Text className={chipTxt(category === c)}>{c}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View className="gap-1.5">
+              <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Repeats</Text>
+              <View className="flex-row gap-2">
+                {(["weekly", "monthly", "yearly"] as const).map((c) => (
+                  <Pressable key={c} onPress={() => setCadence(c)} className={`flex-1 items-center ${chip(cadence === c)}`}>
+                    <Text className={chipTxt(cadence === c)}>{c}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View className="gap-1.5">
+              <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Starts on</Text>
+              <Pressable onPress={() => setShowDate(true)} className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3">
+                <Text className="text-zinc-100">{startDate}</Text>
+              </Pressable>
+            </View>
+
+            {showDate && (
+              <DateTimePicker
+                value={startDate ? new Date(startDate) : new Date()}
+                mode="date"
+                onChange={(_, d) => {
+                  setShowDate(false);
+                  if (d) setStartDate(d.toISOString().slice(0, 10));
+                }}
+              />
+            )}
 
             <View className="flex-row items-center justify-between rounded-xl border border-white/10 bg-zinc-900/40 px-4 py-3">
               <Text className="text-sm text-zinc-300">Auto-post each period</Text>
