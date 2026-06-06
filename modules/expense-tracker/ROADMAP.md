@@ -158,10 +158,17 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
 
 ### Phase 3 — Intelligence (AI differentiators; reuses existing Gemini wiring)
 > **v1 order (D-5):** ship NL entry + forecast first; Spending Coach chat is deferred to a later iteration.
-- [ ] **NL expense entry** *(v1)* — "paid 450 for lunch with Rahul, split equally" → structured txn via Gemini
-      structured output (mirror the receipt-scan pattern in `prompts.ts`/`schemas.ts`).
-- [ ] **Month-end forecast** *(v1)* — pure projection from month-to-date run rate + recurring rules + budgets.
-- [ ] **Spending Coach chat** *(deferred)* — Q&A grounded in the user's aggregated transactions (server builds a
+- [x] **NL expense entry** *(v1, shipped 2026-06-06)* — free text → structured personal draft via Gemini
+      structured output (`completeJSON` + `geminiNlSchema`, lite model). `parseNaturalExpense` normalizes
+      against our enums; `POST /parse` returns a draft (not saved). UI: "✨ AI quick add" bar on web Dashboard
+      + mobile Dashboard → opens the add form **prefilled** (new `prefill` prop / `prefill` route param).
+      Personal-only; split phrases ignored in v1.
+- [x] **Month-end forecast** *(v1, shipped 2026-06-06)* — pure `forecast.ts` (`projectMonthEnd`, run-rate);
+      `getForecast` adds upcoming recurring + overall-budget comparison. `GET /forecast`. UI: forecast card on
+      both dashboards (projected total, "X over budget").
+- [x] Verified: 83/83 smoke checks incl. **live Gemini** NL parse ("250 coffee"→₹250 expense; "salary 50000"
+      →income) + forecast projection. Web + mobile typecheck clean.
+- [ ] **Spending Coach chat** *(deferred, D-5)* — Q&A grounded in the user's aggregated transactions (server builds a
       compact summary context; never dump raw rows to the model). New `/coach` route.
 - [ ] **Subscription detective** — detect recurring merchant/amount patterns in history; flag price hikes,
       duplicates, unused (no recent linked txn).
@@ -232,6 +239,10 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-06 — **Phase 3 (AI v1) shipped:** NL expense entry (Gemini `completeJSON` → draft → prefilled add
+  form) + month-end forecast (pure run-rate + recurring + budget). `POST /parse`, `GET /forecast`. "✨ AI quick
+  add" bar + forecast card on both dashboards. 83/83 smoke incl. live Gemini. Spending Coach chat still deferred (D-5).
 
 - 2026-06-06 — **Phase 2B (recurring/subscriptions) shipped.** `RecurringRule` model + pure `recurring.ts`,
   `runDueRecurring` (daily Vercel Cron for all users + lazy-on-open per user), manual post for non-auto rules,

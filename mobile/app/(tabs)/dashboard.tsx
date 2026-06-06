@@ -6,6 +6,7 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -32,6 +33,43 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [nlText, setNlText] = useState("");
+  const [nlBusy, setNlBusy] = useState(false);
+  const [forecast, setForecast] = useState<{
+    projectedTotal: number;
+    monthToDate: number;
+    upcomingRecurring: number;
+    overallBudget: number | null;
+    projectedVsBudget: number | null;
+  } | null>(null);
+
+  const fetchForecast = useCallback(() => {
+    authFetch("/api/projects/expense-tracker/forecast")
+      .then((r) => r.json())
+      .then(setForecast)
+      .catch(() => {});
+  }, [authFetch]);
+
+  async function handleNlParse() {
+    const text = nlText.trim();
+    if (!text || nlBusy) return;
+    setNlBusy(true);
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't understand that");
+      setNlText("");
+      router.push({ pathname: "/add-expense", params: { prefill: JSON.stringify(data.draft) } });
+    } catch (e) {
+      Alert.alert("Couldn't read that", e instanceof Error ? e.message : "Try rephrasing");
+    } finally {
+      setNlBusy(false);
+    }
+  }
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -86,8 +124,9 @@ export default function Dashboard() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
+      fetchForecast();
       fetchSummary().finally(() => setLoading(false));
-    }, [fetchSummary])
+    }, [fetchSummary, fetchForecast])
   );
 
   const onRefresh = useCallback(async () => {
@@ -178,6 +217,54 @@ export default function Dashboard() {
                 <Text className="text-sm font-semibold text-zinc-200">View all →</Text>
               </Pressable>
             </Animated.View>
+
+            {/* AI natural-language quick add */}
+            <Animated.View entering={FadeInDown.duration(400).delay(80)}>
+              <View className="rounded-2xl border border-brand-500/30 bg-brand-500/[0.07] p-3">
+                <View className="mb-2 flex-row items-center gap-1.5">
+                  <Text className="text-[11px] font-semibold uppercase tracking-wider text-brand-300">✨ AI quick add</Text>
+                </View>
+                <View className="flex-row items-center gap-2">
+                  <TextInput
+                    value={nlText}
+                    onChangeText={setNlText}
+                    onSubmitEditing={handleNlParse}
+                    placeholder="e.g. “250 coffee” or “got salary 50000”"
+                    placeholderTextColor="#71717a"
+                    returnKeyType="done"
+                    className="flex-1 rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2.5 text-zinc-100"
+                  />
+                  <Pressable
+                    onPress={handleNlParse}
+                    disabled={nlBusy || !nlText.trim()}
+                    className={`rounded-xl bg-brand-600 px-4 py-2.5 ${nlBusy || !nlText.trim() ? "opacity-50" : ""}`}
+                  >
+                    <Text className="text-sm font-semibold text-white">{nlBusy ? "…" : "Add"}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </Animated.View>
+
+            {forecast && (forecast.projectedTotal > 0 || forecast.monthToDate > 0) && (
+              <Animated.View entering={FadeInDown.duration(400).delay(100)}>
+                <View className={`rounded-2xl border p-4 ${forecast.projectedVsBudget != null && forecast.projectedVsBudget > 0 ? "border-red-500/30 bg-red-500/[0.05]" : "border-white/10 bg-white/[0.04]"}`}>
+                  <Text className="text-[12px] uppercase tracking-wider text-zinc-500">✨ Projected this month</Text>
+                  <Text className={`mt-1 text-2xl font-bold ${forecast.projectedVsBudget != null && forecast.projectedVsBudget > 0 ? "text-red-400" : "text-zinc-50"}`}>
+                    {fmt(forecast.projectedTotal)}
+                  </Text>
+                  <Text className="mt-0.5 text-xs text-zinc-500">
+                    {fmt(forecast.monthToDate)} so far · at your current daily pace
+                  </Text>
+                  {forecast.overallBudget != null && (
+                    <Text className={`mt-1 text-xs font-medium ${forecast.projectedVsBudget! > 0 ? "text-red-400" : "text-emerald-400"}`}>
+                      {forecast.projectedVsBudget! > 0
+                        ? `${fmt(forecast.projectedVsBudget!)} over your ${fmt(forecast.overallBudget)} budget`
+                        : `within your ${fmt(forecast.overallBudget)} budget`}
+                    </Text>
+                  )}
+                </View>
+              </Animated.View>
+            )}
 
             {/* Stat tiles */}
             <Animated.View

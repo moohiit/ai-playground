@@ -1,5 +1,5 @@
 import { connectDB } from "@/lib/db";
-import { vision } from "@/lib/llm";
+import { vision, completeJSON } from "@/lib/llm";
 import type { JWTPayload } from "@/lib/auth";
 import { User } from "@/models/User";
 import mongoose from "mongoose";
@@ -84,6 +84,10 @@ import {
   type UpdateRecurringInput,
   geminiReceiptSchema,
   receiptResultSchema,
+  geminiNlSchema,
+  nlResultSchema,
+  type NlResult,
+  CATEGORIES,
   DEFAULT_PREFS,
   INCOME_CATEGORIES,
 } from "./schemas";
@@ -94,8 +98,15 @@ import {
   type MemberBalance,
   type Settlement,
 } from "./balance";
-import { RECEIPT_SYSTEM_PROMPT, RECEIPT_PROMPT } from "./prompts";
+import {
+  RECEIPT_SYSTEM_PROMPT,
+  RECEIPT_PROMPT,
+  NL_SYSTEM_PROMPT,
+  nlPrompt,
+} from "./prompts";
 import { convert } from "./rates";
+import { isSupportedCurrency } from "./currencies";
+import { projectMonthEnd } from "./forecast";
 
 // ── Groups ──────────────────────────────────────────
 
@@ -1565,4 +1576,103 @@ export async function removeRecurring(id: string, auth: JWTPayload) {
   });
   if (res.deletedCount === 0) throw new Error("Recurring rule not found");
   return { deleted: true };
+}
+
+// ── AI: natural-language entry + forecast (Phase 3) ──
+
+// Parse a free-text note into a personal-transaction draft (NOT saved — the client
+// confirms it in the add form). Mirrors the receipt-scan pattern with Gemini.
+export async function parseNaturalExpense(text: string, auth: JWTPayload) {
+  const { baseCurrency } = await getPrefs(auth);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const raw = await completeJSON<NlResult>(
+    nlPrompt(text, today, baseCurrency),
+    geminiNlSchema,
+    { system: NL_SYSTEM_PROMPT, temperature: 0.2, maxOutputTokens: 512 }
+  );
+
+  const parsed = nlResultSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error("Couldn't understand that — try rephrasing, e.g. '250 coffee'.");
+  }
+  const r = parsed.data;
+
+  // Normalize against our enums so the draft is always valid for the add form.
+  const direction = r.direction;
+  const catList = direction === "income" ? INCOME_CATEGORIES : CATEGORIES;
+  const category = (catList as readonly string[]).includes(r.category)
+    ? r.category
+    : "Other";
+  const currency =
+    r.currency && isSupportedCurrency(r.currency) ? r.currency : baseCurrency;
+  const date = !isNaN(Date.parse(r.date)) ? r.date.slice(0, 10) : today;
+
+  return {
+    draft: {
+      type: "personal" as const,
+      direction,
+      amount: Math.round(r.amount * 100) / 100,
+      currency,
+      category,
+      description: r.description.slice(0, 200),
+      date,
+    },
+  };
+}
+
+// Month-end spend projection: run-rate from month-to-date personal spending, plus the
+// known upcoming recurring bills and overall-budget comparison.
+export async function getForecast(auth: JWTPayload) {
+  await connectDB();
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const start = new Date(Date.UTC(y, m, 1));
+  const end = new Date(Date.UTC(y, m + 1, 1));
+  const todayMidnight = new Date(Date.UTC(y, m, now.getUTCDate()));
+  const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const daysElapsed = now.getUTCDate();
+
+  const { total: monthToDate } = await monthlySpendingByCategory(
+    auth.userId,
+    start,
+    end
+  );
+  const forecast = projectMonthEnd(monthToDate, daysElapsed, daysInMonth);
+
+  const baseCurrency = await getBaseCurrency(auth.userId);
+  const upcomingRules = await RecurringRule.find({
+    userId: auth.userId,
+    active: true,
+    "template.direction": "expense",
+    nextRunAt: { $gte: todayMidnight, $lt: end },
+  }).lean();
+  let upcomingRecurring = 0;
+  for (const rule of upcomingRules) {
+    upcomingRecurring += await convert(
+      rule.template.amount,
+      rule.template.currency || baseCurrency,
+      baseCurrency
+    );
+  }
+  upcomingRecurring = Math.round(upcomingRecurring * 100) / 100;
+
+  const overallBudgetDoc = await Budget.findOne({
+    userId: auth.userId,
+    scope: "overall",
+  })
+    .select("amount")
+    .lean();
+  const overallBudget = overallBudgetDoc?.amount ?? null;
+
+  return {
+    ...forecast,
+    upcomingRecurring,
+    overallBudget,
+    projectedVsBudget:
+      overallBudget != null
+        ? Math.round((forecast.projectedTotal - overallBudget) * 100) / 100
+        : null,
+  };
 }

@@ -10,6 +10,8 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 - **Accounts / wallets** — track cash/bank/card/wallet balances; assign a personal expense or income to an account, transfer money between accounts, and see net worth. Balances = opening + income − expense ± transfers (in your base currency).
 - **Budgets** — set an overall monthly cap and/or per-category budgets; a month switcher shows spent vs limit with progress bars and alert colors (warn at 80%, over at 100%).
 - **Recurring & subscriptions** — define repeating expenses/income (rent, EMIs, subscriptions) by cadence; auto-post rules are created daily by a cron (and lazily when you open the app), or confirm them yourself with "Post now".
+- **AI quick add** — type a plain-language note ("250 coffee", "got salary 50000") and Gemini turns it into a structured draft you confirm before saving.
+- **Month-end forecast** — projects this month's total from your daily run-rate, adds known upcoming recurring bills, and compares to your overall budget.
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -36,6 +38,10 @@ Grouped by concern:
 
 ### Receipt scan
 - `POST /api/projects/expense-tracker/scan` — image → Gemini Vision → structured receipt JSON (not saved until user confirms)
+
+### AI (Phase 3)
+- `POST /api/projects/expense-tracker/parse` — natural-language note → structured personal-transaction draft (Gemini; not saved)
+- `GET /api/projects/expense-tracker/forecast` — month-end spend projection (run-rate + upcoming recurring + budget compare)
 
 ### Reports
 - `GET /api/projects/expense-tracker/reports` — aggregations by category, month, and group
@@ -122,6 +128,7 @@ All group operations verify the requesting user is a member before returning or 
 - [balance.ts](balance.ts) — pure split/balance/settlement math
 - [budget.ts](budget.ts) — pure budget progress/status math
 - [recurring.ts](recurring.ts) — pure recurring date math (advance/dueOccurrences)
+- [forecast.ts](forecast.ts) — pure month-end spend projection
 - [rates.ts](rates.ts) — Frankfurter FX fetch + cache + `convert()`
 - [currencies.ts](currencies.ts) — client-safe currency codes, symbols, `formatMoney()`
 - [models.ts](models.ts) — Mongoose schemas

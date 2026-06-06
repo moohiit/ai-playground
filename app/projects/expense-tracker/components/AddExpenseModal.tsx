@@ -32,21 +32,33 @@ type EditExpense = {
   splitAmong?: { memberId: string; name: string }[];
 };
 
+// A draft to pre-populate a NEW entry (e.g. parsed from natural language). Not edit mode.
+type Prefill = {
+  type?: "personal" | "group";
+  direction?: Direction;
+  amount?: number;
+  currency?: string;
+  category?: string;
+  description?: string;
+  date?: string;
+};
+
 type Props = {
   onClose: () => void;
   onSaved: () => void;
   preselectedGroupId?: string;
   editExpense?: EditExpense;
+  prefill?: Prefill;
 };
 
-export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpense }: Props) {
+export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpense, prefill }: Props) {
   const { authFetch, user } = useAuth();
   const isEdit = !!editExpense;
   const [direction, setDirection] = useState<Direction>(
-    editExpense?.direction ?? "expense"
+    editExpense?.direction ?? prefill?.direction ?? "expense"
   );
   const [type, setType] = useState<"personal" | "group">(
-    editExpense?.type ?? (preselectedGroupId ? "group" : "personal")
+    editExpense?.type ?? prefill?.type ?? (preselectedGroupId ? "group" : "personal")
   );
   const categoryList = direction === "income" ? INCOME_CATEGORIES : CATEGORIES;
 
@@ -71,14 +83,18 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   const [groupId, setGroupId] = useState(editExpense?.groupId ?? preselectedGroupId ?? "");
   const [paidByName, setPaidByName] = useState(editExpense?.paidBy?.name ?? "");
   const [paidById, setPaidById] = useState(editExpense?.paidBy?.id ?? user?.userId ?? "");
-  const [amount, setAmount] = useState(editExpense ? String(editExpense.amount) : "");
-  const [currency, setCurrency] = useState(editExpense?.currency ?? "INR");
+  const [amount, setAmount] = useState(
+    editExpense ? String(editExpense.amount) : prefill?.amount != null ? String(prefill.amount) : ""
+  );
+  const [currency, setCurrency] = useState(editExpense?.currency ?? prefill?.currency ?? "INR");
   const [accounts, setAccounts] = useState<AccountLite[]>([]);
   const [accountId, setAccountId] = useState(editExpense?.accountId ?? "");
-  const [description, setDescription] = useState(editExpense?.description ?? "");
-  const [category, setCategory] = useState(editExpense?.category ?? CATEGORIES[0]);
+  const [description, setDescription] = useState(editExpense?.description ?? prefill?.description ?? "");
+  const [category, setCategory] = useState(editExpense?.category ?? prefill?.category ?? CATEGORIES[0]);
   const [date, setDate] = useState(
-    editExpense ? new Date(editExpense.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)
+    editExpense
+      ? new Date(editExpense.date).toISOString().slice(0, 10)
+      : prefill?.date ?? new Date().toISOString().slice(0, 10)
   );
   const [presentMembers, setPresentMembers] = useState<Set<string>>(
     () => new Set(editExpense?.splitAmong?.map((m) => m.memberId) ?? [])
@@ -93,9 +109,9 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
       .then((d) => setGroups(d.groups ?? []));
   }, []);
 
-  // Default a new entry's currency to the user's base currency.
+  // Default a new entry's currency to the user's base currency (unless prefilled).
   useEffect(() => {
-    if (isEdit) return;
+    if (isEdit || prefill?.currency) return;
     authFetch("/api/projects/expense-tracker/prefs")
       .then((r) => r.json())
       .then((d) => {

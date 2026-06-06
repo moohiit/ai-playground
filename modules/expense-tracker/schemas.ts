@@ -358,6 +358,45 @@ export const geminiReceiptSchema: Schema = {
   required: ["vendor", "date", "items", "total", "category"],
 };
 
+// ── Natural-language entry (Phase 3) ───────────────
+
+export const parseTextSchema = z
+  .object({ text: z.string().min(2).max(300) })
+  .strict();
+
+export const geminiNlSchema: Schema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    amount: { type: SchemaType.NUMBER, description: "Numeric amount" },
+    currency: {
+      type: SchemaType.STRING,
+      description: `Optional ISO code, one of: ${SUPPORTED_CURRENCIES.join(", ")}`,
+    },
+    direction: {
+      type: SchemaType.STRING,
+      description: 'Either "expense" or "income"',
+    },
+    category: {
+      type: SchemaType.STRING,
+      description: `One of: ${[...CATEGORIES, ...INCOME_CATEGORIES].join(", ")}`,
+    },
+    description: { type: SchemaType.STRING },
+    date: { type: SchemaType.STRING, description: "YYYY-MM-DD" },
+  },
+  required: ["amount", "direction", "category", "description", "date"],
+};
+
+export const nlResultSchema = z.object({
+  amount: z.number().positive(),
+  currency: z.string().optional(),
+  direction: z.enum(["expense", "income"]),
+  category: z.string(),
+  description: z.string().min(1),
+  date: z.string(),
+});
+
+export type NlResult = z.infer<typeof nlResultSchema>;
+
 export const receiptResultSchema = z.object({
   vendor: z.string(),
   date: z.string(),

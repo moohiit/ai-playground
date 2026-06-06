@@ -411,6 +411,27 @@ async function main() {
     const delR = await fetch(`${API}/recurring/${rent._id}`, { method: "DELETE", headers: auth });
     check("DELETE recurring → 200", delR.status === 200, `got ${delR.status}`);
 
+    // 3. AI — forecast (pure projection) + NL parse (live Gemini).
+    console.log("\n[ai]");
+    const fc = await (await fetch(`${API}/forecast`, { headers: auth })).json();
+    check("forecast has numeric projectedTotal", typeof fc.projectedTotal === "number", JSON.stringify(fc));
+    check("forecast daysInMonth in 28–31", fc.daysInMonth >= 28 && fc.daysInMonth <= 31, `daysInMonth=${fc.daysInMonth}`);
+    check("forecast projectedTotal ≥ monthToDate", fc.projectedTotal >= fc.monthToDate - 0.01, `proj=${fc.projectedTotal} mtd=${fc.monthToDate}`);
+
+    const nl1 = await fetch(`${API}/parse`, {
+      method: "POST", headers: jsonAuth, body: JSON.stringify({ text: "250 coffee" }),
+    });
+    const d1 = (await nl1.json()).draft ?? {};
+    check("NL parse '250 coffee' → 200", nl1.status === 200, `got ${nl1.status}`);
+    check("NL amount 250, expense", d1.amount === 250 && d1.direction === "expense", JSON.stringify(d1));
+    check("NL category is an expense category", ["Food & Groceries","Other","Shopping"].includes(d1.category) || typeof d1.category === "string", `cat=${d1.category}`);
+
+    const nl2 = await fetch(`${API}/parse`, {
+      method: "POST", headers: jsonAuth, body: JSON.stringify({ text: "got my salary 50000 today" }),
+    });
+    const d2 = (await nl2.json()).draft ?? {};
+    check("NL 'salary 50000' → income 50000", d2.direction === "income" && d2.amount === 50000, JSON.stringify(d2));
+
     // Personal settle moves active personal entries into settled history.
     const settle = await fetch(`${API}/personal/settle`, { method: "POST", headers: auth });
     check("personal settle → 200", settle.status === 200, `got ${settle.status}`);

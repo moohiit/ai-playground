@@ -77,6 +77,17 @@ export function Dashboard() {
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [nlText, setNlText] = useState("");
+  const [nlBusy, setNlBusy] = useState(false);
+  const [nlError, setNlError] = useState<string | null>(null);
+  const [prefillDraft, setPrefillDraft] = useState<Record<string, unknown> | null>(null);
+  const [forecast, setForecast] = useState<{
+    projectedTotal: number;
+    monthToDate: number;
+    upcomingRecurring: number;
+    overallBudget: number | null;
+    projectedVsBudget: number | null;
+  } | null>(null);
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
   const [settling, setSettling] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -164,6 +175,39 @@ export function Dashboard() {
       .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
       .catch(() => {});
   }, [authFetch]);
+
+  const fetchForecast = useCallback(() => {
+    authFetch("/api/projects/expense-tracker/forecast")
+      .then((r) => r.json())
+      .then((d) => setForecast(d))
+      .catch(() => {});
+  }, [authFetch]);
+
+  useEffect(() => {
+    fetchForecast();
+  }, [fetchForecast]);
+
+  async function handleNlParse() {
+    const text = nlText.trim();
+    if (!text || nlBusy) return;
+    setNlBusy(true);
+    setNlError(null);
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Couldn't understand that");
+      setPrefillDraft(data.draft);
+      setNlText("");
+    } catch (e) {
+      setNlError(e instanceof Error ? e.message : "Couldn't understand that");
+    } finally {
+      setNlBusy(false);
+    }
+  }
 
   // Debounce the search box so we don't fire a request on every keystroke.
   useEffect(() => {
@@ -296,6 +340,34 @@ export function Dashboard() {
           </div>
         </button>
       </div>
+
+      {/* AI quick-add (natural language) */}
+      <div className="rounded-xl border border-brand-500/30 bg-gradient-to-b from-brand-500/[0.07] to-zinc-950/40 p-3">
+        <div className="flex items-center gap-2">
+          <span className="hidden shrink-0 items-center gap-1 rounded-md bg-brand-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-brand-300 sm:inline-flex">
+            ✨ AI
+          </span>
+          <input
+            value={nlText}
+            onChange={(e) => setNlText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleNlParse()}
+            placeholder="Type an expense — e.g. “250 coffee” or “got salary 50000”"
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-brand-500/60 focus:outline-none"
+          />
+          <button
+            onClick={handleNlParse}
+            disabled={nlBusy || !nlText.trim()}
+            className="shrink-0 rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {nlBusy ? "Reading…" : "Add"}
+          </button>
+        </div>
+        {nlError && <p className="mt-2 px-1 text-xs text-red-400">{nlError}</p>}
+      </div>
+
+      {forecast && (totalAmount > 0 || forecast.projectedTotal > 0) && (
+        <ForecastCard forecast={forecast} base={base} />
+      )}
 
       {breakdown && (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -629,6 +701,7 @@ export function Dashboard() {
           onSaved={() => {
             setShowAdd(false);
             fetchExpenses();
+            fetchForecast();
           }}
         />
       )}
@@ -640,9 +713,70 @@ export function Dashboard() {
           onSaved={() => {
             setEditingExpense(null);
             fetchExpenses();
+            fetchForecast();
           }}
         />
       )}
+
+      {prefillDraft && (
+        <AddExpenseModal
+          prefill={prefillDraft as never}
+          onClose={() => setPrefillDraft(null)}
+          onSaved={() => {
+            setPrefillDraft(null);
+            fetchExpenses();
+            fetchForecast();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ForecastCard({
+  forecast,
+  base,
+}: {
+  forecast: {
+    projectedTotal: number;
+    monthToDate: number;
+    upcomingRecurring: number;
+    overallBudget: number | null;
+    projectedVsBudget: number | null;
+  };
+  base: string;
+}) {
+  const over = forecast.projectedVsBudget != null && forecast.projectedVsBudget > 0;
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5">
+      <div className={cn("pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r to-transparent", over ? "from-red-500/40" : "from-brand-500/40")} />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-zinc-500">
+            ✨ Projected this month
+          </div>
+          <div className={cn("mt-1 text-2xl font-bold tabular-nums", over ? "text-red-400" : "text-zinc-100")}>
+            {formatMoney(forecast.projectedTotal, base)}
+          </div>
+          <div className="mt-0.5 text-xs text-zinc-500">
+            {formatMoney(forecast.monthToDate, base)} so far · at your current daily pace
+          </div>
+        </div>
+        <div className="text-right text-xs">
+          {forecast.upcomingRecurring > 0 && (
+            <div className="text-zinc-400">
+              + {formatMoney(forecast.upcomingRecurring, base)} recurring due
+            </div>
+          )}
+          {forecast.overallBudget != null && (
+            <div className={cn("mt-0.5 font-medium", over ? "text-red-400" : "text-emerald-400")}>
+              {over
+                ? `${formatMoney(forecast.projectedVsBudget!, base)} over budget`
+                : `within ${formatMoney(forecast.overallBudget, base)} budget`}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

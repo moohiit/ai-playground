@@ -31,7 +31,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 export default function AddExpenseScreen() {
   const { user, authFetch } = useAuth();
   const router = useRouter();
-  const params = useLocalSearchParams<{ expense?: string; groupId?: string }>();
+  const params = useLocalSearchParams<{ expense?: string; groupId?: string; prefill?: string }>();
 
   const editExpense = useMemo<Expense | null>(() => {
     if (!params.expense) return null;
@@ -41,14 +41,23 @@ export default function AddExpenseScreen() {
       return null;
     }
   }, [params.expense]);
+  // A draft (e.g. parsed from natural language) to pre-populate a NEW entry.
+  const pre = useMemo<Partial<Expense> | null>(() => {
+    if (!params.prefill) return null;
+    try {
+      return JSON.parse(params.prefill) as Partial<Expense>;
+    } catch {
+      return null;
+    }
+  }, [params.prefill]);
   const isEdit = !!editExpense;
   const preGroupId = typeof params.groupId === "string" ? params.groupId : "";
 
   const [direction, setDirection] = useState<Direction>(
-    editExpense?.direction ?? "expense"
+    editExpense?.direction ?? pre?.direction ?? "expense"
   );
   const [type, setType] = useState<"personal" | "group">(
-    editExpense?.type ?? (preGroupId ? "group" : "personal")
+    editExpense?.type ?? pre?.type ?? (preGroupId ? "group" : "personal")
   );
   const categoryList = direction === "income" ? INCOME_CATEGORIES : CATEGORIES;
 
@@ -74,19 +83,19 @@ export default function AddExpenseScreen() {
   );
   const [paidByName, setPaidByName] = useState(editExpense?.paidBy?.name ?? "");
   const [amount, setAmount] = useState(
-    editExpense ? String(editExpense.amount) : ""
+    editExpense ? String(editExpense.amount) : pre?.amount != null ? String(pre.amount) : ""
   );
-  const [currency, setCurrency] = useState(editExpense?.currency ?? "INR");
+  const [currency, setCurrency] = useState(editExpense?.currency ?? pre?.currency ?? "INR");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountId, setAccountId] = useState<string>(editExpense?.accountId ?? "");
-  const [description, setDescription] = useState(editExpense?.description ?? "");
+  const [description, setDescription] = useState(editExpense?.description ?? pre?.description ?? "");
   const [category, setCategory] = useState<string>(
-    editExpense?.category ?? CATEGORIES[0]
+    editExpense?.category ?? pre?.category ?? CATEGORIES[0]
   );
   const [date, setDate] = useState(
     editExpense
       ? new Date(editExpense.date).toISOString().slice(0, 10)
-      : todayISO()
+      : pre?.date ?? todayISO()
   );
   const [present, setPresent] = useState<Set<string>>(
     () => new Set(editExpense?.splitAmong?.map((m) => m.memberId) ?? [])
@@ -103,14 +112,14 @@ export default function AddExpenseScreen() {
       .catch(() => {});
   }, [authFetch]);
 
-  // Default a new entry's currency to the user's base currency.
+  // Default a new entry's currency to the user's base currency (unless prefilled).
   useEffect(() => {
-    if (isEdit) return;
+    if (isEdit || pre?.currency) return;
     authFetch("/api/projects/expense-tracker/prefs")
       .then((r) => r.json())
       .then((d) => d.prefs?.baseCurrency && setCurrency(d.prefs.baseCurrency))
       .catch(() => {});
-  }, [authFetch, isEdit]);
+  }, [authFetch, isEdit, pre?.currency]);
 
   // Load accounts so personal entries can be assigned to a wallet.
   useEffect(() => {
