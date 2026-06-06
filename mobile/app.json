@@ -3,7 +3,7 @@
     "name": "Expense Tracker",
     "slug": "expense-tracker",
     "scheme": "expensetracker",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
