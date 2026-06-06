@@ -18,6 +18,23 @@ export type Account = {
   archived: boolean;
 };
 
+export type RecurringRule = {
+  _id: string;
+  template: {
+    amount: number;
+    currency: string;
+    category: string;
+    description: string;
+    direction: Direction;
+  };
+  cadence: "weekly" | "monthly" | "yearly";
+  nextRunAt: string;
+  autoPost: boolean;
+  active: boolean;
+  endDate: string | null;
+  due: boolean;
+};
+
 export type Expense = {
   _id: string;
   type: ExpenseType;

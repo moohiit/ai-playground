@@ -10,9 +10,12 @@ import {
   Account,
   Transfer,
   Budget,
+  RecurringRule,
   type ExpenseDoc,
+  type RecurringRuleDoc,
 } from "./models";
 import { evaluateBudget } from "./budget";
+import { advance, dueOccurrences, isDue } from "./recurring";
 
 function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   if (!mongoose.isValidObjectId(id)) {
@@ -77,6 +80,8 @@ import {
   type CreateTransferInput,
   type CreateBudgetInput,
   type UpdateBudgetInput,
+  type CreateRecurringInput,
+  type UpdateRecurringInput,
   geminiReceiptSchema,
   receiptResultSchema,
   DEFAULT_PREFS,
@@ -959,10 +964,11 @@ export async function deleteAccount(auth: JWTPayload) {
   // Delete the groups they own.
   await Group.deleteMany({ createdBy: userId });
 
-  // Remove the user's accounts/wallets, transfers, budgets, and preferences.
+  // Remove the user's accounts/wallets, transfers, budgets, recurring rules, prefs.
   await Account.deleteMany({ userId });
   await Transfer.deleteMany({ userId });
   await Budget.deleteMany({ userId });
+  await RecurringRule.deleteMany({ userId });
   await UserPrefs.deleteMany({ userId });
 
   // Remove the user from groups owned by others (their past group expenses
@@ -1049,6 +1055,12 @@ export async function getPrefs(auth: JWTPayload) {
     locale: prefs?.locale ?? DEFAULT_PREFS.locale,
     weekStart: prefs?.weekStart ?? DEFAULT_PREFS.weekStart,
   };
+}
+
+// Base currency by userId (for server-side flows like recurring/cron without a JWT).
+async function getBaseCurrency(userId: string): Promise<string> {
+  const prefs = await UserPrefs.findOne({ userId }).select("baseCurrency").lean();
+  return prefs?.baseCurrency ?? DEFAULT_PREFS.baseCurrency;
 }
 
 export async function updatePrefs(input: UpdatePrefsInput, auth: JWTPayload) {
@@ -1383,5 +1395,174 @@ export async function removeBudget(id: string, auth: JWTPayload) {
     userId: auth.userId,
   });
   if (res.deletedCount === 0) throw new Error("Budget not found");
+  return { deleted: true };
+}
+
+// ── Recurring rules (Phase 2B) ──────────────────────
+
+// Create one expense from a recurring rule for a given date (used by manual post +
+// the autoPost cron). Reuses the FX conversion; links back via recurringId.
+async function createExpenseFromRule(rule: RecurringRuleDoc, date: Date) {
+  const base = await getBaseCurrency(rule.userId);
+  const currency = rule.template.currency || base;
+  const amountBase = await convert(rule.template.amount, currency, base);
+  const user = await User.findById(rule.userId).select("name").lean();
+
+  await Expense.create({
+    type: "personal",
+    direction: rule.template.direction,
+    createdBy: rule.userId,
+    paidBy: { id: rule.userId, name: user?.name ?? "Me" },
+    amount: rule.template.amount,
+    currency,
+    amountBase,
+    accountId: rule.template.accountId ?? null,
+    recurringId: rule._id,
+    description: rule.template.description,
+    category: rule.template.category,
+    date,
+    splitAmong: [],
+    splits: [],
+    items: [],
+  });
+}
+
+export async function createRecurring(
+  input: CreateRecurringInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const accountId = await resolveAccountId(input.accountId, auth.userId);
+
+  const rule = await RecurringRule.create({
+    userId: auth.userId,
+    template: {
+      amount: input.amount,
+      currency: input.currency ?? (await getBaseCurrency(auth.userId)),
+      category: input.category,
+      description: input.description,
+      direction: input.direction,
+      accountId,
+    },
+    cadence: input.cadence,
+    nextRunAt: new Date(input.startDate),
+    autoPost: input.autoPost,
+    endDate: input.endDate ? new Date(input.endDate) : null,
+  });
+  return rule.toObject();
+}
+
+// Generate due autoPost occurrences as expenses and advance nextRunAt. Scoped to one
+// user (lazy-on-open) or all users (daily cron). `now` is injected for testability.
+export async function runDueRecurring(
+  now: Date,
+  opts: { userId?: string } = {}
+): Promise<{ created: number; rules: number }> {
+  await connectDB();
+  const filter: Record<string, unknown> = {
+    autoPost: true,
+    active: true,
+    nextRunAt: { $lte: now },
+  };
+  if (opts.userId) filter.userId = opts.userId;
+
+  const rules = await RecurringRule.find(filter);
+  let created = 0;
+  for (const rule of rules) {
+    const { dates, nextRunAt } = dueOccurrences(
+      rule.nextRunAt,
+      rule.cadence,
+      now,
+      rule.endDate
+    );
+    for (const d of dates) {
+      await createExpenseFromRule(rule, d);
+      created += 1;
+    }
+    if (dates.length > 0) {
+      rule.lastRunAt = dates[dates.length - 1];
+      rule.nextRunAt = nextRunAt;
+      if (rule.endDate && nextRunAt.getTime() > rule.endDate.getTime()) {
+        rule.active = false;
+      }
+      await rule.save();
+    }
+  }
+  return { created, rules: rules.length };
+}
+
+// List rules with a computed `due` flag. Materializes any due autoPost rules first
+// (lazy-on-open), so opening the Recurring screen posts bills without waiting on cron.
+export async function getRecurring(auth: JWTPayload) {
+  await connectDB();
+  const now = new Date();
+  await runDueRecurring(now, { userId: auth.userId });
+
+  const rules = await RecurringRule.find({ userId: auth.userId })
+    .sort({ nextRunAt: 1 })
+    .lean();
+
+  return {
+    recurring: rules.map((r) => ({
+      ...r,
+      due: isDue(r.nextRunAt, now, r.active, r.endDate),
+    })),
+  };
+}
+
+// Manually post the current occurrence of a rule (for autoPost:false rules), then
+// advance to the next period.
+export async function postRecurring(id: string, auth: JWTPayload) {
+  await connectDB();
+  const rule = await RecurringRule.findOne({
+    _id: toObjectId(id, "recurringId"),
+    userId: auth.userId,
+  });
+  if (!rule) throw new Error("Recurring rule not found");
+  if (!rule.active) throw new Error("This recurring rule is paused");
+
+  const date = rule.nextRunAt;
+  await createExpenseFromRule(rule, date);
+  rule.lastRunAt = date;
+  rule.nextRunAt = advance(date, rule.cadence);
+  if (rule.endDate && rule.nextRunAt.getTime() > rule.endDate.getTime()) {
+    rule.active = false;
+  }
+  await rule.save();
+  return rule.toObject();
+}
+
+export async function updateRecurring(
+  id: string,
+  input: UpdateRecurringInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const rule = await RecurringRule.findOne({
+    _id: toObjectId(id, "recurringId"),
+    userId: auth.userId,
+  });
+  if (!rule) throw new Error("Recurring rule not found");
+
+  if (input.amount !== undefined) rule.template.amount = input.amount;
+  if (input.description !== undefined) rule.template.description = input.description;
+  if (input.category !== undefined) rule.template.category = input.category;
+  if (input.cadence !== undefined) rule.cadence = input.cadence;
+  if (input.autoPost !== undefined) rule.autoPost = input.autoPost;
+  if (input.active !== undefined) rule.active = input.active;
+  if (input.endDate !== undefined)
+    rule.endDate = input.endDate ? new Date(input.endDate) : null;
+
+  await rule.save();
+  return rule.toObject();
+}
+
+export async function removeRecurring(id: string, auth: JWTPayload) {
+  await connectDB();
+  const res = await RecurringRule.deleteOne({
+    _id: toObjectId(id, "recurringId"),
+    userId: auth.userId,
+  });
+  if (res.deletedCount === 0) throw new Error("Recurring rule not found");
   return { deleted: true };
 }

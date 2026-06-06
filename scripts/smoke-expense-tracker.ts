@@ -356,6 +356,61 @@ async function main() {
     const delB = await fetch(`${API}/budgets/${ent._id}`, { method: "DELETE", headers: auth });
     check("DELETE budget → 200", delB.status === 200, `got ${delB.status}`);
 
+    // 2B. Recurring rules (manual post + autoPost catch-up via lazy-on-open).
+    console.log("\n[recurring]");
+    const daysAgo = (n: number) => new Date(now.getTime() - n * 86400000).toISOString().slice(0, 10);
+    const getRec = async () => (await (await fetch(`${API}/recurring`, { headers: auth })).json()).recurring ?? [];
+
+    const recRes = await fetch(`${API}/recurring`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({
+        amount: 15000, category: "Rent & Housing", description: "RentSmoke",
+        direction: "expense", cadence: "monthly", startDate: daysAgo(5), autoPost: false,
+      }),
+    });
+    check("POST recurring → 201", recRes.status === 201, `got ${recRes.status}`);
+    let rent = (await getRec()).find((r: any) => r.template.description === "RentSmoke");
+    check("manual rule is due", rent?.due === true, JSON.stringify(rent?.due));
+
+    const postR = await fetch(`${API}/recurring/${rent._id}/post`, { method: "POST", headers: auth });
+    check("POST recurring/:id/post → 200", postR.status === 200, `got ${postR.status}`);
+    const rentExp = await (await fetch(`${API}/expenses?q=RentSmoke&settled=all`, { headers: auth })).json();
+    check("posting created the expense", rentExp.total === 1, `total=${rentExp.total}`);
+    rent = (await getRec()).find((r: any) => r.template.description === "RentSmoke");
+    check("after post, advanced (not due)", rent?.due === false, JSON.stringify(rent?.due));
+
+    // autoPost monthly starting ~70 days ago → lazy GET materializes the catch-up
+    await fetch(`${API}/recurring`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({
+        amount: 200, category: "Subscriptions", description: "AutoSub",
+        direction: "expense", cadence: "monthly", startDate: daysAgo(70), autoPost: true,
+      }),
+    });
+    await getRec(); // triggers runDueRecurring for this user
+    const autoExp = await (await fetch(`${API}/expenses?q=AutoSub&settled=all`, { headers: auth })).json();
+    check("autoPost catch-up created ≥2 expenses", autoExp.total >= 2, `total=${autoExp.total}`);
+
+    const auto = (await getRec()).find((r: any) => r.template.description === "AutoSub");
+    check("autoPost rule not due after catch-up", auto?.due === false, JSON.stringify(auto?.due));
+
+    const pauseR = await fetch(`${API}/recurring/${auto._id}`, {
+      method: "PATCH", headers: jsonAuth, body: JSON.stringify({ active: false }),
+    });
+    check("PATCH recurring (pause) → 200", pauseR.status === 200, `got ${pauseR.status}`);
+
+    const badRec = await fetch(`${API}/recurring`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({
+        amount: 100, category: "Salary", description: "bad", direction: "expense",
+        cadence: "monthly", startDate: daysAgo(1),
+      }),
+    });
+    check("recurring with mismatched category → 400", badRec.status === 400, `got ${badRec.status}`);
+
+    const delR = await fetch(`${API}/recurring/${rent._id}`, { method: "DELETE", headers: auth });
+    check("DELETE recurring → 200", delR.status === 200, `got ${delR.status}`);
+
     // Personal settle moves active personal entries into settled history.
     const settle = await fetch(`${API}/personal/settle`, { method: "POST", headers: auth });
     check("personal settle → 200", settle.status === 200, `got ${settle.status}`);
@@ -421,6 +476,7 @@ async function main() {
     await mongoose.connection.collection("accounts").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("transfers").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("budgets").deleteMany({ userId: TEST_USER_ID });
+    await mongoose.connection.collection("recurringrules").deleteMany({ userId: TEST_USER_ID });
     await mongoose.disconnect();
   }
 

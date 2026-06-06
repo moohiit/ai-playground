@@ -138,13 +138,23 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
 - [ ] **Deferred (2A.2):** rollover logic (field stored, not applied), projected/forecast spend, budget vs group
       share. **Note:** mobile bottom-tab bar now has 7 tabs — needs a "More"/overflow consolidation (tracked below).
 
-**2B. Recurring expenses & subscriptions**
-- [ ] New `RecurringRule` model `{ userId, template:{amount,currency,category,description,accountId,direction},
-      cadence:"weekly"|"monthly"|"yearly"|cron, nextRunAt, lastRunAt, autoPost:boolean, endDate? }`.
-- [ ] Materialization: **pure `generateDue(rules, now)` generator** in the service layer, invoked by a
-      **daily Vercel Cron route** (D-4); same fn reusable lazy-on-open as a fallback. Generated txns link
-      back via `recurringId`; guard with `nextRunAt`/`lastRunAt` for idempotency. Default `autoPost:false`.
-- [ ] UI: **Recurring tab** — upcoming bills calendar, "confirm/post" for non-auto rules, pause/skip.
+**2B. Recurring expenses & subscriptions** — ✅ shipped 2026-06-06
+- [x] `RecurringRule` model `{ userId, template:{amount,currency,category,description,direction,accountId},
+      cadence:"weekly"|"monthly"|"yearly", nextRunAt, lastRunAt, autoPost, active, endDate }`. `recurringId`
+      added to `Expense`. Personal-only (D-6).
+- [x] Pure `recurring.ts` (`advance`, `dueOccurrences`, `isDue`). `runDueRecurring(now, {userId?})` materializes
+      due **autoPost** occurrences (catch-up for missed periods, capped); reused two ways (D-4): a **daily
+      Vercel Cron** (`/api/cron/recurring`, `vercel.json`, CRON_SECRET-guarded) for all users, AND
+      **lazy-on-open** (GET `/recurring` runs it for the current user). Non-auto rules wait for `postRecurring`.
+- [x] Alerts: a rule is flagged `due`; the UI shows "Post now" for due non-auto rules.
+- [x] UI: **Recurring tab** (web) + **Recurring** screen (mobile, under More): list with due/auto/paused badges,
+      add rule, Post now, pause/resume, delete. API: `GET|POST /recurring`, `PATCH|DELETE /recurring/:id`,
+      `POST /recurring/:id/post`.
+- [x] Verified: 76/76 smoke checks (manual post creates+advances, autoPost catch-up ≥2, due flags, pause,
+      category-vs-direction validation, delete). Web + mobile typecheck clean.
+- [ ] **Action needed for prod:** set `CRON_SECRET` in Vercel env so the cron route is authenticated (Vercel
+      Cron auto-sends it). Without it the route still runs but is unauthenticated. **Deferred (2B.2):** skip-one,
+      upcoming-bills calendar, edit full template.
 
 ### Phase 3 — Intelligence (AI differentiators; reuses existing Gemini wiring)
 > **v1 order (D-5):** ship NL entry + forecast first; Spending Coach chat is deferred to a later iteration.
@@ -222,6 +232,11 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-06 — **Phase 2B (recurring/subscriptions) shipped.** `RecurringRule` model + pure `recurring.ts`,
+  `runDueRecurring` (daily Vercel Cron for all users + lazy-on-open per user), manual post for non-auto rules,
+  Recurring tab/screen on both platforms. 76/76 smoke. **Phase 2 (planning) complete.** Prod TODO: set
+  `CRON_SECRET` in Vercel. Also: mobile tabs consolidated 7→5 with a More menu.
 
 - 2026-06-06 — **Phase 2A (budgets) shipped.** `Budget` model + pure `budget.ts` (warn@80/over@100),
   `getBudgets(month)` with per-category/overall progress, budgets API, Budgets tab/screen (month switcher,

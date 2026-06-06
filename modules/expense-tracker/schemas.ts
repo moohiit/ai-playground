@@ -273,6 +273,56 @@ export const monthSchema = z
   .regex(/^\d{4}-\d{2}$/, "Use YYYY-MM")
   .optional();
 
+// ── Recurring rules (Phase 2B) ─────────────────────
+
+const isoDateRequired = z
+  .string()
+  .refine((d) => !isNaN(Date.parse(d)), "Invalid date");
+
+export const createRecurringSchema = z
+  .object({
+    amount: z.number().positive("Amount must be positive"),
+    currency: z.enum(SUPPORTED_CURRENCIES).optional(),
+    category: z.enum(ALL_CATEGORIES),
+    description: z.string().min(1).max(200),
+    direction: z.enum(["expense", "income"]).default("expense"),
+    accountId: z.string().nullish(),
+    cadence: z.enum(["weekly", "monthly", "yearly"]).default("monthly"),
+    startDate: isoDateRequired,
+    autoPost: z.boolean().default(false),
+    endDate: isoDateRequired.nullish(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    const ok =
+      val.direction === "income"
+        ? (INCOME_CATEGORIES as readonly string[]).includes(val.category)
+        : (CATEGORIES as readonly string[]).includes(val.category);
+    if (!ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Choose a valid ${val.direction} category`,
+        path: ["category"],
+      });
+    }
+  });
+
+export type CreateRecurringInput = z.infer<typeof createRecurringSchema>;
+
+export const updateRecurringSchema = z
+  .object({
+    amount: z.number().positive().optional(),
+    description: z.string().min(1).max(200).optional(),
+    category: z.enum(ALL_CATEGORIES).optional(),
+    cadence: z.enum(["weekly", "monthly", "yearly"]).optional(),
+    autoPost: z.boolean().optional(),
+    active: z.boolean().optional(),
+    endDate: isoDateRequired.nullish(),
+  })
+  .strict();
+
+export type UpdateRecurringInput = z.infer<typeof updateRecurringSchema>;
+
 export const geminiReceiptSchema: Schema = {
   type: SchemaType.OBJECT,
   properties: {

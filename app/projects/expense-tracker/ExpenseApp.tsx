@@ -7,6 +7,7 @@ import { Dashboard } from "./tabs/Dashboard";
 import { GroupsTab } from "./tabs/GroupsTab";
 import { AccountsTab } from "./tabs/AccountsTab";
 import { BudgetsTab } from "./tabs/BudgetsTab";
+import { RecurringTab } from "./tabs/RecurringTab";
 import { ReportsTab } from "./tabs/ReportsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 
@@ -14,6 +15,7 @@ const TABS = [
   { id: "Dashboard", icon: DashboardIcon },
   { id: "Accounts", icon: AccountsIcon },
   { id: "Budgets", icon: BudgetsIcon },
+  { id: "Recurring", icon: RecurringIcon },
   { id: "Groups", icon: GroupsIcon },
   { id: "Reports", icon: ReportsIcon },
   { id: "Settings", icon: SettingsIcon },
@@ -84,6 +86,7 @@ export function ExpenseApp() {
         {tab === "Dashboard" && <Dashboard />}
         {tab === "Accounts" && <AccountsTab />}
         {tab === "Budgets" && <BudgetsTab />}
+        {tab === "Recurring" && <RecurringTab />}
         {tab === "Groups" && <GroupsTab />}
         {tab === "Reports" && <ReportsTab />}
         {tab === "Settings" && <SettingsTab />}
@@ -126,6 +129,17 @@ function BudgetsIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
       <path d="M22 12A10 10 0 0 0 12 2v10z" />
+    </svg>
+  );
+}
+
+function RecurringIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 2.1 21 6l-4 3.9" />
+      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+      <path d="M7 21.9 3 18l4-3.9" />
+      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
     </svg>
   );
 }

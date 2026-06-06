@@ -70,6 +70,8 @@ export type ExpenseDoc = {
   amountBase: number;
   // Phase 1C: which personal account/wallet the money moved through (optional).
   accountId: Types.ObjectId | null;
+  // Phase 2B: links a transaction generated from a recurring rule back to it.
+  recurringId: Types.ObjectId | null;
   description: string;
   category: string;
   date: Date;
@@ -132,6 +134,11 @@ const expenseSchema = new Schema<ExpenseDoc>(
       ref: "Account",
       default: null,
       index: true,
+    },
+    recurringId: {
+      type: Schema.Types.ObjectId,
+      ref: "RecurringRule",
+      default: null,
     },
     description: { type: String, required: true },
     category: { type: String, required: true, index: true },
@@ -291,3 +298,66 @@ budgetSchema.index({ userId: 1, scope: 1, category: 1 }, { unique: true });
 export const Budget: Model<BudgetDoc> =
   (mongoose.models.Budget as Model<BudgetDoc>) ||
   mongoose.model<BudgetDoc>("Budget", budgetSchema);
+
+// Phase 2B: recurring rules (rent, subscriptions, EMIs). Personal-only (D-6). The
+// `template` is the transaction to create each period. `nextRunAt` is the next due
+// date; `autoPost` rules are materialized by the daily cron, others wait for the
+// user to confirm. Generated expenses carry `recurringId` back to the rule.
+export type RecurringCadence = "weekly" | "monthly" | "yearly";
+
+export type RecurringTemplate = {
+  amount: number;
+  currency: string;
+  category: string;
+  description: string;
+  direction: "expense" | "income";
+  accountId: Types.ObjectId | null;
+};
+
+export type RecurringRuleDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  template: RecurringTemplate;
+  cadence: RecurringCadence;
+  nextRunAt: Date;
+  lastRunAt: Date | null;
+  autoPost: boolean;
+  active: boolean;
+  endDate: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const recurringTemplateSchema = new Schema<RecurringTemplate>(
+  {
+    amount: { type: Number, required: true },
+    currency: { type: String, default: "INR" },
+    category: { type: String, required: true },
+    description: { type: String, required: true },
+    direction: { type: String, enum: ["expense", "income"], default: "expense" },
+    accountId: { type: Schema.Types.ObjectId, ref: "Account", default: null },
+  },
+  { _id: false }
+);
+
+const recurringRuleSchema = new Schema<RecurringRuleDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    template: { type: recurringTemplateSchema, required: true },
+    cadence: {
+      type: String,
+      enum: ["weekly", "monthly", "yearly"],
+      default: "monthly",
+    },
+    nextRunAt: { type: Date, required: true, index: true },
+    lastRunAt: { type: Date, default: null },
+    autoPost: { type: Boolean, default: false },
+    active: { type: Boolean, default: true },
+    endDate: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+
+export const RecurringRule: Model<RecurringRuleDoc> =
+  (mongoose.models.RecurringRule as Model<RecurringRuleDoc>) ||
+  mongoose.model<RecurringRuleDoc>("RecurringRule", recurringRuleSchema);
