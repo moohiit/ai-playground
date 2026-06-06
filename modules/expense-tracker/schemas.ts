@@ -60,6 +60,7 @@ const expenseObjectSchema = z
     type: z.enum(["personal", "group"]),
     direction: z.enum(["expense", "income"]).default("expense"),
     currency: z.enum(SUPPORTED_CURRENCIES).optional(),
+    accountId: z.string().nullish(),
     groupId: z.string().optional(),
     paidBy: z.object({
       id: z.string().min(1),
@@ -192,6 +193,48 @@ export const updatePrefsSchema = z
   .strict();
 
 export type UpdatePrefsInput = z.infer<typeof updatePrefsSchema>;
+
+// ── Accounts / wallets (Phase 1C) ──────────────────
+
+export const ACCOUNT_KINDS = ["cash", "bank", "card", "wallet"] as const;
+
+export const createAccountSchema = z
+  .object({
+    name: z.string().min(1).max(60),
+    kind: z.enum(ACCOUNT_KINDS).default("bank"),
+    currency: z.enum(SUPPORTED_CURRENCIES).optional(),
+    openingBalance: z.number().default(0),
+  })
+  .strict();
+
+export type CreateAccountInput = z.infer<typeof createAccountSchema>;
+
+export const updateAccountSchema = z
+  .object({
+    name: z.string().min(1).max(60).optional(),
+    kind: z.enum(ACCOUNT_KINDS).optional(),
+    openingBalance: z.number().optional(),
+    archived: z.boolean().optional(),
+  })
+  .strict();
+
+export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
+
+export const createTransferSchema = z
+  .object({
+    fromAccountId: z.string().min(1),
+    toAccountId: z.string().min(1),
+    amount: z.number().positive("Amount must be positive"),
+    date: z.string().refine((d) => !isNaN(Date.parse(d)), "Invalid date"),
+    note: z.string().max(200).default(""),
+  })
+  .strict()
+  .refine((v) => v.fromAccountId !== v.toAccountId, {
+    message: "Pick two different accounts",
+    path: ["toAccountId"],
+  });
+
+export type CreateTransferInput = z.infer<typeof createTransferSchema>;
 
 export const geminiReceiptSchema: Schema = {
   type: SchemaType.OBJECT,

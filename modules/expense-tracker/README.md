@@ -7,6 +7,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 - **Personal expenses** — log, edit, categorize, free-text search, and report on your own spending
 - **Income tracking** — mark a personal entry as income (its own category set); reports show income, spending, and net (income − spend), all filterable by flow (expense / income / all)
 - **Multi-currency** — enter an expense in any supported currency; it's converted to your base currency (Frankfurter daily FX, frozen at write) so all totals/reports aggregate in one currency. Switch base currency anytime and existing rows are re-converted.
+- **Accounts / wallets** — track cash/bank/card/wallet balances; assign a personal expense or income to an account, transfer money between accounts, and see net worth. Balances = opening + income − expense ± transfers (in your base currency).
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -39,7 +40,13 @@ Grouped by concern:
 
 ### Preferences
 - `GET /api/projects/expense-tracker/prefs` — read per-user prefs (`baseCurrency`, `locale`, `weekStart`); returns defaults if none saved
-- `PATCH /api/projects/expense-tracker/prefs` — update one or more prefs (upsert)
+- `PATCH /api/projects/expense-tracker/prefs` — update one or more prefs (upsert); changing `baseCurrency` re-converts existing rows
+
+### Accounts & transfers
+- `GET /api/projects/expense-tracker/accounts` — list accounts with computed balances (`?archived=true` to include archived)
+- `POST /api/projects/expense-tracker/accounts` — create an account (cash/bank/card/wallet + opening balance)
+- `PATCH|DELETE /api/projects/expense-tracker/accounts/:id` — update / delete (delete unlinks its transactions)
+- `GET|POST /api/projects/expense-tracker/transfers` — list / create a transfer between two accounts
 
 ## Architecture
 
@@ -78,8 +85,10 @@ The only LLM-driven step is receipt OCR. See [prompts.ts](prompts.ts):
 Stored in MongoDB (see [models.ts](models.ts)):
 
 - **Group** — `{ name, description, createdBy, members: [{ userId, name, email, isActive }] }`
-- **Expense** — `{ type, direction:"expense"|"income", currency, amountBase, groupId?, paidBy, amount, description, category, date, splitAmong[], items[], ... }`
+- **Expense** — `{ type, direction:"expense"|"income", currency, amountBase, accountId?, groupId?, paidBy, amount, description, category, date, splitAmong[], items[], ... }`
 - **UserPrefs** — `{ userId (unique), baseCurrency, locale, weekStart }` — per-user settings; `baseCurrency` drives all conversion/display
+- **Account** — `{ userId, name, kind:"cash"|"bank"|"card"|"wallet", currency, openingBalance, archived }` — balance computed on read
+- **Transfer** — `{ userId, fromAccountId, toAccountId, amount, date, note }` — moves money between accounts; never spending/income
 
 All group operations verify the requesting user is a member before returning or mutating data.
 

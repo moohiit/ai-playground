@@ -228,6 +228,72 @@ async function main() {
     const afterDel = await (await fetch(`${API}/expenses?settled=all`, { headers: auth })).json();
     check("deleted row is gone", !(afterDel.expenses ?? []).some((e: any) => e._id === usdId));
 
+    // 1C. Accounts / wallets + balances + transfers (base is still INR here).
+    console.log("\n[accounts]");
+    const jsonAuth = { ...auth, "Content-Type": "application/json" };
+    const cashRes = await fetch(`${API}/accounts`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ name: "Cash", kind: "cash", openingBalance: 1000 }),
+    });
+    const cash = (await cashRes.json()).account ?? {};
+    check("POST account → 201", cashRes.status === 201, `got ${cashRes.status}`);
+    check("new account balance == opening (1000)", cash.balance === 1000, `balance=${cash.balance}`);
+    const bank = (await (await fetch(`${API}/accounts`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ name: "Bank", kind: "bank", openingBalance: 5000 }),
+    })).json()).account ?? {};
+
+    // expense from cash (−300) and income to cash (+200)
+    await fetch(`${API}/expenses`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({
+        type: "personal", direction: "expense", category: "Food & Groceries",
+        accountId: cash._id, paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+        amount: 300, description: "Cash lunch", date: now.toISOString().slice(0, 10),
+      }),
+    });
+    await fetch(`${API}/expenses`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({
+        type: "personal", direction: "income", category: "Gifts",
+        accountId: cash._id, paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+        amount: 200, description: "Cash gift", date: now.toISOString().slice(0, 10),
+      }),
+    });
+    const accts1 = (await (await fetch(`${API}/accounts`, { headers: auth })).json()).accounts ?? [];
+    const cash1 = accts1.find((a: any) => a._id === cash._id);
+    check("cash balance = 1000 − 300 + 200 = 900", cash1?.balance === 900, `balance=${cash1?.balance}`);
+
+    // transfer 500 from bank → cash
+    const tRes = await fetch(`${API}/transfers`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({
+        fromAccountId: bank._id, toAccountId: cash._id, amount: 500,
+        date: now.toISOString().slice(0, 10), note: "top up",
+      }),
+    });
+    check("POST transfer → 201", tRes.status === 201, `got ${tRes.status}`);
+    const accts2 = (await (await fetch(`${API}/accounts`, { headers: auth })).json()).accounts ?? [];
+    const cash2 = accts2.find((a: any) => a._id === cash._id);
+    const bank2 = accts2.find((a: any) => a._id === bank._id);
+    check("cash after transfer = 900 + 500 = 1400", cash2?.balance === 1400, `balance=${cash2?.balance}`);
+    check("bank after transfer = 5000 − 500 = 4500", bank2?.balance === 4500, `balance=${bank2?.balance}`);
+
+    const badT = await fetch(`${API}/transfers`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({
+        fromAccountId: cash._id, toAccountId: cash._id, amount: 10,
+        date: now.toISOString().slice(0, 10),
+      }),
+    });
+    check("transfer to same account → 400", badT.status === 400, `got ${badT.status}`);
+
+    // deleting an account unlinks its expenses (doesn't delete them)
+    const delAcc = await fetch(`${API}/accounts/${bank._id}`, { method: "DELETE", headers: auth });
+    check("DELETE account → 200", delAcc.status === 200, `got ${delAcc.status}`);
+    const accts3 = (await (await fetch(`${API}/accounts`, { headers: auth })).json()).accounts ?? [];
+    check("deleted account is gone", !accts3.some((a: any) => a._id === bank._id));
+
     // Personal settle moves active personal entries into settled history.
     const settle = await fetch(`${API}/personal/settle`, { method: "POST", headers: auth });
     check("personal settle → 200", settle.status === 200, `got ${settle.status}`);
@@ -290,6 +356,8 @@ async function main() {
     console.log("\nCleaning up test data…");
     await expenses.deleteMany({ createdBy: TEST_USER_ID });
     await prefs.deleteMany({ userId: TEST_USER_ID });
+    await mongoose.connection.collection("accounts").deleteMany({ userId: TEST_USER_ID });
+    await mongoose.connection.collection("transfers").deleteMany({ userId: TEST_USER_ID });
     await mongoose.disconnect();
   }
 

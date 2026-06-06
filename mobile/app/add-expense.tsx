@@ -18,6 +18,7 @@ import { useAuth } from "../lib/auth";
 import {
   CATEGORIES,
   INCOME_CATEGORIES,
+  type Account,
   type Direction,
   type Expense,
   type Group,
@@ -76,6 +77,8 @@ export default function AddExpenseScreen() {
     editExpense ? String(editExpense.amount) : ""
   );
   const [currency, setCurrency] = useState(editExpense?.currency ?? "INR");
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountId, setAccountId] = useState<string>(editExpense?.accountId ?? "");
   const [description, setDescription] = useState(editExpense?.description ?? "");
   const [category, setCategory] = useState<string>(
     editExpense?.category ?? CATEGORIES[0]
@@ -108,6 +111,14 @@ export default function AddExpenseScreen() {
       .then((d) => d.prefs?.baseCurrency && setCurrency(d.prefs.baseCurrency))
       .catch(() => {});
   }, [authFetch, isEdit]);
+
+  // Load accounts so personal entries can be assigned to a wallet.
+  useEffect(() => {
+    authFetch("/api/projects/expense-tracker/accounts")
+      .then((r) => r.json())
+      .then((d) => setAccounts(d.accounts ?? []))
+      .catch(() => {});
+  }, [authFetch]);
 
   const selectedGroup = useMemo(
     () => groups.find((g) => g._id === groupId),
@@ -234,6 +245,7 @@ export default function AddExpenseScreen() {
           type: effectiveType,
           direction,
           currency,
+          accountId: effectiveType === "personal" ? accountId || null : null,
           groupId: effectiveType === "group" ? groupId : undefined,
           paidBy: payer,
           amount: amt,
@@ -489,6 +501,26 @@ export default function AddExpenseScreen() {
               ))}
             </ScrollView>
           </Field>
+
+          {(direction === "income" || type === "personal") && accounts.length > 0 && (
+            <Field label="Account (optional)">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8 }}
+              >
+                <Chip active={accountId === ""} label="None" onPress={() => setAccountId("")} />
+                {accounts.map((a) => (
+                  <Chip
+                    key={a._id}
+                    active={accountId === a._id}
+                    label={a.name}
+                    onPress={() => setAccountId(a._id)}
+                  />
+                ))}
+              </ScrollView>
+            </Field>
+          )}
 
           <Field label="Description">
             <TextInput

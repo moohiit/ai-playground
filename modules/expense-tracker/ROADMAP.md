@@ -109,11 +109,18 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
 - [ ] **Deferred (1B.2):** group expenses still settle in a single (entry) currency — cross-currency group
       splitting + group default currency, and PDF/mobile-dashboard symbol theming, are a follow-up.
 
-**1C. Accounts / Wallets**
-- [ ] New `Account` model `{ userId, name, kind:"cash"|"bank"|"card"|"wallet", currency, openingBalance, archived }`.
-- [ ] Add optional `accountId` to transactions; account balance = opening + Σ(income) − Σ(expense).
-- [ ] **Transfers** between accounts (a transaction pair or a `Transfer` type that doesn't hit spending).
-- [ ] UI: Accounts section (balances, reconcile view); account selector on add form.
+**1C. Accounts / Wallets** — ✅ shipped 2026-06-06
+- [x] `Account` model `{ userId, name, kind, currency, openingBalance, archived }` + `Transfer` model (own
+      collection, never in expense/income reports). Optional `accountId` on personal expenses (D-6).
+- [x] Balances computed in **base currency**: `openingBalance + Σincome − Σexpense + transfers-in − transfers-out`
+      (via `amountBase`, aggregation). Deleting an account unlinks its txns (keeps them) + removes its transfers.
+- [x] **Transfers** between accounts (separate model; affects balances, not spending). Same-account rejected.
+- [x] API: `GET|POST /accounts`, `PATCH|DELETE /accounts/:id`, `GET|POST /transfers`. Account-selector on add
+      forms (web + mobile, personal only). New **Accounts** tab (web) + tab (mobile): net worth, balances,
+      add account, transfer.
+- [x] Verified: 55/55 smoke checks (opening balance, expense −, income +, transfer both sides, same-account
+      400, delete-unlinks). Web + mobile typecheck clean.
+- [ ] **Deferred (1C.2):** per-account foreign currency (accounts assume base currency); reconcile view; edit/archive UI.
 
 ### Phase 2 — Planning & automation (depends on Phase 1)
 > **Scope (D-6): personal-only for v1** — budgets & recurring rules are per-user, not per-group.
@@ -209,6 +216,11 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-06 — **Phase 1C (accounts/wallets) shipped.** `Account` + `Transfer` models, `accountId` on personal
+  expenses, base-currency balances (opening + income − expense ± transfers), account CRUD + transfers API,
+  Accounts tab/screen + account selector on both platforms. 55/55 smoke. Deferred: per-account foreign
+  currency, reconcile view (1C.2). **Phase 1 (money primitives) complete.**
 
 - 2026-06-06 — **Settings & account panel.** Added a Settings tab (web) / screen (mobile): base-currency
   switcher (moved out of the Dashboard filter bar) + week-start; **delete account** (web gap filled, moved off

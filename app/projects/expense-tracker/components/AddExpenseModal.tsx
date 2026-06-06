@@ -15,11 +15,14 @@ type Group = {
   members: { userId: string; name: string; email: string; isActive: boolean }[];
 };
 
+type AccountLite = { _id: string; name: string; kind: string };
+
 type EditExpense = {
   _id: string;
   type: "personal" | "group";
   direction?: Direction;
   currency?: string;
+  accountId?: string | null;
   groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;
@@ -70,6 +73,8 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   const [paidById, setPaidById] = useState(editExpense?.paidBy?.id ?? user?.userId ?? "");
   const [amount, setAmount] = useState(editExpense ? String(editExpense.amount) : "");
   const [currency, setCurrency] = useState(editExpense?.currency ?? "INR");
+  const [accounts, setAccounts] = useState<AccountLite[]>([]);
+  const [accountId, setAccountId] = useState(editExpense?.accountId ?? "");
   const [description, setDescription] = useState(editExpense?.description ?? "");
   const [category, setCategory] = useState(editExpense?.category ?? CATEGORIES[0]);
   const [date, setDate] = useState(
@@ -96,6 +101,14 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
       .then((d) => {
         if (d.prefs?.baseCurrency) setCurrency(d.prefs.baseCurrency);
       })
+      .catch(() => {});
+  }, []);
+
+  // Load accounts so personal entries can be assigned to a wallet.
+  useEffect(() => {
+    authFetch("/api/projects/expense-tracker/accounts")
+      .then((r) => r.json())
+      .then((d) => setAccounts(d.accounts ?? []))
       .catch(() => {});
   }, []);
 
@@ -198,6 +211,8 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
           type: direction === "income" ? "personal" : type,
           direction,
           currency,
+          accountId:
+            direction === "income" || type === "personal" ? accountId || null : null,
           groupId: direction === "expense" && type === "group" ? groupId : undefined,
           paidBy: payer,
           amount: parseFloat(amount),
@@ -493,6 +508,26 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 ))}
               </select>
             </div>
+
+            {(direction === "income" || type === "personal") && accounts.length > 0 && (
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                  Account <span className="normal-case text-zinc-600">(optional)</span>
+                </label>
+                <select
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                >
+                  <option value="">No account</option>
+                  {accounts.map((a) => (
+                    <option key={a._id} value={a._id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {direction === "expense" && (
             <label

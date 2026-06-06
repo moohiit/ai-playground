@@ -3,7 +3,14 @@ import { vision } from "@/lib/llm";
 import type { JWTPayload } from "@/lib/auth";
 import { User } from "@/models/User";
 import mongoose from "mongoose";
-import { Group, Expense, UserPrefs, type ExpenseDoc } from "./models";
+import {
+  Group,
+  Expense,
+  UserPrefs,
+  Account,
+  Transfer,
+  type ExpenseDoc,
+} from "./models";
 
 function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   if (!mongoose.isValidObjectId(id)) {
@@ -63,6 +70,9 @@ import {
   type ReportFilter,
   type ReceiptResult,
   type UpdatePrefsInput,
+  type CreateAccountInput,
+  type UpdateAccountInput,
+  type CreateTransferInput,
   geminiReceiptSchema,
   receiptResultSchema,
   DEFAULT_PREFS,
@@ -251,6 +261,12 @@ export async function createExpense(
   const currency = input.currency ?? baseCurrency;
   const amountBase = await convert(input.amount, currency, baseCurrency);
 
+  // Account (personal-only, D-6): verify it belongs to the user before linking.
+  const accountId =
+    input.type === "personal"
+      ? await resolveAccountId(input.accountId, auth.userId)
+      : null;
+
   const expense = await Expense.create({
     type: input.type,
     direction: input.direction ?? "expense",
@@ -260,6 +276,7 @@ export async function createExpense(
     amount: input.amount,
     currency,
     amountBase,
+    accountId,
     description: input.description,
     category: input.category,
     date: new Date(input.date),
@@ -484,6 +501,13 @@ export async function updateExpense(
     expense.amountBase == null
   ) {
     expense.amountBase = await convert(expense.amount, newCurrency, baseCurrency);
+  }
+
+  // Account link (personal-only). Group expenses never carry an account.
+  if (newType !== "personal") {
+    expense.accountId = null;
+  } else if (input.accountId !== undefined) {
+    expense.accountId = await resolveAccountId(input.accountId, auth.userId);
   }
 
   // Guard: a row marked income must carry an income category (covers partial
@@ -931,6 +955,11 @@ export async function deleteAccount(auth: JWTPayload) {
   // Delete the groups they own.
   await Group.deleteMany({ createdBy: userId });
 
+  // Remove the user's accounts/wallets, transfers, and preferences.
+  await Account.deleteMany({ userId });
+  await Transfer.deleteMany({ userId });
+  await UserPrefs.deleteMany({ userId });
+
   // Remove the user from groups owned by others (their past group expenses
   // stay for those groups' balance accuracy, per the privacy policy).
   await Group.updateMany(
@@ -1051,4 +1080,164 @@ async function recomputeAmountBase(userId: string, base: string) {
     const newBase = await convert(d.amount, d.currency ?? "INR", base);
     await Expense.updateOne({ _id: d._id }, { $set: { amountBase: newBase } });
   }
+}
+
+// ── Accounts / wallets (Phase 1C) ───────────────────
+
+// Validate that an account id (if given) belongs to the user; returns the ObjectId
+// or null. Throws if the id is malformed or not the user's account.
+async function resolveAccountId(
+  accountId: string | null | undefined,
+  userId: string
+): Promise<mongoose.Types.ObjectId | null> {
+  if (!accountId) return null;
+  const acc = await Account.findOne({
+    _id: toObjectId(accountId, "accountId"),
+    userId,
+  })
+    .select("_id")
+    .lean();
+  if (!acc) throw new Error("Account not found");
+  return acc._id;
+}
+
+// Per-account balance delta from transactions + transfers (excludes openingBalance).
+// All sums are in the base currency (amountBase). Returns accountId → delta.
+async function computeBalanceDeltas(
+  userId: string
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+
+  const grouped = await Expense.aggregate<{
+    _id: { acc: mongoose.Types.ObjectId; dir: string | null };
+    total: number;
+  }>([
+    { $match: { createdBy: userId, accountId: { $ne: null } } },
+    {
+      $group: {
+        _id: { acc: "$accountId", dir: "$direction" },
+        total: { $sum: { $ifNull: ["$amountBase", "$amount"] } },
+      },
+    },
+  ]);
+  for (const row of grouped) {
+    const acc = row._id.acc.toString();
+    const signed = (row._id.dir ?? "expense") === "income" ? row.total : -row.total;
+    map.set(acc, (map.get(acc) ?? 0) + signed);
+  }
+
+  const transfers = await Transfer.find({ userId })
+    .select("fromAccountId toAccountId amount")
+    .lean();
+  for (const t of transfers) {
+    const from = t.fromAccountId.toString();
+    const to = t.toAccountId.toString();
+    map.set(from, (map.get(from) ?? 0) - t.amount);
+    map.set(to, (map.get(to) ?? 0) + t.amount);
+  }
+
+  return map;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export async function listAccounts(
+  auth: JWTPayload,
+  opts: { includeArchived?: boolean } = {}
+) {
+  await connectDB();
+  const filter: Record<string, unknown> = { userId: auth.userId };
+  if (!opts.includeArchived) filter.archived = false;
+
+  const [accounts, deltas] = await Promise.all([
+    Account.find(filter).sort({ createdAt: 1 }).lean(),
+    computeBalanceDeltas(auth.userId),
+  ]);
+
+  return accounts.map((a) => ({
+    ...a,
+    balance: round2(a.openingBalance + (deltas.get(a._id.toString()) ?? 0)),
+  }));
+}
+
+export async function createAccount(input: CreateAccountInput, auth: JWTPayload) {
+  await connectDB();
+  const { baseCurrency } = await getPrefs(auth);
+  const account = await Account.create({
+    userId: auth.userId,
+    name: input.name,
+    kind: input.kind,
+    currency: input.currency ?? baseCurrency,
+    openingBalance: input.openingBalance,
+  });
+  return { ...account.toObject(), balance: round2(input.openingBalance) };
+}
+
+export async function updateAccount(
+  id: string,
+  input: UpdateAccountInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const account = await Account.findOne({
+    _id: toObjectId(id, "accountId"),
+    userId: auth.userId,
+  });
+  if (!account) throw new Error("Account not found");
+  Object.assign(account, input);
+  await account.save();
+  return account.toObject();
+}
+
+// Unlink the account from any transactions and remove its transfers, then delete it.
+export async function removeAccount(id: string, auth: JWTPayload) {
+  await connectDB();
+  const account = await Account.findOne({
+    _id: toObjectId(id, "accountId"),
+    userId: auth.userId,
+  });
+  if (!account) throw new Error("Account not found");
+  await Expense.updateMany(
+    { createdBy: auth.userId, accountId: account._id },
+    { $set: { accountId: null } }
+  );
+  await Transfer.deleteMany({
+    userId: auth.userId,
+    $or: [{ fromAccountId: account._id }, { toAccountId: account._id }],
+  });
+  await Account.findByIdAndDelete(account._id);
+  return { deleted: true };
+}
+
+export async function createTransfer(
+  input: CreateTransferInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const [from, to] = await Promise.all([
+    Account.findOne({
+      _id: toObjectId(input.fromAccountId, "fromAccountId"),
+      userId: auth.userId,
+    }).select("_id"),
+    Account.findOne({
+      _id: toObjectId(input.toAccountId, "toAccountId"),
+      userId: auth.userId,
+    }).select("_id"),
+  ]);
+  if (!from || !to) throw new Error("Account not found");
+
+  const transfer = await Transfer.create({
+    userId: auth.userId,
+    fromAccountId: from._id,
+    toAccountId: to._id,
+    amount: input.amount,
+    date: new Date(input.date),
+    note: input.note,
+  });
+  return transfer.toObject();
+}
+
+export async function listTransfers(auth: JWTPayload) {
+  await connectDB();
+  return Transfer.find({ userId: auth.userId }).sort({ date: -1 }).lean();
 }

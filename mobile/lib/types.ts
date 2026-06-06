@@ -6,12 +6,25 @@
 export type ExpenseType = "personal" | "group";
 export type Direction = "expense" | "income";
 
+export type AccountKind = "cash" | "bank" | "card" | "wallet";
+
+export type Account = {
+  _id: string;
+  name: string;
+  kind: AccountKind;
+  currency: string;
+  openingBalance: number;
+  balance: number;
+  archived: boolean;
+};
+
 export type Expense = {
   _id: string;
   type: ExpenseType;
   direction?: Direction;
   currency?: string;
   amountBase?: number;
+  accountId?: string | null;
   groupId?: string;
   paidBy: { id: string; name: string };
   amount: number;

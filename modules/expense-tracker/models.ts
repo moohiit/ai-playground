@@ -68,6 +68,8 @@ export type ExpenseDoc = {
   // base-currency at read time (amountBase falls back to amount).
   currency: string;
   amountBase: number;
+  // Phase 1C: which personal account/wallet the money moved through (optional).
+  accountId: Types.ObjectId | null;
   description: string;
   category: string;
   date: Date;
@@ -125,6 +127,12 @@ const expenseSchema = new Schema<ExpenseDoc>(
     amount: { type: Number, required: true },
     currency: { type: String, default: "INR" },
     amountBase: { type: Number, default: null },
+    accountId: {
+      type: Schema.Types.ObjectId,
+      ref: "Account",
+      default: null,
+      index: true,
+    },
     description: { type: String, required: true },
     category: { type: String, required: true, index: true },
     date: { type: Date, required: true, index: true },
@@ -178,3 +186,72 @@ const userPrefsSchema = new Schema<UserPrefsDoc>(
 export const UserPrefs: Model<UserPrefsDoc> =
   (mongoose.models.UserPrefs as Model<UserPrefsDoc>) ||
   mongoose.model<UserPrefsDoc>("UserPrefs", userPrefsSchema);
+
+// Phase 1C: accounts / wallets (personal-only, D-6). Balances are tracked in the
+// user's BASE currency — openingBalance is entered in base, and transaction sums use
+// `amountBase`. Per-account foreign currency is a future enhancement (1C.2); the
+// `currency` field is stored for forward-compatibility and defaults to the base.
+export type AccountKind = "cash" | "bank" | "card" | "wallet";
+
+export type AccountDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  name: string;
+  kind: AccountKind;
+  currency: string;
+  openingBalance: number;
+  archived: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const accountSchema = new Schema<AccountDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    name: { type: String, required: true },
+    kind: {
+      type: String,
+      enum: ["cash", "bank", "card", "wallet"],
+      default: "bank",
+    },
+    currency: { type: String, default: "INR" },
+    openingBalance: { type: Number, default: 0 },
+    archived: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+
+export const Account: Model<AccountDoc> =
+  (mongoose.models.Account as Model<AccountDoc>) ||
+  mongoose.model<AccountDoc>("Account", accountSchema);
+
+// A transfer moves money between two of the user's accounts. It is NOT spending or
+// income — it lives in its own collection so it never appears in expense/income
+// reports, but it does affect account balances. `amount` is in the base currency.
+export type TransferDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  fromAccountId: Types.ObjectId;
+  toAccountId: Types.ObjectId;
+  amount: number;
+  date: Date;
+  note: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const transferSchema = new Schema<TransferDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    fromAccountId: { type: Schema.Types.ObjectId, ref: "Account", required: true },
+    toAccountId: { type: Schema.Types.ObjectId, ref: "Account", required: true },
+    amount: { type: Number, required: true },
+    date: { type: Date, required: true },
+    note: { type: String, default: "" },
+  },
+  { timestamps: true }
+);
+
+export const Transfer: Model<TransferDoc> =
+  (mongoose.models.Transfer as Model<TransferDoc>) ||
+  mongoose.model<TransferDoc>("Transfer", transferSchema);

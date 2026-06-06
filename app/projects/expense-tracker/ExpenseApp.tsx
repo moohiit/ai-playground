@@ -5,11 +5,13 @@ import { cn } from "../../../lib/utils";
 import { useAuth } from "../../../lib/authContext";
 import { Dashboard } from "./tabs/Dashboard";
 import { GroupsTab } from "./tabs/GroupsTab";
+import { AccountsTab } from "./tabs/AccountsTab";
 import { ReportsTab } from "./tabs/ReportsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 
 const TABS = [
   { id: "Dashboard", icon: DashboardIcon },
+  { id: "Accounts", icon: AccountsIcon },
   { id: "Groups", icon: GroupsIcon },
   { id: "Reports", icon: ReportsIcon },
   { id: "Settings", icon: SettingsIcon },
@@ -78,6 +80,7 @@ export function ExpenseApp() {
 
       <div key={tab} className="animate-fade-up">
         {tab === "Dashboard" && <Dashboard />}
+        {tab === "Accounts" && <AccountsTab />}
         {tab === "Groups" && <GroupsTab />}
         {tab === "Reports" && <ReportsTab />}
         {tab === "Settings" && <SettingsTab />}
@@ -102,6 +105,15 @@ function DashboardIcon() {
       <rect x="14" y="3" width="7" height="5" />
       <rect x="14" y="12" width="7" height="9" />
       <rect x="3" y="16" width="7" height="5" />
+    </svg>
+  );
+}
+
+function AccountsIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <path d="M2 10h20" />
     </svg>
   );
 }
