@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Summary } from "../../lib/types";
 import { exportFullReportPdf } from "../../lib/pdf";
@@ -47,6 +47,7 @@ export function quickRangeToDates(r: QuickRange): { from: string; to: string } {
 
 export default function ReportsTab() {
   const { user, authFetch } = useAuth();
+  const router = useRouter();
   const [scope, setScope] = useState<Scope>("all");
   const [quickRange, setQuickRange] = useState<QuickRange>("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -105,7 +106,12 @@ export default function ReportsTab() {
     <SafeAreaView className="flex-1" edges={["top"]}>
       <AppBackground />
       <View className="flex-row items-center justify-between px-5 pb-2 pt-2">
-        <Text className="text-xl font-bold text-zinc-50">Reports</Text>
+        <View className="flex-row items-center gap-2">
+          <Pressable onPress={() => router.back()} hitSlop={8}>
+            <Text className="text-2xl text-zinc-400">‹</Text>
+          </Pressable>
+          <Text className="text-xl font-bold text-zinc-50">Reports</Text>
+        </View>
         {summary && summary.totalCount > 0 && (
           <Pressable
             onPress={async () => {

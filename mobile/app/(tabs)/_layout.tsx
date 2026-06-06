@@ -31,6 +31,7 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: "#05060a" },
       }}
     >
+      {/* Primary tabs (max 5 for a comfortable bottom bar) */}
       <Tabs.Screen
         name="dashboard"
         options={{
@@ -43,13 +44,6 @@ export default function TabsLayout() {
         options={{
           title: "Expenses",
           tabBarIcon: ({ color }) => <TabIcon icon="🧾" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="accounts"
-        options={{
-          title: "Accounts",
-          tabBarIcon: ({ color }) => <TabIcon icon="💳" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -67,19 +61,17 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="reports"
+        name="more"
         options={{
-          title: "Reports",
-          tabBarIcon: ({ color }) => <TabIcon icon="📊" color={color} />,
+          title: "More",
+          tabBarIcon: ({ color }) => <TabIcon icon="⋯" color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color }) => <TabIcon icon="⚙️" color={color} />,
-        }}
-      />
+
+      {/* Secondary screens — reachable from the More tab, hidden from the bar */}
+      <Tabs.Screen name="accounts" options={{ href: null, title: "Accounts" }} />
+      <Tabs.Screen name="reports" options={{ href: null, title: "Reports" }} />
+      <Tabs.Screen name="settings" options={{ href: null, title: "Settings" }} />
     </Tabs>
   );
 }

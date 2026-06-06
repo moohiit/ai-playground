@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Account, AccountKind } from "../../lib/types";
 import { AppBackground, GradientButton } from "../../components/ui";
@@ -26,6 +26,7 @@ const kindMeta = (k: string) => KINDS.find((x) => x.id === k) ?? KINDS[0];
 
 export default function AccountsScreen() {
   const { authFetch } = useAuth();
+  const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [base, setBase] = useState("INR");
   const [refreshing, setRefreshing] = useState(false);
@@ -79,7 +80,12 @@ export default function AccountsScreen() {
     <SafeAreaView className="flex-1" edges={["top"]}>
       <AppBackground />
       <View className="flex-row items-center justify-between px-5 pb-2 pt-2">
-        <Text className="text-xl font-bold text-zinc-50">Accounts</Text>
+        <View className="flex-row items-center gap-2">
+          <Pressable onPress={() => router.back()} hitSlop={8}>
+            <Text className="text-2xl text-zinc-400">‹</Text>
+          </Pressable>
+          <Text className="text-xl font-bold text-zinc-50">Accounts</Text>
+        </View>
         <View className="flex-row gap-2">
           <Pressable
             onPress={() => setShowTransfer(true)}
