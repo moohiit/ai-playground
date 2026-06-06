@@ -53,6 +53,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="budgets"
+        options={{
+          title: "Budgets",
+          tabBarIcon: ({ color }) => <TabIcon icon="🎯" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="groups"
         options={{
           title: "Groups",

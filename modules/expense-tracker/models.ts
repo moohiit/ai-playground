@@ -255,3 +255,39 @@ const transferSchema = new Schema<TransferDoc>(
 export const Transfer: Model<TransferDoc> =
   (mongoose.models.Transfer as Model<TransferDoc>) ||
   mongoose.model<TransferDoc>("Transfer", transferSchema);
+
+// Phase 2A: monthly budgets (personal-only, D-6). `amount` is in the user's base
+// currency. scope "overall" caps total monthly spending; scope "category" caps one
+// category. One budget per (user, scope, category) — enforced by a unique index.
+export type BudgetScope = "overall" | "category";
+
+export type BudgetDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  scope: BudgetScope;
+  category: string | null;
+  amount: number;
+  period: "monthly";
+  rollover: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const budgetSchema = new Schema<BudgetDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    scope: { type: String, enum: ["overall", "category"], required: true },
+    category: { type: String, default: null },
+    amount: { type: Number, required: true },
+    period: { type: String, enum: ["monthly"], default: "monthly" },
+    rollover: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+
+// One overall budget + one budget per category per user.
+budgetSchema.index({ userId: 1, scope: 1, category: 1 }, { unique: true });
+
+export const Budget: Model<BudgetDoc> =
+  (mongoose.models.Budget as Model<BudgetDoc>) ||
+  mongoose.model<BudgetDoc>("Budget", budgetSchema);

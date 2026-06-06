@@ -125,12 +125,18 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
 ### Phase 2 — Planning & automation (depends on Phase 1)
 > **Scope (D-6): personal-only for v1** — budgets & recurring rules are per-user, not per-group.
 
-**2A. Budgets**
-- [ ] New `Budget` model `{ userId, scope:"overall"|"category", category?, period:"monthly", amount,
-      currency, rollover?:boolean, startDate }`.
-- [ ] Pure `budget.ts`: given budgets + transactions in a period → spent / remaining / % / projected.
-- [ ] Alerts at 80% / 100% / over (surface in UI now; push notifications in Phase 4).
-- [ ] UI: **Budgets tab** (web) + screen (mobile): progress bars, per-category, month switcher.
+**2A. Budgets** — ✅ shipped 2026-06-06
+- [x] `Budget` model `{ userId, scope:"overall"|"category", category?, amount, period:"monthly", rollover }`,
+      unique per `(user, scope, category)`. Amounts in base currency. Personal-only (D-6).
+- [x] Pure `budget.ts` (`evaluateBudget` → spent/remaining/pct/status; warn@80%, over@100%). `getBudgets(month)`
+      aggregates personal expense spending by category for the month (base via `amountBase`) → progress per budget.
+- [x] Alerts surfaced as status colors (ok/warn/over) on progress bars. (Push notifications → Phase 4.)
+- [x] UI: **Budgets tab** (web) + **Budgets** screen/tab (mobile): month switcher, overall + per-category
+      progress bars, add/delete. API: `GET|POST /budgets`, `PATCH|DELETE /budgets/:id`.
+- [x] Verified: 66/66 smoke checks (spent/remaining, warn@850/1000, over@1150, dup→400, missing-category→400,
+      month scoping, raise-to-ok, overall). Web + mobile typecheck clean.
+- [ ] **Deferred (2A.2):** rollover logic (field stored, not applied), projected/forecast spend, budget vs group
+      share. **Note:** mobile bottom-tab bar now has 7 tabs — needs a "More"/overflow consolidation (tracked below).
 
 **2B. Recurring expenses & subscriptions**
 - [ ] New `RecurringRule` model `{ userId, template:{amount,currency,category,description,accountId,direction},
@@ -216,6 +222,11 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-06 — **Phase 2A (budgets) shipped.** `Budget` model + pure `budget.ts` (warn@80/over@100),
+  `getBudgets(month)` with per-category/overall progress, budgets API, Budgets tab/screen (month switcher,
+  progress bars) on both platforms. 66/66 smoke. ⚠️ mobile now has 7 bottom tabs — needs overflow/"More"
+  consolidation (2A.2). Deferred: rollover, projected spend.
 
 - 2026-06-06 — **Phase 1C (accounts/wallets) shipped.** `Account` + `Transfer` models, `accountId` on personal
   expenses, base-currency balances (opening + income − expense ± transfers), account CRUD + transfers API,

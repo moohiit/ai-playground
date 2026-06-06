@@ -294,6 +294,68 @@ async function main() {
     const accts3 = (await (await fetch(`${API}/accounts`, { headers: auth })).json()).accounts ?? [];
     check("deleted account is gone", !accts3.some((a: any) => a._id === bank._id));
 
+    // 2A. Budgets (base still INR; "Entertainment" is untouched by other test rows).
+    console.log("\n[budgets]");
+    const mkEnt = (amount: number, desc: string) =>
+      fetch(`${API}/expenses`, {
+        method: "POST", headers: jsonAuth,
+        body: JSON.stringify({
+          type: "personal", direction: "expense", category: "Entertainment",
+          paidBy: { id: TEST_USER_ID, name: "Smoke Test" },
+          amount, description: desc, date: now.toISOString().slice(0, 10),
+        }),
+      });
+    const getBudgets = async () => (await (await fetch(`${API}/budgets`, { headers: auth })).json()).budgets ?? [];
+    const findEnt = (bs: any[]) => bs.find((b) => b.category === "Entertainment");
+
+    const bRes = await fetch(`${API}/budgets`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ scope: "category", category: "Entertainment", amount: 1000 }),
+    });
+    check("POST budget → 201", bRes.status === 201, `got ${bRes.status}`);
+    let ent = findEnt(await getBudgets());
+    check("new budget: spent 0, status ok, remaining 1000", ent?.spent === 0 && ent?.status === "ok" && ent?.remaining === 1000, JSON.stringify(ent));
+
+    await mkEnt(850, "Movie");
+    ent = findEnt(await getBudgets());
+    check("spent 850 → warn (85%), remaining 150", ent?.spent === 850 && ent?.status === "warn" && ent?.remaining === 150, JSON.stringify(ent));
+
+    await mkEnt(300, "Concert");
+    ent = findEnt(await getBudgets());
+    check("spent 1150 → over, remaining −150", ent?.spent === 1150 && ent?.status === "over" && ent?.remaining === -150, JSON.stringify(ent));
+
+    const dup = await fetch(`${API}/budgets`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ scope: "category", category: "Entertainment", amount: 500 }),
+    });
+    check("duplicate category budget → 400", dup.status === 400, `got ${dup.status}`);
+
+    const badB = await fetch(`${API}/budgets`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ scope: "category", amount: 500 }),
+    });
+    check("category budget without category → 400", badB.status === 400, `got ${badB.status}`);
+
+    const pastB = await (await fetch(`${API}/budgets?month=2020-01`, { headers: auth })).json();
+    check("past month: Entertainment spent 0", findEnt(pastB.budgets ?? [])?.spent === 0, JSON.stringify(findEnt(pastB.budgets ?? [])));
+
+    const updB = await fetch(`${API}/budgets/${ent._id}`, {
+      method: "PATCH", headers: jsonAuth, body: JSON.stringify({ amount: 2000 }),
+    });
+    check("PATCH budget amount → 200", updB.status === 200, `got ${updB.status}`);
+    ent = findEnt(await getBudgets());
+    check("after raising to 2000, status ok", ent?.status === "ok", JSON.stringify(ent));
+
+    await fetch(`${API}/budgets`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ scope: "overall", amount: 100000 }),
+    });
+    const overall = (await getBudgets()).find((b: any) => b.scope === "overall");
+    check("overall budget reflects spending (> 0)", (overall?.spent ?? 0) > 0, `spent=${overall?.spent}`);
+
+    const delB = await fetch(`${API}/budgets/${ent._id}`, { method: "DELETE", headers: auth });
+    check("DELETE budget → 200", delB.status === 200, `got ${delB.status}`);
+
     // Personal settle moves active personal entries into settled history.
     const settle = await fetch(`${API}/personal/settle`, { method: "POST", headers: auth });
     check("personal settle → 200", settle.status === 200, `got ${settle.status}`);
@@ -358,6 +420,7 @@ async function main() {
     await prefs.deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("accounts").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("transfers").deleteMany({ userId: TEST_USER_ID });
+    await mongoose.connection.collection("budgets").deleteMany({ userId: TEST_USER_ID });
     await mongoose.disconnect();
   }
 

@@ -9,8 +9,10 @@ import {
   UserPrefs,
   Account,
   Transfer,
+  Budget,
   type ExpenseDoc,
 } from "./models";
+import { evaluateBudget } from "./budget";
 
 function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   if (!mongoose.isValidObjectId(id)) {
@@ -73,6 +75,8 @@ import {
   type CreateAccountInput,
   type UpdateAccountInput,
   type CreateTransferInput,
+  type CreateBudgetInput,
+  type UpdateBudgetInput,
   geminiReceiptSchema,
   receiptResultSchema,
   DEFAULT_PREFS,
@@ -955,9 +959,10 @@ export async function deleteAccount(auth: JWTPayload) {
   // Delete the groups they own.
   await Group.deleteMany({ createdBy: userId });
 
-  // Remove the user's accounts/wallets, transfers, and preferences.
+  // Remove the user's accounts/wallets, transfers, budgets, and preferences.
   await Account.deleteMany({ userId });
   await Transfer.deleteMany({ userId });
+  await Budget.deleteMany({ userId });
   await UserPrefs.deleteMany({ userId });
 
   // Remove the user from groups owned by others (their past group expenses
@@ -1240,4 +1245,143 @@ export async function createTransfer(
 export async function listTransfers(auth: JWTPayload) {
   await connectDB();
   return Transfer.find({ userId: auth.userId }).sort({ date: -1 }).lean();
+}
+
+// ── Budgets (Phase 2A) ──────────────────────────────
+
+function monthBounds(month?: string) {
+  let y: number;
+  let m: number; // 0-based
+  if (month && /^\d{4}-\d{2}$/.test(month)) {
+    const [yy, mm] = month.split("-").map(Number);
+    y = yy;
+    m = mm - 1;
+  } else {
+    const now = new Date();
+    y = now.getUTCFullYear();
+    m = now.getUTCMonth();
+  }
+  return {
+    start: new Date(Date.UTC(y, m, 1)),
+    end: new Date(Date.UTC(y, m + 1, 1)),
+    month: `${y}-${String(m + 1).padStart(2, "0")}`,
+  };
+}
+
+// Personal expense spending (base currency) for one month, grouped by category.
+async function monthlySpendingByCategory(
+  userId: string,
+  start: Date,
+  end: Date
+): Promise<{ byCategory: Map<string, number>; total: number }> {
+  const rows = await Expense.aggregate<{ _id: string; total: number }>([
+    {
+      $match: {
+        createdBy: userId,
+        type: "personal",
+        date: { $gte: start, $lt: end },
+        $or: [
+          { direction: "expense" },
+          { direction: { $exists: false } },
+          { direction: null },
+        ],
+      },
+    },
+    {
+      $group: {
+        _id: "$category",
+        total: { $sum: { $ifNull: ["$amountBase", "$amount"] } },
+      },
+    },
+  ]);
+
+  const byCategory = new Map<string, number>();
+  let total = 0;
+  for (const r of rows) {
+    byCategory.set(r._id, r.total);
+    total += r.total;
+  }
+  return { byCategory, total };
+}
+
+export async function getBudgets(month: string | undefined, auth: JWTPayload) {
+  await connectDB();
+  const { start, end, month: resolved } = monthBounds(month);
+
+  const [budgets, spending] = await Promise.all([
+    Budget.find({ userId: auth.userId }).sort({ scope: 1, category: 1 }).lean(),
+    monthlySpendingByCategory(auth.userId, start, end),
+  ]);
+
+  const items = budgets.map((b) => {
+    const spent =
+      b.scope === "overall"
+        ? spending.total
+        : spending.byCategory.get(b.category ?? "") ?? 0;
+    return {
+      _id: b._id.toString(),
+      scope: b.scope,
+      category: b.category,
+      amount: b.amount,
+      rollover: b.rollover,
+      ...evaluateBudget(b.amount, spent),
+    };
+  });
+
+  return {
+    month: resolved,
+    budgets: items,
+    totalSpent: Math.round(spending.total * 100) / 100,
+  };
+}
+
+export async function createBudget(input: CreateBudgetInput, auth: JWTPayload) {
+  await connectDB();
+  const category = input.scope === "category" ? input.category ?? null : null;
+  try {
+    const budget = await Budget.create({
+      userId: auth.userId,
+      scope: input.scope,
+      category,
+      amount: input.amount,
+      rollover: input.rollover,
+    });
+    return budget.toObject();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("E11000")) {
+      throw new Error(
+        input.scope === "overall"
+          ? "You already have an overall budget"
+          : `You already have a budget for ${category}`
+      );
+    }
+    throw err;
+  }
+}
+
+export async function updateBudget(
+  id: string,
+  input: UpdateBudgetInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const budget = await Budget.findOne({
+    _id: toObjectId(id, "budgetId"),
+    userId: auth.userId,
+  });
+  if (!budget) throw new Error("Budget not found");
+  if (input.amount !== undefined) budget.amount = input.amount;
+  if (input.rollover !== undefined) budget.rollover = input.rollover;
+  await budget.save();
+  return budget.toObject();
+}
+
+export async function removeBudget(id: string, auth: JWTPayload) {
+  await connectDB();
+  const res = await Budget.deleteOne({
+    _id: toObjectId(id, "budgetId"),
+    userId: auth.userId,
+  });
+  if (res.deletedCount === 0) throw new Error("Budget not found");
+  return { deleted: true };
 }

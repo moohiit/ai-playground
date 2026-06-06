@@ -236,6 +236,43 @@ export const createTransferSchema = z
 
 export type CreateTransferInput = z.infer<typeof createTransferSchema>;
 
+// ── Budgets (Phase 2A) ─────────────────────────────
+
+export const createBudgetSchema = z
+  .object({
+    scope: z.enum(["overall", "category"]),
+    category: z.enum(CATEGORIES).nullish(),
+    amount: z.number().positive("Amount must be positive"),
+    rollover: z.boolean().default(false),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.scope === "category" && !val.category) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Pick a category for a category budget",
+        path: ["category"],
+      });
+    }
+  });
+
+export type CreateBudgetInput = z.infer<typeof createBudgetSchema>;
+
+export const updateBudgetSchema = z
+  .object({
+    amount: z.number().positive().optional(),
+    rollover: z.boolean().optional(),
+  })
+  .strict();
+
+export type UpdateBudgetInput = z.infer<typeof updateBudgetSchema>;
+
+// "YYYY-MM"; defaults are applied by the service when omitted.
+export const monthSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}$/, "Use YYYY-MM")
+  .optional();
+
 export const geminiReceiptSchema: Schema = {
   type: SchemaType.OBJECT,
   properties: {

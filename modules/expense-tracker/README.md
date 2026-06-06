@@ -8,6 +8,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 - **Income tracking** — mark a personal entry as income (its own category set); reports show income, spending, and net (income − spend), all filterable by flow (expense / income / all)
 - **Multi-currency** — enter an expense in any supported currency; it's converted to your base currency (Frankfurter daily FX, frozen at write) so all totals/reports aggregate in one currency. Switch base currency anytime and existing rows are re-converted.
 - **Accounts / wallets** — track cash/bank/card/wallet balances; assign a personal expense or income to an account, transfer money between accounts, and see net worth. Balances = opening + income − expense ± transfers (in your base currency).
+- **Budgets** — set an overall monthly cap and/or per-category budgets; a month switcher shows spent vs limit with progress bars and alert colors (warn at 80%, over at 100%).
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -47,6 +48,11 @@ Grouped by concern:
 - `POST /api/projects/expense-tracker/accounts` — create an account (cash/bank/card/wallet + opening balance)
 - `PATCH|DELETE /api/projects/expense-tracker/accounts/:id` — update / delete (delete unlinks its transactions)
 - `GET|POST /api/projects/expense-tracker/transfers` — list / create a transfer between two accounts
+
+### Budgets
+- `GET /api/projects/expense-tracker/budgets?month=YYYY-MM` — budgets with spent/remaining/%/status for the month
+- `POST /api/projects/expense-tracker/budgets` — create an overall or per-category monthly budget
+- `PATCH|DELETE /api/projects/expense-tracker/budgets/:id` — update amount / delete
 
 ## Architecture
 
@@ -89,6 +95,7 @@ Stored in MongoDB (see [models.ts](models.ts)):
 - **UserPrefs** — `{ userId (unique), baseCurrency, locale, weekStart }` — per-user settings; `baseCurrency` drives all conversion/display
 - **Account** — `{ userId, name, kind:"cash"|"bank"|"card"|"wallet", currency, openingBalance, archived }` — balance computed on read
 - **Transfer** — `{ userId, fromAccountId, toAccountId, amount, date, note }` — moves money between accounts; never spending/income
+- **Budget** — `{ userId, scope:"overall"|"category", category?, amount, period:"monthly", rollover }` — unique per (user, scope, category)
 
 All group operations verify the requesting user is a member before returning or mutating data.
 
@@ -104,6 +111,7 @@ All group operations verify the requesting user is a member before returning or 
 
 - [service.ts](service.ts) — all CRUD + aggregation logic (groups, expenses, scan, reports, balances, settlements)
 - [balance.ts](balance.ts) — pure split/balance/settlement math
+- [budget.ts](budget.ts) — pure budget progress/status math
 - [rates.ts](rates.ts) — Frankfurter FX fetch + cache + `convert()`
 - [currencies.ts](currencies.ts) — client-safe currency codes, symbols, `formatMoney()`
 - [models.ts](models.ts) — Mongoose schemas
