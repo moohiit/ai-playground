@@ -5,6 +5,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   Text,
   TextInput,
   View,
@@ -26,6 +27,7 @@ import type {
 } from "../../lib/types";
 import { AppBackground } from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
+import { API_BASE_URL } from "../../lib/api";
 
 type Tab = "active" | "settled" | "report";
 
@@ -47,6 +49,32 @@ export default function GroupDetailScreen() {
   const [settling, setSettling] = useState(false);
   const [newMember, setNewMember] = useState("");
   const [addingMember, setAddingMember] = useState(false);
+  const [shareId, setShareId] = useState<string | null>(null);
+
+  async function shareSplit() {
+    let id = shareId;
+    if (!id) {
+      const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "POST" });
+      id = (await res.json().catch(() => ({})))?.shareId ?? null;
+      setShareId(id);
+    }
+    if (!id) return Alert.alert("Couldn't create share link");
+    const url = `${API_BASE_URL}/projects/expense-tracker/share/${id}`;
+    await Share.share({ message: `Here's our bill split: ${url}` });
+  }
+
+  function stopSharing() {
+    Alert.alert("Turn off sharing", "The public link will stop working.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Turn off", style: "destructive",
+        onPress: async () => {
+          await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "DELETE" });
+          setShareId(null);
+        },
+      },
+    ]);
+  }
 
   const fetchAll = useCallback(async () => {
     try {
@@ -65,6 +93,7 @@ export default function GroupDetailScreen() {
         gRes.json(), bRes.json(), eRes.json(), sRes.json(), hRes.json(),
       ]);
       setGroup(g.group ?? null);
+      setShareId(g.group?.shareId ?? null);
       setBalances(b.balances ?? []);
       setSettlements(b.settlements ?? []);
       setExpenses(e.expenses ?? []);
@@ -436,6 +465,20 @@ export default function GroupDetailScreen() {
                   </View>
                 </View>
               ))
+            )}
+
+            <Pressable
+              onPress={shareSplit}
+              className="mt-2 items-center rounded-xl border border-brand-500/30 bg-brand-500/10 py-3"
+            >
+              <Text className="text-sm font-medium text-brand-300">
+                {shareId ? "🔗 Share split link" : "Share split (create link)"}
+              </Text>
+            </Pressable>
+            {shareId && (
+              <Pressable onPress={stopSharing} className="items-center py-1">
+                <Text className="text-[11px] text-zinc-500">Turn off public link</Text>
+              </Pressable>
             )}
 
             <Pressable

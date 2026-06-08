@@ -7,7 +7,7 @@ import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
 
 type Member = { userId: string; email: string; name: string; isActive: boolean };
-type Group = { _id: string; name: string; description: string; members: Member[] };
+type Group = { _id: string; name: string; description: string; members: Member[]; shareId?: string | null };
 type Balance = {
   memberId: string;
   name: string;
@@ -58,6 +58,39 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [newMember, setNewMember] = useState("");
   const [addingMember, setAddingMember] = useState(false);
+  const [shareId, setShareId] = useState<string | null>(null);
+  const [showShare, setShowShare] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const shareUrl =
+    typeof window !== "undefined" && shareId
+      ? `${window.location.origin}/projects/expense-tracker/share/${shareId}`
+      : "";
+
+  async function toggleShare() {
+    if (shareId) {
+      await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "DELETE" });
+      setShareId(null);
+      setShowShare(false);
+      return;
+    }
+    const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (data.shareId) {
+      setShareId(data.shareId);
+      setShowShare(true);
+    }
+  }
+
+  async function copyShare() {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -76,6 +109,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
       sRes.json(),
     ]);
     setGroup(gData.group ?? null);
+    setShareId(gData.group?.shareId ?? null);
     setBalances(bData.balances ?? []);
     setSettlements(bData.settlements ?? []);
     setExpenses(eData.expenses ?? []);
@@ -198,6 +232,17 @@ export function GroupDetail({ groupId, onBack }: Props) {
             <span className="relative">+ Add Expense</span>
           </button>
           <button
+            onClick={() => (shareId ? setShowShare((v) => !v) : toggleShare())}
+            className={cn(
+              "rounded-lg border px-4 py-2 text-sm transition-colors",
+              shareId
+                ? "border-brand-500/40 bg-brand-500/10 text-brand-300 hover:bg-brand-500/20"
+                : "border-zinc-700 bg-zinc-900/40 text-zinc-300 hover:border-zinc-500"
+            )}
+          >
+            {shareId ? "🔗 Shared" : "Share"}
+          </button>
+          <button
             onClick={handleDeleteGroup}
             className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-2 text-sm text-red-400 transition-colors hover:border-red-500/60 hover:bg-red-500/10"
           >
@@ -205,6 +250,34 @@ export function GroupDetail({ groupId, onBack }: Props) {
           </button>
         </div>
       </div>
+
+      {showShare && shareId && (
+        <div className="rounded-xl border border-brand-500/30 bg-brand-500/[0.06] p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-zinc-100">Public split link</div>
+            <button onClick={toggleShare} className="text-xs text-red-400 hover:text-red-300">
+              Turn off
+            </button>
+          </div>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            Anyone with this link sees a read-only "who owes whom" — no login, no amounts editable.
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              readOnly
+              value={shareUrl}
+              onFocus={(e) => e.target.select()}
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-xs text-zinc-300"
+            />
+            <button
+              onClick={copyShare}
+              className="shrink-0 rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-4 py-2 text-xs font-semibold text-white"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <nav className="relative flex gap-1 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-1 backdrop-blur-sm">
         {(

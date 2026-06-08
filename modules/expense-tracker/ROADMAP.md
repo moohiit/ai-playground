@@ -189,7 +189,12 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
       progress bars, add, contribute, delete. Web nav made horizontally scrollable (9 tabs). Verified: 100/100
       smoke (progress math, monthly-needed, contribute/withdraw, account-linked, linked-guard, update, delete).
       *Deferred (4A.2): "what-if" trim plan suggestions.*
-- [ ] **Shareable bill-split** — link/QR so non-registered members can view & settle (closes README gap #1).
+- [x] **Shareable bill-split** *(shipped 2026-06-08)* — `Group.shareId` (random token); owner toggles via
+      `POST|DELETE /groups/:id/share`; **public** `GET /share/:shareId` (no auth) returns a read-only "who owes
+      whom" (names + balances + settlement plan; no emails/ids). Public page at
+      `/projects/expense-tracker/share/:shareId`. Web: Share button + copy-link panel in group detail; mobile:
+      Share button → native share sheet. Verified: 8/8 share smoke (enable, public no-auth view, settlement,
+      no-email-leak, bogus→404, disable revokes→404). *Deferred (4B.2): QR image, public "mark settled".*
 - [ ] **Receipt → warranty/return tracker** — reuse stored `items[]`/`receiptUrl`; surface return-window countdowns.
 - [ ] **Push notifications** — budget breaches, bills due, anomalies (Expo push on mobile).
 - [ ] **Recharts on mobile** — charts currently web-only; bring reports to parity.
@@ -252,6 +257,10 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-08 — **Phase 4B (shareable bill-split) shipped:** `Group.shareId` + public `GET /share/:shareId`
+  (no auth, read-only who-owes-whom), public page, Share UI on web (copy link) + mobile (native share). 8/8
+  share smoke. (Full-suite re-runs flaked only on live-Gemini NL/coach calls — Gemini API rate-limit, not code.)
 
 - 2026-06-08 — **Phase 4A (savings goals) shipped:** `Goal` model + pure `goal.ts`, manual + account-linked
   goals, contribute/withdraw, monthly-needed by deadline; `/goals` API; Goals tab (web) + screen (mobile).

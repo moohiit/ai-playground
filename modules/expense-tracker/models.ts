@@ -13,6 +13,8 @@ export type GroupDoc = {
   description: string;
   createdBy: string;
   members: MemberDoc[];
+  // Phase 4B: random token for a public read-only "who owes whom" link (null = off).
+  shareId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -33,6 +35,7 @@ const groupSchema = new Schema<GroupDoc>(
     description: { type: String, default: "" },
     createdBy: { type: String, required: true, index: true },
     members: { type: [memberSchema], default: [] },
+    shareId: { type: String, default: null, index: true },
   },
   { timestamps: true }
 );

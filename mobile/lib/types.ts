@@ -85,6 +85,7 @@ export type Group = {
   name: string;
   description?: string;
   members: Member[];
+  shareId?: string | null;
 };
 
 export type Balance = {

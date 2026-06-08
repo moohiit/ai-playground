@@ -516,12 +516,52 @@ async function main() {
     const delG = await fetch(`${API}/goals/${g._id}`, { method: "DELETE", headers: auth });
     check("DELETE goal → 200", delG.status === 200, `got ${delG.status}`);
 
+    // 4B. Shareable bill-split — seed a group + group expense directly, then share.
+    console.log("\n[share]");
+    const groupId = new mongoose.Types.ObjectId();
+    await mongoose.connection.collection("groups").insertOne({
+      _id: groupId, name: "TripGroup", description: "", createdBy: TEST_USER_ID,
+      members: [
+        { userId: TEST_USER_ID, name: "Smoke Test", email: "smoke@test.local", isActive: true },
+        { userId: "u2bob", name: "Bob", email: "bob@test.local", isActive: true },
+      ],
+      shareId: null, createdAt: now, updatedAt: now,
+    });
+    await expenses.insertOne({
+      type: "group", direction: "expense", groupId, createdBy: TEST_USER_ID,
+      paidBy: { id: TEST_USER_ID, name: "Smoke Test" }, amount: 1000, currency: "INR", amountBase: 1000,
+      accountId: null, recurringId: null, description: "Hotel", category: "Rent & Housing", date: now,
+      splitAmong: [{ memberId: TEST_USER_ID, name: "Smoke Test" }, { memberId: "u2bob", name: "Bob" }],
+      splits: [{ memberId: TEST_USER_ID, name: "Smoke Test", amount: 500 }, { memberId: "u2bob", name: "Bob", amount: 500 }],
+      items: [], receiptUrl: null, rawExtraction: null, settledAt: null, settlementId: null, createdAt: now, updatedAt: now,
+    });
+
+    const shareRes = await fetch(`${API}/groups/${groupId}/share`, { method: "POST", headers: auth });
+    const shareData = await shareRes.json();
+    check("enable share → 200 + shareId", shareRes.status === 200 && typeof shareData.shareId === "string", JSON.stringify(shareData));
+
+    const pub = await fetch(`${API}/share/${shareData.shareId}`); // NO auth header
+    const pubData = await pub.json();
+    check("public share view → 200 (no auth)", pub.status === 200, `got ${pub.status}`);
+    check("public view has group name", pubData.groupName === "TripGroup", JSON.stringify(pubData).slice(0, 160));
+    const st = (pubData.settlements ?? [])[0];
+    check("settlement Bob → Smoke 500", st?.from === "Bob" && st?.to === "Smoke Test" && st?.amount === 500, JSON.stringify(st));
+    check("public view leaks no emails", !JSON.stringify(pubData).includes("@"), "email leaked");
+
+    const bogus = await fetch(`${API}/share/nope-not-real`);
+    check("bogus share id → 404", bogus.status === 404, `got ${bogus.status}`);
+
+    const dis = await fetch(`${API}/groups/${groupId}/share`, { method: "DELETE", headers: auth });
+    check("disable share → 200", dis.status === 200, `got ${dis.status}`);
+    const afterDisable = await fetch(`${API}/share/${shareData.shareId}`);
+    check("revoked share id → 404", afterDisable.status === 404, `got ${afterDisable.status}`);
+
     // Personal settle moves active personal entries into settled history.
     const settle = await fetch(`${API}/personal/settle`, { method: "POST", headers: auth });
     check("personal settle → 200", settle.status === 200, `got ${settle.status}`);
     const histData = await (await fetch(`${API}/personal/history`, { headers: auth })).json();
     check("settlement appears in history", (histData.history?.length ?? 0) >= 1, `history=${histData.history?.length}`);
-    const activeAfter = await (await fetch(`${API}/expenses?direction=expense&settled=false`, { headers: auth })).json();
+    const activeAfter = await (await fetch(`${API}/expenses?type=personal&direction=expense&settled=false`, { headers: auth })).json();
     check("no active personal expenses after settle", activeAfter.total === 0, `active=${activeAfter.total}`);
 
     // 2. Prefs — defaults, then update, then persistence.
@@ -583,6 +623,7 @@ async function main() {
     await mongoose.connection.collection("budgets").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("recurringrules").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("goals").deleteMany({ userId: TEST_USER_ID });
+    await mongoose.connection.collection("groups").deleteMany({ createdBy: TEST_USER_ID });
     await mongoose.disconnect();
   }
 

@@ -15,6 +15,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 - **Smart insights** — auto-detects likely subscriptions in your history (with price-change flags + one-tap "track as recurring") and flags spend anomalies ("3× your usual here"), shown on the dashboard.
 - **Spending Coach chat** — ask "where can I cut?" or "am I on track?" and get answers grounded in your own aggregated data (the model never sees raw transactions, only a server-built summary).
 - **Savings goals** — set a target (and optional deadline); track progress manually or by linking an account, and see how much to save each month.
+- **Shareable bill-split** — the group owner can turn on a public read-only link; anyone (no account) opens it to see who owes whom. Revocable anytime.
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -38,6 +39,8 @@ Grouped by concern:
 - `GET /api/projects/expense-tracker/groups/:id/balances` — per-member balances + settlement suggestions
 - `POST /api/projects/expense-tracker/groups/:id/settle` — record a settlement
 - `GET /api/projects/expense-tracker/groups/:id/history` — settlement history
+- `POST|DELETE /api/projects/expense-tracker/groups/:id/share` — enable / disable a public read-only split link (owner)
+- `GET /api/projects/expense-tracker/share/:shareId` — **public, no auth** — read-only who-owes-whom for a shared group
 
 ### Receipt scan
 - `POST /api/projects/expense-tracker/scan` — image → Gemini Vision → structured receipt JSON (not saved until user confirms)

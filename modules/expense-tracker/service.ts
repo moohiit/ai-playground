@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { connectDB } from "@/lib/db";
 import { vision, completeJSON, complete } from "@/lib/llm";
 import type { JWTPayload } from "@/lib/auth";
@@ -887,6 +888,79 @@ export async function getGroupBalances(
   const settlements = calculateSettlements(balances);
 
   return { balances, settlements };
+}
+
+// ── Shareable bill-split link (Phase 4B) ────────────
+
+export async function enableGroupShare(groupId: string, auth: JWTPayload) {
+  await connectDB();
+  const group = await Group.findById(groupId);
+  if (!group) throw new Error("Group not found");
+  if (group.createdBy !== auth.userId) {
+    throw new Error("Only the group creator can share it");
+  }
+  if (!group.shareId) {
+    group.shareId = randomBytes(12).toString("base64url");
+    await group.save();
+  }
+  return { shareId: group.shareId };
+}
+
+export async function disableGroupShare(groupId: string, auth: JWTPayload) {
+  await connectDB();
+  const group = await Group.findById(groupId);
+  if (!group) throw new Error("Group not found");
+  if (group.createdBy !== auth.userId) {
+    throw new Error("Only the group creator can manage sharing");
+  }
+  group.shareId = null;
+  await group.save();
+  return { disabled: true };
+}
+
+// PUBLIC (no auth): read-only "who owes whom" for a shared group. Exposes only display
+// names + balances + the settlement plan — no emails, user ids, or raw transactions.
+export async function getSharedGroup(shareId: string) {
+  await connectDB();
+  const group = await Group.findOne({ shareId }).lean();
+  if (!group) throw new Error("Share link not found");
+
+  const expenses = await Expense.find({
+    groupId: group._id,
+    type: "group",
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  }).lean();
+
+  const balances = calculateBalances(expenses as ExpenseDoc[]);
+  const settlements = calculateSettlements(balances);
+
+  // Dominant currency among the group's expenses (groups are single-currency in v1).
+  const counts = new Map<string, number>();
+  for (const e of expenses) {
+    const c = e.currency ?? "INR";
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  const currency =
+    [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "INR";
+  const total = expenses.reduce((s, e) => s + e.amount, 0);
+
+  return {
+    groupName: group.name,
+    currency,
+    expenseCount: expenses.length,
+    total: Math.round(total * 100) / 100,
+    members: balances.map((b) => ({
+      name: b.name,
+      paid: b.totalPaid,
+      owed: b.totalOwed,
+      net: b.netBalance,
+    })),
+    settlements: settlements.map((s) => ({
+      from: s.from.name,
+      to: s.to.name,
+      amount: s.amount,
+    })),
+  };
 }
 
 export async function settleGroup(groupId: string, auth: JWTPayload) {
