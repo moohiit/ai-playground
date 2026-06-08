@@ -107,6 +107,11 @@ import {
 import { convert } from "./rates";
 import { isSupportedCurrency } from "./currencies";
 import { projectMonthEnd } from "./forecast";
+import {
+  detectSubscriptions,
+  detectAnomalies,
+  type InsightExpense,
+} from "./insights";
 
 // ── Groups ──────────────────────────────────────────
 
@@ -1675,4 +1680,51 @@ export async function getForecast(auth: JWTPayload) {
         ? Math.round((forecast.projectedTotal - overallBudget) * 100) / 100
         : null,
   };
+}
+
+// Smart insights: likely subscriptions (not already tracked) + spend anomalies, over
+// the user's personal expense history (base currency).
+export async function getInsights(auth: JWTPayload) {
+  await connectDB();
+  const DAY = 86400000;
+  const since = new Date(Date.now() - 365 * DAY);
+
+  const rows = await Expense.find({
+    createdBy: auth.userId,
+    type: "personal",
+    date: { $gte: since },
+    $or: [
+      { direction: "expense" },
+      { direction: { $exists: false } },
+      { direction: null },
+    ],
+  })
+    .select("description category amount amountBase date recurringId")
+    .lean();
+
+  const mapped: InsightExpense[] = rows.map((r) => ({
+    _id: r._id.toString(),
+    description: r.description,
+    category: r.category,
+    amount: r.amountBase ?? r.amount,
+    date: new Date(r.date).toISOString(),
+    recurringId: r.recurringId ? r.recurringId.toString() : null,
+  }));
+
+  const rules = await RecurringRule.find({ userId: auth.userId })
+    .select("template.description")
+    .lean();
+  const trackedKeys = new Set(
+    rules.map((r) =>
+      r.template.description.trim().toLowerCase().replace(/\s+/g, " ")
+    )
+  );
+
+  const subscriptions = detectSubscriptions(mapped, trackedKeys);
+  const recentCutoff = Date.now() - 90 * DAY;
+  const anomalies = detectAnomalies(
+    mapped.filter((e) => Date.parse(e.date) >= recentCutoff)
+  );
+
+  return { subscriptions, anomalies };
 }

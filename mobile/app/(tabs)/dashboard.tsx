@@ -43,12 +43,48 @@ export default function Dashboard() {
     projectedVsBudget: number | null;
   } | null>(null);
 
+  const [insights, setInsights] = useState<{
+    subscriptions: Array<{
+      key: string; description: string; category: string;
+      cadence: "weekly" | "monthly" | "yearly"; amount: number;
+      occurrences: number; nextDate: string; priceChange: number | null;
+    }>;
+    anomalies: Array<{ _id: string; description: string; category: string; amount: number; ratio: number }>;
+  } | null>(null);
+  const [trackingKey, setTrackingKey] = useState<string | null>(null);
+
   const fetchForecast = useCallback(() => {
     authFetch("/api/projects/expense-tracker/forecast")
       .then((r) => r.json())
       .then(setForecast)
       .catch(() => {});
   }, [authFetch]);
+
+  const fetchInsights = useCallback(() => {
+    authFetch("/api/projects/expense-tracker/insights")
+      .then((r) => r.json())
+      .then(setInsights)
+      .catch(() => {});
+  }, [authFetch]);
+
+  async function trackSubscription(s: NonNullable<typeof insights>["subscriptions"][number]) {
+    setTrackingKey(s.key);
+    try {
+      await authFetch("/api/projects/expense-tracker/recurring", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: s.amount, currency: "INR", category: s.category, description: s.description,
+          direction: "expense", cadence: s.cadence, startDate: s.nextDate, autoPost: false,
+        }),
+      });
+      fetchInsights();
+    } catch {
+      // leave listed
+    } finally {
+      setTrackingKey(null);
+    }
+  }
 
   async function handleNlParse() {
     const text = nlText.trim();
@@ -125,8 +161,9 @@ export default function Dashboard() {
     useCallback(() => {
       setLoading(true);
       fetchForecast();
+      fetchInsights();
       fetchSummary().finally(() => setLoading(false));
-    }, [fetchSummary, fetchForecast])
+    }, [fetchSummary, fetchForecast, fetchInsights])
   );
 
   const onRefresh = useCallback(async () => {
@@ -262,6 +299,43 @@ export default function Dashboard() {
                         : `within your ${fmt(forecast.overallBudget)} budget`}
                     </Text>
                   )}
+                </View>
+              </Animated.View>
+            )}
+
+            {insights && (insights.subscriptions.length > 0 || insights.anomalies.length > 0) && (
+              <Animated.View entering={FadeInDown.duration(400).delay(120)}>
+                <View className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                  <Text className="mb-3 text-sm font-semibold text-zinc-100">💡 Insights</Text>
+                  <View className="gap-2">
+                    {insights.subscriptions.slice(0, 4).map((s) => (
+                      <View key={s.key} className="flex-row items-center justify-between gap-2 rounded-xl border border-brand-500/20 bg-brand-500/[0.05] p-3">
+                        <View className="flex-1">
+                          <Text className="text-sm font-medium text-zinc-100" numberOfLines={1}>{s.description}</Text>
+                          <Text className="text-[11px] text-zinc-500">
+                            {fmt(s.amount)} {s.cadence} · seen {s.occurrences}×
+                            {s.priceChange != null ? `  (${s.priceChange > 0 ? "+" : ""}${fmt(s.priceChange)} vs last)` : ""}
+                          </Text>
+                        </View>
+                        <Pressable
+                          onPress={() => trackSubscription(s)}
+                          disabled={trackingKey === s.key}
+                          className={`rounded-md border border-brand-500/40 bg-brand-500/10 px-2.5 py-1 ${trackingKey === s.key ? "opacity-50" : ""}`}
+                        >
+                          <Text className="text-[11px] font-medium text-brand-300">{trackingKey === s.key ? "…" : "Track"}</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                    {insights.anomalies.slice(0, 4).map((a) => (
+                      <View key={a._id} className="flex-row items-center justify-between gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-3">
+                        <View className="flex-1">
+                          <Text className="text-sm font-medium text-zinc-100" numberOfLines={1}>{a.description}</Text>
+                          <Text className="text-[11px] text-zinc-500">{a.category}</Text>
+                        </View>
+                        <Text className="text-[11px] text-amber-400">{fmt(a.amount)} · {a.ratio.toFixed(1)}× usual</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
               </Animated.View>
             )}

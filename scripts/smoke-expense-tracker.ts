@@ -432,6 +432,35 @@ async function main() {
     const d2 = (await nl2.json()).draft ?? {};
     check("NL 'salary 50000' → income 50000", d2.direction === "income" && d2.amount === 50000, JSON.stringify(d2));
 
+    // 3B. Smart insights — seed periodic + outlier rows directly, then detect.
+    console.log("\n[insights]");
+    const ago = (days: number) => new Date(now.getTime() - days * 86400000);
+    const mkRow = (description: string, category: string, amount: number, date: Date) => ({
+      type: "personal", direction: "expense", groupId: null, createdBy: TEST_USER_ID,
+      paidBy: { id: TEST_USER_ID, name: "Smoke Test" }, amount, currency: "INR", amountBase: amount,
+      accountId: null, recurringId: null, description, category, date,
+      splitAmong: [], splits: [], items: [], receiptUrl: null, rawExtraction: null,
+      settledAt: null, settlementId: null, createdAt: now, updatedAt: now,
+    });
+    await expenses.insertMany([
+      mkRow("NetflixSub", "Subscriptions", 500, ago(60)),
+      mkRow("NetflixSub", "Subscriptions", 500, ago(30)),
+      mkRow("NetflixSub", "Subscriptions", 500, ago(0)),
+      mkRow("ShopA", "Shopping", 200, ago(10)),
+      mkRow("ShopB", "Shopping", 200, ago(8)),
+      mkRow("ShopC", "Shopping", 200, ago(6)),
+      mkRow("ShopD", "Shopping", 200, ago(4)),
+      mkRow("BigTV", "Shopping", 3000, ago(2)),
+    ]);
+
+    const ins = await (await fetch(`${API}/insights`, { headers: auth })).json();
+    const netflix = (ins.subscriptions ?? []).find((s: any) => s.description === "NetflixSub");
+    check("subscription detected (monthly, 3 occurrences)", netflix?.cadence === "monthly" && netflix?.occurrences === 3, JSON.stringify(netflix));
+    check("subscription amount 500", netflix?.amount === 500, `amount=${netflix?.amount}`);
+    const bigtv = (ins.anomalies ?? []).find((a: any) => a.description === "BigTV");
+    check("anomaly detected (BigTV, large ratio)", bigtv != null && bigtv.ratio >= 5, JSON.stringify(bigtv));
+    check("anomaly category is Shopping", bigtv?.category === "Shopping", `cat=${bigtv?.category}`);
+
     // Personal settle moves active personal entries into settled history.
     const settle = await fetch(`${API}/personal/settle`, { method: "POST", headers: auth });
     check("personal settle → 200", settle.status === 200, `got ${settle.status}`);

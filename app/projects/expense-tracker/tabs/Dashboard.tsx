@@ -28,6 +28,27 @@ type ViewMode = "all" | "personal" | "group";
 type DirectionFilter = "expense" | "income" | "all";
 type RangeKey = "all" | "month" | "30d" | "7d";
 
+type Subscription = {
+  key: string;
+  description: string;
+  category: string;
+  cadence: "weekly" | "monthly" | "yearly";
+  amount: number;
+  occurrences: number;
+  lastDate: string;
+  nextDate: string;
+  priceChange: number | null;
+};
+type Anomaly = {
+  _id: string;
+  description: string;
+  category: string;
+  amount: number;
+  date: string;
+  median: number;
+  ratio: number;
+};
+
 type Breakdown = {
   personalTotal: number;
   groupTotal: number;
@@ -88,6 +109,11 @@ export function Dashboard() {
     overallBudget: number | null;
     projectedVsBudget: number | null;
   } | null>(null);
+  const [insights, setInsights] = useState<{
+    subscriptions: Subscription[];
+    anomalies: Anomaly[];
+  } | null>(null);
+  const [trackingKey, setTrackingKey] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
   const [settling, setSettling] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -186,6 +212,42 @@ export function Dashboard() {
   useEffect(() => {
     fetchForecast();
   }, [fetchForecast]);
+
+  const fetchInsights = useCallback(() => {
+    authFetch("/api/projects/expense-tracker/insights")
+      .then((r) => r.json())
+      .then((d) => setInsights(d))
+      .catch(() => {});
+  }, [authFetch]);
+
+  useEffect(() => {
+    fetchInsights();
+  }, [fetchInsights]);
+
+  async function trackSubscription(sub: Subscription) {
+    setTrackingKey(sub.key);
+    try {
+      await authFetch("/api/projects/expense-tracker/recurring", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: sub.amount,
+          currency: base,
+          category: sub.category,
+          description: sub.description,
+          direction: "expense",
+          cadence: sub.cadence,
+          startDate: sub.nextDate,
+          autoPost: false,
+        }),
+      });
+      fetchInsights();
+    } catch {
+      // leave it listed
+    } finally {
+      setTrackingKey(null);
+    }
+  }
 
   async function handleNlParse() {
     const text = nlText.trim();
@@ -367,6 +429,15 @@ export function Dashboard() {
 
       {forecast && (totalAmount > 0 || forecast.projectedTotal > 0) && (
         <ForecastCard forecast={forecast} base={base} />
+      )}
+
+      {insights && (insights.subscriptions.length > 0 || insights.anomalies.length > 0) && (
+        <InsightsSection
+          insights={insights}
+          base={base}
+          trackingKey={trackingKey}
+          onTrack={trackSubscription}
+        />
       )}
 
       {breakdown && (
@@ -729,6 +800,67 @@ export function Dashboard() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function InsightsSection({
+  insights,
+  base,
+  trackingKey,
+  onTrack,
+}: {
+  insights: { subscriptions: Subscription[]; anomalies: Anomaly[] };
+  base: string;
+  trackingKey: string | null;
+  onTrack: (s: Subscription) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5">
+      <div className="mb-3 text-[11px] uppercase tracking-wider text-zinc-500">💡 Insights</div>
+      <div className="flex flex-col gap-2">
+        {insights.subscriptions.slice(0, 4).map((s) => (
+          <div
+            key={s.key}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand-500/20 bg-brand-500/[0.05] px-3 py-2"
+          >
+            <div className="min-w-0 text-sm">
+              <span className="font-medium text-zinc-100">{s.description}</span>
+              <span className="text-zinc-500">
+                {" "}
+                · {formatMoney(s.amount, base)} {s.cadence} · seen {s.occurrences}×
+              </span>
+              {s.priceChange != null && (
+                <span className={cn("ml-1", s.priceChange > 0 ? "text-amber-400" : "text-emerald-400")}>
+                  ({s.priceChange > 0 ? "+" : ""}
+                  {formatMoney(s.priceChange, base)} vs last)
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => onTrack(s)}
+              disabled={trackingKey === s.key}
+              className="shrink-0 rounded-md border border-brand-500/40 bg-brand-500/10 px-2.5 py-1 text-xs font-medium text-brand-300 hover:bg-brand-500/20 disabled:opacity-50"
+            >
+              {trackingKey === s.key ? "Tracking…" : "Track as recurring"}
+            </button>
+          </div>
+        ))}
+        {insights.anomalies.slice(0, 4).map((a) => (
+          <div
+            key={a._id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-sm"
+          >
+            <div className="min-w-0">
+              <span className="font-medium text-zinc-100">{a.description}</span>
+              <span className="text-zinc-500"> · {a.category}</span>
+            </div>
+            <div className="shrink-0 text-xs text-amber-400">
+              {formatMoney(a.amount, base)} · {a.ratio.toFixed(1)}× your usual
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -170,9 +170,13 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
       →income) + forecast projection. Web + mobile typecheck clean.
 - [ ] **Spending Coach chat** *(deferred, D-5)* — Q&A grounded in the user's aggregated transactions (server builds a
       compact summary context; never dump raw rows to the model). New `/coach` route.
-- [ ] **Subscription detective** — detect recurring merchant/amount patterns in history; flag price hikes,
-      duplicates, unused (no recent linked txn).
-- [ ] **Anomaly alerts** — per-merchant/category z-score; flag outliers ("4× your usual here").
+- [x] **Subscription detective** *(shipped 2026-06-08)* — pure `insights.ts:detectSubscriptions` finds periodic
+      same-description charges (≥3, regular gaps) NOT already tracked, with a price-change flag; one-tap
+      "Track as recurring" creates a `RecurringRule`.
+- [x] **Anomaly alerts** *(shipped 2026-06-08)* — `detectAnomalies` flags per-category outliers (≥3× the
+      category median, recent 90d). Both surfaced in a **💡 Insights** section on web + mobile dashboards via
+      `getInsights` + `GET /insights`. Verified: 87/87 smoke (monthly-sub detection, anomaly ratio). Typecheck clean.
+      *Deferred (3B.2): "unused subscription" + duplicate-service detection.*
 
 ### Phase 4 — Engagement & advanced
 - [ ] **Savings Goals** `{ name, target, deadline, linkedAccountId? }` with progress + "what-if" trim plan.
@@ -239,6 +243,10 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-08 — **Phase 3B (smart insights) shipped:** subscription detective + anomaly alerts (pure
+  `insights.ts`), `getInsights` + `GET /insights`, 💡 Insights section on both dashboards with one-tap
+  "Track as recurring". 87/87 smoke. Only the Spending Coach chat remains deferred in Phase 3 (D-5).
 
 - 2026-06-06 — **Phase 3 (AI v1) shipped:** NL expense entry (Gemini `completeJSON` → draft → prefilled add
   form) + month-end forecast (pure run-rate + recurring + budget). `POST /parse`, `GET /forecast`. "✨ AI quick

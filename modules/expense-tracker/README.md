@@ -12,6 +12,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 - **Recurring & subscriptions** — define repeating expenses/income (rent, EMIs, subscriptions) by cadence; auto-post rules are created daily by a cron (and lazily when you open the app), or confirm them yourself with "Post now".
 - **AI quick add** — type a plain-language note ("250 coffee", "got salary 50000") and Gemini turns it into a structured draft you confirm before saving.
 - **Month-end forecast** — projects this month's total from your daily run-rate, adds known upcoming recurring bills, and compares to your overall budget.
+- **Smart insights** — auto-detects likely subscriptions in your history (with price-change flags + one-tap "track as recurring") and flags spend anomalies ("3× your usual here"), shown on the dashboard.
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -42,6 +43,7 @@ Grouped by concern:
 ### AI (Phase 3)
 - `POST /api/projects/expense-tracker/parse` — natural-language note → structured personal-transaction draft (Gemini; not saved)
 - `GET /api/projects/expense-tracker/forecast` — month-end spend projection (run-rate + upcoming recurring + budget compare)
+- `GET /api/projects/expense-tracker/insights` — detected subscriptions + spend anomalies from history
 
 ### Reports
 - `GET /api/projects/expense-tracker/reports` — aggregations by category, month, and group
@@ -129,6 +131,7 @@ All group operations verify the requesting user is a member before returning or 
 - [budget.ts](budget.ts) — pure budget progress/status math
 - [recurring.ts](recurring.ts) — pure recurring date math (advance/dueOccurrences)
 - [forecast.ts](forecast.ts) — pure month-end spend projection
+- [insights.ts](insights.ts) — pure subscription/anomaly detection
 - [rates.ts](rates.ts) — Frankfurter FX fetch + cache + `convert()`
 - [currencies.ts](currencies.ts) — client-safe currency codes, symbols, `formatMoney()`
 - [models.ts](models.ts) — Mongoose schemas
