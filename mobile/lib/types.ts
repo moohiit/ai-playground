@@ -18,6 +18,20 @@ export type Account = {
   archived: boolean;
 };
 
+export type Goal = {
+  _id: string;
+  name: string;
+  deadline: string | null;
+  linkedAccountId: string | null;
+  target: number;
+  saved: number;
+  remaining: number;
+  pct: number;
+  complete: boolean;
+  monthsLeft: number | null;
+  monthlyNeeded: number | null;
+};
+
 export type RecurringRule = {
   _id: string;
   template: {

@@ -14,6 +14,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 - **Month-end forecast** — projects this month's total from your daily run-rate, adds known upcoming recurring bills, and compares to your overall budget.
 - **Smart insights** — auto-detects likely subscriptions in your history (with price-change flags + one-tap "track as recurring") and flags spend anomalies ("3× your usual here"), shown on the dashboard.
 - **Spending Coach chat** — ask "where can I cut?" or "am I on track?" and get answers grounded in your own aggregated data (the model never sees raw transactions, only a server-built summary).
+- **Savings goals** — set a target (and optional deadline); track progress manually or by linking an account, and see how much to save each month.
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -46,6 +47,11 @@ Grouped by concern:
 - `GET /api/projects/expense-tracker/forecast` — month-end spend projection (run-rate + upcoming recurring + budget compare)
 - `GET /api/projects/expense-tracker/insights` — detected subscriptions + spend anomalies from history
 - `POST /api/projects/expense-tracker/coach` — Spending Coach chat; answers grounded in a server-built financial summary
+
+### Goals
+- `GET|POST /api/projects/expense-tracker/goals` — list goals with progress / create
+- `PATCH|DELETE /api/projects/expense-tracker/goals/:id` — edit / delete
+- `POST /api/projects/expense-tracker/goals/:id/contribute` — add (or withdraw, negative) to a manual goal
 
 ### Reports
 - `GET /api/projects/expense-tracker/reports` — aggregations by category, month, and group
@@ -134,6 +140,7 @@ All group operations verify the requesting user is a member before returning or 
 - [recurring.ts](recurring.ts) — pure recurring date math (advance/dueOccurrences)
 - [forecast.ts](forecast.ts) — pure month-end spend projection
 - [insights.ts](insights.ts) — pure subscription/anomaly detection
+- [goal.ts](goal.ts) — pure savings-goal progress math
 - [rates.ts](rates.ts) — Frankfurter FX fetch + cache + `convert()`
 - [currencies.ts](currencies.ts) — client-safe currency codes, symbols, `formatMoney()`
 - [models.ts](models.ts) — Mongoose schemas

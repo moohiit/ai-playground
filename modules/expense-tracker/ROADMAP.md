@@ -182,7 +182,13 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
       *Deferred (3B.2): "unused subscription" + duplicate-service detection.*
 
 ### Phase 4 — Engagement & advanced
-- [ ] **Savings Goals** `{ name, target, deadline, linkedAccountId? }` with progress + "what-if" trim plan.
+- [x] **Savings Goals** *(shipped 2026-06-08)* — `Goal { name, target, savedAmount, deadline?, linkedAccountId? }`,
+      pure `goal.ts:goalProgress` (pct / remaining / monthly-needed by deadline). Manual goals top up via
+      `POST /goals/:id/contribute` (negative withdraws); account-linked goals track the account's live balance.
+      API `GET|POST /goals`, `PATCH|DELETE /goals/:id`. UI: **Goals** tab (web) + screen (mobile, under More) —
+      progress bars, add, contribute, delete. Web nav made horizontally scrollable (9 tabs). Verified: 100/100
+      smoke (progress math, monthly-needed, contribute/withdraw, account-linked, linked-guard, update, delete).
+      *Deferred (4A.2): "what-if" trim plan suggestions.*
 - [ ] **Shareable bill-split** — link/QR so non-registered members can view & settle (closes README gap #1).
 - [ ] **Receipt → warranty/return tracker** — reuse stored `items[]`/`receiptUrl`; surface return-window countdowns.
 - [ ] **Push notifications** — budget breaches, bills due, anomalies (Expo push on mobile).
@@ -246,6 +252,10 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-08 — **Phase 4A (savings goals) shipped:** `Goal` model + pure `goal.ts`, manual + account-linked
+  goals, contribute/withdraw, monthly-needed by deadline; `/goals` API; Goals tab (web) + screen (mobile).
+  Web nav now horizontally scrollable. 100/100 smoke.
 
 - 2026-06-08 — **Spending Coach chat shipped → Phase 3 COMPLETE.** `POST /coach` answers grounded in a
   server-built summary (reuses all analytics; no raw rows to the model); Coach tab (web) + screen (mobile).

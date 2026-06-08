@@ -361,3 +361,35 @@ const recurringRuleSchema = new Schema<RecurringRuleDoc>(
 export const RecurringRule: Model<RecurringRuleDoc> =
   (mongoose.models.RecurringRule as Model<RecurringRuleDoc>) ||
   mongoose.model<RecurringRuleDoc>("RecurringRule", recurringRuleSchema);
+
+// Phase 4: savings goals (personal, base currency). Either manual (`savedAmount` the
+// user tops up) or linked to an account (progress = that account's live balance).
+export type GoalDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  name: string;
+  target: number;
+  savedAmount: number;
+  deadline: Date | null;
+  linkedAccountId: Types.ObjectId | null;
+  archived: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const goalSchema = new Schema<GoalDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    name: { type: String, required: true },
+    target: { type: Number, required: true },
+    savedAmount: { type: Number, default: 0 },
+    deadline: { type: Date, default: null },
+    linkedAccountId: { type: Schema.Types.ObjectId, ref: "Account", default: null },
+    archived: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
+
+export const Goal: Model<GoalDoc> =
+  (mongoose.models.Goal as Model<GoalDoc>) ||
+  mongoose.model<GoalDoc>("Goal", goalSchema);

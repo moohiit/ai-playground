@@ -11,11 +11,13 @@ import {
   Transfer,
   Budget,
   RecurringRule,
+  Goal,
   type ExpenseDoc,
   type RecurringRuleDoc,
 } from "./models";
 import { evaluateBudget } from "./budget";
 import { advance, dueOccurrences, isDue } from "./recurring";
+import { goalProgress } from "./goal";
 
 function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   if (!mongoose.isValidObjectId(id)) {
@@ -83,6 +85,9 @@ import {
   type CreateRecurringInput,
   type UpdateRecurringInput,
   type CoachInput,
+  type CreateGoalInput,
+  type UpdateGoalInput,
+  type ContributeGoalInput,
   geminiReceiptSchema,
   receiptResultSchema,
   geminiNlSchema,
@@ -982,11 +987,12 @@ export async function deleteAccount(auth: JWTPayload) {
   // Delete the groups they own.
   await Group.deleteMany({ createdBy: userId });
 
-  // Remove the user's accounts/wallets, transfers, budgets, recurring rules, prefs.
+  // Remove the user's accounts/wallets, transfers, budgets, recurring, goals, prefs.
   await Account.deleteMany({ userId });
   await Transfer.deleteMany({ userId });
   await Budget.deleteMany({ userId });
   await RecurringRule.deleteMany({ userId });
+  await Goal.deleteMany({ userId });
   await UserPrefs.deleteMany({ userId });
 
   // Remove the user from groups owned by others (their past group expenses
@@ -1240,6 +1246,10 @@ export async function removeAccount(id: string, auth: JWTPayload) {
     userId: auth.userId,
     $or: [{ fromAccountId: account._id }, { toAccountId: account._id }],
   });
+  await Goal.updateMany(
+    { userId: auth.userId, linkedAccountId: account._id },
+    { $set: { linkedAccountId: null } }
+  );
   await Account.findByIdAndDelete(account._id);
   return { deleted: true };
 }
@@ -1799,4 +1809,100 @@ export async function coachReply(input: CoachInput, auth: JWTPayload) {
     maxOutputTokens: 700,
   });
   return { reply: reply.trim() };
+}
+
+// ── Savings goals (Phase 4) ─────────────────────────
+
+export async function listGoals(auth: JWTPayload) {
+  await connectDB();
+  const goals = await Goal.find({ userId: auth.userId, archived: false })
+    .sort({ createdAt: 1 })
+    .lean();
+
+  // Account-linked goals track that account's live balance.
+  const needBalances = goals.some((g) => g.linkedAccountId);
+  const balanceById = new Map<string, number>();
+  if (needBalances) {
+    const accounts = await listAccounts(auth);
+    for (const a of accounts) balanceById.set(a._id.toString(), a.balance);
+  }
+
+  const now = new Date();
+  return goals.map((g) => {
+    const linkedId = g.linkedAccountId?.toString() ?? null;
+    const saved = linkedId ? balanceById.get(linkedId) ?? 0 : g.savedAmount;
+    return {
+      _id: g._id.toString(),
+      name: g.name,
+      deadline: g.deadline ? new Date(g.deadline).toISOString().slice(0, 10) : null,
+      linkedAccountId: linkedId,
+      ...goalProgress(g.target, saved, g.deadline ?? null, now),
+    };
+  });
+}
+
+export async function createGoal(input: CreateGoalInput, auth: JWTPayload) {
+  await connectDB();
+  const linkedAccountId = await resolveAccountId(input.linkedAccountId, auth.userId);
+  const goal = await Goal.create({
+    userId: auth.userId,
+    name: input.name,
+    target: input.target,
+    savedAmount: linkedAccountId ? 0 : input.savedAmount,
+    deadline: input.deadline ? new Date(input.deadline) : null,
+    linkedAccountId,
+  });
+  return goal.toObject();
+}
+
+export async function updateGoal(
+  id: string,
+  input: UpdateGoalInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const goal = await Goal.findOne({
+    _id: toObjectId(id, "goalId"),
+    userId: auth.userId,
+  });
+  if (!goal) throw new Error("Goal not found");
+  if (input.name !== undefined) goal.name = input.name;
+  if (input.target !== undefined) goal.target = input.target;
+  if (input.savedAmount !== undefined) goal.savedAmount = input.savedAmount;
+  if (input.deadline !== undefined)
+    goal.deadline = input.deadline ? new Date(input.deadline) : null;
+  if (input.archived !== undefined) goal.archived = input.archived;
+  await goal.save();
+  return goal.toObject();
+}
+
+// Top up (or withdraw with a negative amount) a manual goal's saved balance.
+export async function contributeGoal(
+  id: string,
+  input: ContributeGoalInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const goal = await Goal.findOne({
+    _id: toObjectId(id, "goalId"),
+    userId: auth.userId,
+  });
+  if (!goal) throw new Error("Goal not found");
+  if (goal.linkedAccountId) {
+    // "must" → handleRouteError maps this to 400, not a 500.
+    throw new Error("A linked goal must be funded through its account, not a contribution.");
+  }
+  goal.savedAmount = Math.max(0, goal.savedAmount + input.amount);
+  await goal.save();
+  return goal.toObject();
+}
+
+export async function removeGoal(id: string, auth: JWTPayload) {
+  await connectDB();
+  const res = await Goal.deleteOne({
+    _id: toObjectId(id, "goalId"),
+    userId: auth.userId,
+  });
+  if (res.deletedCount === 0) throw new Error("Goal not found");
+  return { deleted: true };
 }

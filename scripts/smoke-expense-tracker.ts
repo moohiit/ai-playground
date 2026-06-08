@@ -474,6 +474,48 @@ async function main() {
     check("anomaly detected (BigTV, large ratio)", bigtv != null && bigtv.ratio >= 5, JSON.stringify(bigtv));
     check("anomaly category is Shopping", bigtv?.category === "Shopping", `cat=${bigtv?.category}`);
 
+    // 4A. Savings goals (deadline 3 months out → monthsLeft 3).
+    console.log("\n[goals]");
+    const dl = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 3, 1)).toISOString().slice(0, 10);
+    const getGoals = async () => (await (await fetch(`${API}/goals`, { headers: auth })).json()).goals ?? [];
+    const findGoal = (gs: any[], name: string) => gs.find((g) => g.name === name);
+
+    const gRes = await fetch(`${API}/goals`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ name: "Trip", target: 120000, savedAmount: 30000, deadline: dl }),
+    });
+    check("POST goal → 201", gRes.status === 201, `got ${gRes.status}`);
+    let g = findGoal(await getGoals(), "Trip");
+    check("goal pct 0.25, remaining 90000", g?.pct === 0.25 && g?.remaining === 90000, JSON.stringify(g));
+    check("goal monthsLeft 3, monthlyNeeded 30000", g?.monthsLeft === 3 && g?.monthlyNeeded === 30000, JSON.stringify(g));
+
+    await fetch(`${API}/goals/${g._id}/contribute`, { method: "POST", headers: jsonAuth, body: JSON.stringify({ amount: 30000 }) });
+    g = findGoal(await getGoals(), "Trip");
+    check("after +30000, saved 60000 (pct 0.5)", g?.saved === 60000 && g?.pct === 0.5, JSON.stringify(g));
+
+    await fetch(`${API}/goals/${g._id}/contribute`, { method: "POST", headers: jsonAuth, body: JSON.stringify({ amount: -10000 }) });
+    g = findGoal(await getGoals(), "Trip");
+    check("after −10000 withdraw, saved 50000", g?.saved === 50000, JSON.stringify(g));
+
+    const gAcct = (await (await fetch(`${API}/accounts`, {
+      method: "POST", headers: jsonAuth, body: JSON.stringify({ name: "GoalAcct", kind: "bank", openingBalance: 7000 }),
+    })).json()).account;
+    await fetch(`${API}/goals`, {
+      method: "POST", headers: jsonAuth, body: JSON.stringify({ name: "Linked", target: 50000, linkedAccountId: gAcct._id }),
+    });
+    const linked = findGoal(await getGoals(), "Linked");
+    check("account-linked goal saved = account balance 7000", linked?.saved === 7000, JSON.stringify(linked));
+    const badContrib = await fetch(`${API}/goals/${linked._id}/contribute`, { method: "POST", headers: jsonAuth, body: JSON.stringify({ amount: 100 }) });
+    check("contribute to linked goal → 400", badContrib.status === 400, `got ${badContrib.status}`);
+
+    const updG = await fetch(`${API}/goals/${g._id}`, { method: "PATCH", headers: jsonAuth, body: JSON.stringify({ target: 200000 }) });
+    check("PATCH goal target → 200", updG.status === 200, `got ${updG.status}`);
+    g = findGoal(await getGoals(), "Trip");
+    check("after target→200000, pct 0.25", g?.target === 200000 && g?.pct === 0.25, JSON.stringify(g));
+
+    const delG = await fetch(`${API}/goals/${g._id}`, { method: "DELETE", headers: auth });
+    check("DELETE goal → 200", delG.status === 200, `got ${delG.status}`);
+
     // Personal settle moves active personal entries into settled history.
     const settle = await fetch(`${API}/personal/settle`, { method: "POST", headers: auth });
     check("personal settle → 200", settle.status === 200, `got ${settle.status}`);
@@ -540,6 +582,7 @@ async function main() {
     await mongoose.connection.collection("transfers").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("budgets").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("recurringrules").deleteMany({ userId: TEST_USER_ID });
+    await mongoose.connection.collection("goals").deleteMany({ userId: TEST_USER_ID });
     await mongoose.disconnect();
   }
 

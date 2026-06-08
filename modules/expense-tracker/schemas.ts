@@ -323,6 +323,38 @@ export const updateRecurringSchema = z
 
 export type UpdateRecurringInput = z.infer<typeof updateRecurringSchema>;
 
+// ── Savings goals (Phase 4) ────────────────────────
+
+export const createGoalSchema = z
+  .object({
+    name: z.string().min(1).max(80),
+    target: z.number().positive("Target must be positive"),
+    savedAmount: z.number().min(0).default(0),
+    deadline: isoDate, // optional YYYY-MM-DD
+    linkedAccountId: z.string().nullish(),
+  })
+  .strict();
+
+export type CreateGoalInput = z.infer<typeof createGoalSchema>;
+
+export const updateGoalSchema = z
+  .object({
+    name: z.string().min(1).max(80).optional(),
+    target: z.number().positive().optional(),
+    savedAmount: z.number().min(0).optional(),
+    deadline: isoDate.nullable(),
+    archived: z.boolean().optional(),
+  })
+  .strict();
+
+export type UpdateGoalInput = z.infer<typeof updateGoalSchema>;
+
+export const contributeGoalSchema = z
+  .object({ amount: z.number().refine((n) => n !== 0, "Amount can't be zero") })
+  .strict();
+
+export type ContributeGoalInput = z.infer<typeof contributeGoalSchema>;
+
 export const geminiReceiptSchema: Schema = {
   type: SchemaType.OBJECT,
   properties: {

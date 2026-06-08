@@ -8,6 +8,7 @@ import { GroupsTab } from "./tabs/GroupsTab";
 import { AccountsTab } from "./tabs/AccountsTab";
 import { BudgetsTab } from "./tabs/BudgetsTab";
 import { RecurringTab } from "./tabs/RecurringTab";
+import { GoalsTab } from "./tabs/GoalsTab";
 import { CoachTab } from "./tabs/CoachTab";
 import { ReportsTab } from "./tabs/ReportsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
@@ -16,6 +17,7 @@ const TABS = [
   { id: "Dashboard", icon: DashboardIcon },
   { id: "Accounts", icon: AccountsIcon },
   { id: "Budgets", icon: BudgetsIcon },
+  { id: "Goals", icon: GoalsIcon },
   { id: "Recurring", icon: RecurringIcon },
   { id: "Coach", icon: CoachIcon },
   { id: "Groups", icon: GroupsIcon },
@@ -66,13 +68,13 @@ export function ExpenseApp() {
 
   return (
     <div className="flex flex-col gap-6">
-      <nav className="relative flex gap-1 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-1 backdrop-blur-sm">
+      <nav className="relative flex gap-1 overflow-x-auto rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-1 backdrop-blur-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map(({ id, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             className={cn(
-              "relative flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all sm:flex-none",
+              "relative flex flex-1 shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all sm:flex-none",
               tab === id
                 ? "bg-gradient-to-br from-brand-600 to-brand-500 text-white shadow-lg shadow-brand-500/30"
                 : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
@@ -88,6 +90,7 @@ export function ExpenseApp() {
         {tab === "Dashboard" && <Dashboard />}
         {tab === "Accounts" && <AccountsTab />}
         {tab === "Budgets" && <BudgetsTab />}
+        {tab === "Goals" && <GoalsTab />}
         {tab === "Recurring" && <RecurringTab />}
         {tab === "Coach" && <CoachTab />}
         {tab === "Groups" && <GroupsTab />}
@@ -143,6 +146,16 @@ function RecurringIcon() {
       <path d="M3 11V9a4 4 0 0 1 4-4h14" />
       <path d="M7 21.9 3 18l4-3.9" />
       <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
+
+function GoalsIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
     </svg>
   );
 }
