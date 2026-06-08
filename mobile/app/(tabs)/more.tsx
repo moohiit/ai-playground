@@ -5,6 +5,7 @@ import { useAuth } from "../../lib/auth";
 import { AppBackground } from "../../components/ui";
 
 const ITEMS: { icon: string; label: string; sub: string; route: string }[] = [
+  { icon: "✨", label: "Coach", sub: "Ask about your spending & savings", route: "/coach" },
   { icon: "💳", label: "Accounts", sub: "Wallets, balances & transfers", route: "/accounts" },
   { icon: "🔁", label: "Recurring", sub: "Rent, subscriptions & bills", route: "/recurring" },
   { icon: "📊", label: "Reports", sub: "Charts, trends & PDF export", route: "/reports" },

@@ -1,5 +1,5 @@
 import { connectDB } from "@/lib/db";
-import { vision, completeJSON } from "@/lib/llm";
+import { vision, completeJSON, complete } from "@/lib/llm";
 import type { JWTPayload } from "@/lib/auth";
 import { User } from "@/models/User";
 import mongoose from "mongoose";
@@ -82,6 +82,7 @@ import {
   type UpdateBudgetInput,
   type CreateRecurringInput,
   type UpdateRecurringInput,
+  type CoachInput,
   geminiReceiptSchema,
   receiptResultSchema,
   geminiNlSchema,
@@ -103,6 +104,7 @@ import {
   RECEIPT_PROMPT,
   NL_SYSTEM_PROMPT,
   nlPrompt,
+  coachSystem,
 } from "./prompts";
 import { convert } from "./rates";
 import { isSupportedCurrency } from "./currencies";
@@ -1727,4 +1729,74 @@ export async function getInsights(auth: JWTPayload) {
   );
 
   return { subscriptions, anomalies };
+}
+
+// ── Spending Coach chat (Phase 3) ───────────────────
+
+// A compact financial summary the model answers from — reuses existing analytics so
+// we never hand raw transactions to the LLM.
+async function buildCoachContext(auth: JWTPayload): Promise<string> {
+  const [all, budgets, forecast, insights, accounts] = await Promise.all([
+    getSummary({ scope: "all", settled: "all" }, auth),
+    getBudgets(undefined, auth),
+    getForecast(auth),
+    getInsights(auth),
+    listAccounts(auth),
+  ]);
+  const base = await getBaseCurrency(auth.userId);
+  const m = (n: number) => `${base} ${Math.round(n)}`;
+
+  const topCats = all.byCategory
+    .slice(0, 6)
+    .map((c) => `${c.category} ${m(c.total)} (${c.count})`)
+    .join(", ");
+  const months = all.byMonth
+    .slice(-4)
+    .map((mo) => `${mo.year}-${String(mo.month).padStart(2, "0")} ${m(mo.total)}`)
+    .join(", ");
+  const budgetLines =
+    budgets.budgets
+      .map((b) => `${b.scope === "overall" ? "Overall" : b.category} ${m(b.spent)}/${m(b.limit)} (${b.status})`)
+      .join("; ") || "none set";
+  const subs =
+    insights.subscriptions.slice(0, 8).map((s) => `${s.description} ${m(s.amount)}/${s.cadence}`).join(", ") ||
+    "none detected";
+  const anomalies =
+    insights.anomalies.slice(0, 5).map((a) => `${a.description} ${m(a.amount)} (${a.ratio}x usual ${a.category})`).join(", ") ||
+    "none";
+  const netWorth = accounts.reduce((s, a) => s + a.balance, 0);
+
+  return [
+    `Total spend (all time): ${m(all.totalAmount)} over ${all.totalCount} entries.`,
+    `Income (all time): ${m(all.incomeAmount)}. Net (income - spend): ${m(all.netAmount)}.`,
+    `Top spend categories: ${topCats}.`,
+    `Recent monthly spend: ${months}.`,
+    `This month so far ${m(forecast.monthToDate)}; projected month-end ${m(forecast.projectedTotal)}${forecast.overallBudget != null ? `; overall budget ${m(forecast.overallBudget)}` : ""}.`,
+    `Budgets: ${budgetLines}.`,
+    all.largest ? `Largest single expense: ${all.largest.description} ${m(all.largest.amount)} (${all.largest.category}).` : "",
+    `Detected subscriptions: ${subs}.`,
+    `Spend anomalies: ${anomalies}.`,
+    `Accounts net worth: ${m(netWorth)} across ${accounts.length} account(s).`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function coachReply(input: CoachInput, auth: JWTPayload) {
+  const base = (await getPrefs(auth)).baseCurrency;
+  const today = new Date().toISOString().slice(0, 10);
+  const context = await buildCoachContext(auth);
+  const system = `${coachSystem(base, today)}\n\n=== USER FINANCIAL SUMMARY ===\n${context}`;
+
+  const convo = input.messages
+    .slice(-10)
+    .map((mm) => `${mm.role === "user" ? "User" : "Coach"}: ${mm.content}`)
+    .join("\n");
+
+  const reply = await complete(`${convo}\nCoach:`, {
+    system,
+    temperature: 0.4,
+    maxOutputTokens: 700,
+  });
+  return { reply: reply.trim() };
 }

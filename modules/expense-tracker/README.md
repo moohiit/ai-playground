@@ -13,6 +13,7 @@ Track personal and group expenses, scan receipts with Gemini Vision, split bills
 - **AI quick add** — type a plain-language note ("250 coffee", "got salary 50000") and Gemini turns it into a structured draft you confirm before saving.
 - **Month-end forecast** — projects this month's total from your daily run-rate, adds known upcoming recurring bills, and compares to your overall budget.
 - **Smart insights** — auto-detects likely subscriptions in your history (with price-change flags + one-tap "track as recurring") and flags spend anomalies ("3× your usual here"), shown on the dashboard.
+- **Spending Coach chat** — ask "where can I cut?" or "am I on track?" and get answers grounded in your own aggregated data (the model never sees raw transactions, only a server-built summary).
 - **Group expenses** — shared pots with member management, smart splitting (equal / by shares / custom), running balances, and one-click settlement
 - **Receipt scanning** — upload a receipt image, Gemini Vision extracts vendor, date, line items, total, and category into a structured JSON expense ready to confirm and save
 - **Reports** — monthly totals by category, trend lines, and per-group balance views with PDF export
@@ -44,6 +45,7 @@ Grouped by concern:
 - `POST /api/projects/expense-tracker/parse` — natural-language note → structured personal-transaction draft (Gemini; not saved)
 - `GET /api/projects/expense-tracker/forecast` — month-end spend projection (run-rate + upcoming recurring + budget compare)
 - `GET /api/projects/expense-tracker/insights` — detected subscriptions + spend anomalies from history
+- `POST /api/projects/expense-tracker/coach` — Spending Coach chat; answers grounded in a server-built financial summary
 
 ### Reports
 - `GET /api/projects/expense-tracker/reports` — aggregations by category, month, and group

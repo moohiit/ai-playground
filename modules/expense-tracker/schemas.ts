@@ -364,6 +364,22 @@ export const parseTextSchema = z
   .object({ text: z.string().min(2).max(300) })
   .strict();
 
+export const coachSchema = z
+  .object({
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string().min(1).max(1000),
+        })
+      )
+      .min(1)
+      .max(20),
+  })
+  .strict();
+
+export type CoachInput = z.infer<typeof coachSchema>;
+
 export const geminiNlSchema: Schema = {
   type: SchemaType.OBJECT,
   properties: {

@@ -432,6 +432,19 @@ async function main() {
     const d2 = (await nl2.json()).draft ?? {};
     check("NL 'salary 50000' → income 50000", d2.direction === "income" && d2.amount === 50000, JSON.stringify(d2));
 
+    // Spending Coach chat (live Gemini, grounded in this user's summary)
+    const coach = await fetch(`${API}/coach`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ messages: [{ role: "user", content: "Where can I cut my spending?" }] }),
+    });
+    const cdata = await coach.json();
+    check("coach → 200", coach.status === 200, `got ${coach.status}`);
+    check("coach returns a non-empty reply", typeof cdata.reply === "string" && cdata.reply.length > 10, JSON.stringify(cdata).slice(0, 160));
+    const badCoach = await fetch(`${API}/coach`, {
+      method: "POST", headers: jsonAuth, body: JSON.stringify({ messages: [] }),
+    });
+    check("coach with empty messages → 400", badCoach.status === 400, `got ${badCoach.status}`);
+
     // 3B. Smart insights — seed periodic + outlier rows directly, then detect.
     console.log("\n[insights]");
     const ago = (days: number) => new Date(now.getTime() - days * 86400000);

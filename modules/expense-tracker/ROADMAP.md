@@ -168,8 +168,11 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
       both dashboards (projected total, "X over budget").
 - [x] Verified: 83/83 smoke checks incl. **live Gemini** NL parse ("250 coffee"→₹250 expense; "salary 50000"
       →income) + forecast projection. Web + mobile typecheck clean.
-- [ ] **Spending Coach chat** *(deferred, D-5)* — Q&A grounded in the user's aggregated transactions (server builds a
-      compact summary context; never dump raw rows to the model). New `/coach` route.
+- [x] **Spending Coach chat** *(shipped 2026-06-08)* — `POST /coach`: `buildCoachContext` assembles a compact
+      financial summary (reusing getSummary/budgets/forecast/insights/accounts — never raw rows); `coachReply`
+      answers via Gemini `complete` grounded in it. UI: **Coach** tab (web) + screen (mobile, under More) — chat
+      bubbles, suggested starters. Verified: 90/90 smoke (live reply, empty-messages→400) + manual probe
+      confirmed grounded numbers (no hallucination). **Phase 3 complete.**
 - [x] **Subscription detective** *(shipped 2026-06-08)* — pure `insights.ts:detectSubscriptions` finds periodic
       same-description charges (≥3, regular gaps) NOT already tracked, with a price-change flag; one-tap
       "Track as recurring" creates a `RecurringRule`.
@@ -243,6 +246,10 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-08 — **Spending Coach chat shipped → Phase 3 COMPLETE.** `POST /coach` answers grounded in a
+  server-built summary (reuses all analytics; no raw rows to the model); Coach tab (web) + screen (mobile).
+  90/90 smoke + probe confirmed real numbers. The whole AI phase (NL entry, forecast, insights, coach) is done.
 
 - 2026-06-08 — **Phase 3B (smart insights) shipped:** subscription detective + anomaly alerts (pure
   `insights.ts`), `getInsights` + `GET /insights`, 💡 Insights section on both dashboards with one-tap

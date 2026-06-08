@@ -71,6 +71,7 @@ export default function TabsLayout() {
       {/* Secondary screens — reachable from the More tab, hidden from the bar */}
       <Tabs.Screen name="accounts" options={{ href: null, title: "Accounts" }} />
       <Tabs.Screen name="recurring" options={{ href: null, title: "Recurring" }} />
+      <Tabs.Screen name="coach" options={{ href: null, title: "Coach" }} />
       <Tabs.Screen name="reports" options={{ href: null, title: "Reports" }} />
       <Tabs.Screen name="settings" options={{ href: null, title: "Settings" }} />
     </Tabs>
