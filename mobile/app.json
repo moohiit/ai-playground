@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.moohiit.expensetracker",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#4f46e5"
