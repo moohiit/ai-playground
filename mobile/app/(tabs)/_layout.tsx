@@ -75,6 +75,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="coach" options={{ href: null, title: "Coach" }} />
       <Tabs.Screen name="reports" options={{ href: null, title: "Reports" }} />
       <Tabs.Screen name="settings" options={{ href: null, title: "Settings" }} />
+      <Tabs.Screen name="warranty" options={{ href: null, title: "Warranties" }} />
     </Tabs>
   );
 }
