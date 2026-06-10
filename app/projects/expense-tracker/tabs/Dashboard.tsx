@@ -688,7 +688,7 @@ export function Dashboard() {
                   <td className="px-4 py-3 text-zinc-100">{e.description}</td>
                   <td className="px-4 py-3">
                     <span
-                      className="rounded-md border px-2 py-0.5 text-[11px]"
+                      className="inline-block whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] leading-5"
                       style={{
                         color: categoryColor(e.category),
                         borderColor: `${categoryColor(e.category)}66`,
