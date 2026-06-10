@@ -195,7 +195,7 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
       `/projects/expense-tracker/share/:shareId`. Web: Share button + copy-link panel in group detail; mobile:
       Share button → native share sheet. Verified: 8/8 share smoke (enable, public no-auth view, settlement,
       no-email-leak, bogus→404, disable revokes→404). *Deferred (4B.2): QR image, public "mark settled".*
-- [ ] **Receipt → warranty/return tracker** — reuse stored `items[]`/`receiptUrl`; surface return-window countdowns.
+- [x] **Receipt → warranty/return tracker** — `Warranty` model (`label`, `purchaseDate`, `returnByDate?`, `warrantyExpiresAt?`, `notes`, `expenseId?`). `warranty.ts` computes countdown + status (missed-return / return-soon / warranty-soon / warranty-expired) server-side. `POST /warranty/from-expense` bulk-imports all `items[]` from a scanned expense in one click. Web: "Warranties" tab (list with color-coded badges, add form, receipt import panel). Mobile: `/warranty` screen under More (same list, add modal, import modal). TypeScript clean.
 - [x] **Push notifications** — budget breaches (warn@80% + over@100%), bills due (non-autoPost recurring rules), and anomaly detection (3× category median). Server: `UserPrefs.expoPushToken` field, `modules/expense-tracker/push.ts` (pure Expo Push API sender), `POST|DELETE /api/push/register`. Hooks: expense POST triggers budget + anomaly checks; daily cron sends bill-due pushes for due manual rules. Mobile: `lib/push.ts` (permission request, `getExpoPushTokenAsync`, Android channel), `_layout.tsx` `PushSetup` component registers on first authenticated render.
 - [x] **SVG charts on mobile** — replaced View-based bars with real SVG charts via `react-native-svg` (already bundled). `SvgCharts.tsx` adds `BarChart` (gradient fill, value labels, baseline) and `LineChart` (area + line + dots). Day-of-week now renders as a proper vertical bar chart; monthly trend shows a line chart trend curve above the detail rows. `ReportBody` gained a `baseCurrency` prop (uses `formatMoney`); Reports tab fetches prefs to pass the user's base currency. Web parity achieved with no new dependencies.
 
@@ -257,6 +257,8 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-10 — **Warranty / return tracker shipped.** All Phase 4 items complete. Expense tracker roadmap fully shipped.
 
 - 2026-06-10 — **Push notifications shipped.** `UserPrefs.expoPushToken`, `push.ts` (Expo Push API), `/api/push/register` (POST/DELETE), expense POST hooks (budget warn/over + anomaly 3×), cron hook (bill-due for manual recurring rules), mobile `lib/push.ts` + `_layout.tsx` `PushSetup`.
 

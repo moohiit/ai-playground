@@ -10,6 +10,7 @@ const ITEMS: { icon: string; label: string; sub: string; route: string }[] = [
   { icon: "💳", label: "Accounts", sub: "Wallets, balances & transfers", route: "/accounts" },
   { icon: "🔁", label: "Recurring", sub: "Rent, subscriptions & bills", route: "/recurring" },
   { icon: "📊", label: "Reports", sub: "Charts, trends & PDF export", route: "/reports" },
+  { icon: "🛡️", label: "Warranties", sub: "Return windows & warranty expiry", route: "/warranty" },
   { icon: "⚙️", label: "Settings", sub: "Base currency, account & more", route: "/settings" },
 ];
 

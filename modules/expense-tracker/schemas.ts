@@ -355,6 +355,45 @@ export const contributeGoalSchema = z
 
 export type ContributeGoalInput = z.infer<typeof contributeGoalSchema>;
 
+// ── Warranty / return-window tracker (Phase 4) ─────
+
+const isoDateOpt = z
+  .string()
+  .refine((d) => !isNaN(Date.parse(d)), "Invalid date")
+  .nullish()
+  .transform((v) => v ?? null);
+
+export const createWarrantySchema = z
+  .object({
+    label: z.string().min(1).max(200),
+    purchaseDate: z
+      .string()
+      .refine((d) => !isNaN(Date.parse(d)), "Invalid date"),
+    returnByDate: isoDateOpt,
+    warrantyExpiresAt: isoDateOpt,
+    notes: z.string().max(500).default(""),
+    expenseId: z.string().nullish().transform((v) => v ?? null),
+  })
+  .strict();
+
+export type CreateWarrantyInput = z.infer<typeof createWarrantySchema>;
+
+export const updateWarrantySchema = z
+  .object({
+    label: z.string().min(1).max(200).optional(),
+    purchaseDate: z
+      .string()
+      .refine((d) => !isNaN(Date.parse(d)), "Invalid date")
+      .optional(),
+    returnByDate: isoDateOpt,
+    warrantyExpiresAt: isoDateOpt,
+    notes: z.string().max(500).optional(),
+    archived: z.boolean().optional(),
+  })
+  .strict();
+
+export type UpdateWarrantyInput = z.infer<typeof updateWarrantySchema>;
+
 export const geminiReceiptSchema: Schema = {
   type: SchemaType.OBJECT,
   properties: {

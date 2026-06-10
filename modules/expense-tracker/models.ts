@@ -398,3 +398,39 @@ const goalSchema = new Schema<GoalDoc>(
 export const Goal: Model<GoalDoc> =
   (mongoose.models.Goal as Model<GoalDoc>) ||
   mongoose.model<GoalDoc>("Goal", goalSchema);
+
+// Phase 4 (last): warranty / return-window tracker. Linked to a receipt-scanned
+// expense via expenseId (optional). returnByDate tracks the store's return window;
+// warrantyExpiresAt tracks the manufacturer warranty end date. Both are optional so
+// the user can track either, neither, or both.
+export type WarrantyDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  expenseId: Types.ObjectId | null;
+  label: string;
+  purchaseDate: Date;
+  returnByDate: Date | null;
+  warrantyExpiresAt: Date | null;
+  notes: string;
+  archived: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const warrantySchema = new Schema<WarrantyDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    expenseId: { type: Schema.Types.ObjectId, ref: "Expense", default: null },
+    label: { type: String, required: true },
+    purchaseDate: { type: Date, required: true },
+    returnByDate: { type: Date, default: null },
+    warrantyExpiresAt: { type: Date, default: null },
+    notes: { type: String, default: "" },
+    archived: { type: Boolean, default: false, index: true },
+  },
+  { timestamps: true }
+);
+
+export const Warranty: Model<WarrantyDoc> =
+  (mongoose.models.Warranty as Model<WarrantyDoc>) ||
+  mongoose.model<WarrantyDoc>("Warranty", warrantySchema);
