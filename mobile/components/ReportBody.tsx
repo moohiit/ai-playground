@@ -2,30 +2,50 @@ import { Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import type { Summary } from "../lib/types";
 import { Donut } from "./Donut";
+import { BarChart, LineChart } from "./SvgCharts";
 import { categoryColor } from "../lib/colors";
+import { formatMoney } from "../lib/currency";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const fmt = (n: number) => `₹${n.toFixed(2)}`;
 
 /**
- * Shared report renderer (stat tiles + charts/tables) used by both the main
- * Reports tab and the per-group Report. Adapts panels to the data present:
- * Top Payers for a group summary, Personal-vs-Group / Top Groups otherwise.
+ * Shared report renderer — stat tiles + SVG charts + tables.
+ * Used by the main Reports tab and per-group GroupReportView.
  */
-export function ReportBody({ summary }: { summary: Summary }) {
-  const maxCat = summary.byCategory?.[0]?.total ?? 0;
-  const maxDow = Math.max(...(summary.byDayOfWeek?.map((x) => x.total) ?? [0]), 1);
-  const maxMonth = Math.max(...(summary.byMonth?.map((m) => m.total) ?? [0]), 1);
+export function ReportBody({
+  summary,
+  baseCurrency = "INR",
+}: {
+  summary: Summary;
+  baseCurrency?: string;
+}) {
+  const fmt = (n: number) => formatMoney(n, baseCurrency);
+
   const maxGroup = Math.max(...(summary.byGroup?.map((g) => g.total) ?? [0]), 1);
   const maxPayer = Math.max(...(summary.topPayers?.map((p) => p.total) ?? [0]), 1);
   const hasPayers = (summary.topPayers?.length ?? 0) > 0;
 
+  // Chart data
+  const dowData = (summary.byDayOfWeek ?? []).map((x) => ({
+    label: DOW[x.day],
+    value: x.total,
+  }));
+  const monthData = (summary.byMonth ?? []).map((m) => ({
+    label: `${MONTHS[m.month - 1]} '${String(m.year).slice(2)}`,
+    value: m.total,
+    count: m.count,
+    year: m.year,
+    month: m.month,
+  }));
+  const maxMonth = Math.max(...monthData.map((m) => m.value), 1);
+
   return (
     <>
+      {/* ── Stat tiles ── */}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
         <Stat label="Total" value={fmt(summary.totalAmount)} hint={`${summary.totalCount} entries`} />
         <Stat label="My share" value={fmt(summary.myShare)} />
@@ -33,8 +53,15 @@ export function ReportBody({ summary }: { summary: Summary }) {
         <Stat label="Paid by others" value={fmt(summary.paidByOthers)} />
         <Stat label="Avg / day" value={fmt(summary.averagePerDay)} hint={`${summary.daysCovered} days`} />
         <Stat label="Avg / txn" value={fmt(summary.averagePerTransaction)} />
+        {(summary.incomeAmount ?? 0) > 0 && (
+          <>
+            <Stat label="Income" value={fmt(summary.incomeAmount)} hint={`${summary.incomeCount ?? 0} entries`} accent="emerald" />
+            <Stat label="Net flow" value={fmt(summary.netAmount ?? 0)} accent="emerald" />
+          </>
+        )}
       </View>
 
+      {/* ── Largest expense ── */}
       {summary.largest && (
         <Panel title="Largest expense">
           <View className="flex-row items-center justify-between">
@@ -50,7 +77,7 @@ export function ReportBody({ summary }: { summary: Summary }) {
         </Panel>
       )}
 
-      {/* Top payers (group reports) */}
+      {/* ── Top payers (group reports) ── */}
       {hasPayers && (
         <Panel title="Top payers in this group">
           <View className="gap-2.5">
@@ -65,14 +92,14 @@ export function ReportBody({ summary }: { summary: Summary }) {
                     {((p.total / (summary.totalAmount || 1)) * 100).toFixed(0)}%
                   </Text>
                 </View>
-                <Bar pct={(p.total / maxPayer) * 100} />
+                <HBar pct={(p.total / maxPayer) * 100} />
               </View>
             ))}
           </View>
         </Panel>
       )}
 
-      {/* Personal vs Group (main report, when both present) */}
+      {/* ── Personal vs Group donut ── */}
       {!hasPayers && summary.personalTotal > 0 && summary.groupTotal > 0 && (
         <Panel title="Personal vs Group">
           <DonutWithLegend
@@ -80,11 +107,12 @@ export function ReportBody({ summary }: { summary: Summary }) {
               { label: "Personal", value: summary.personalTotal, color: "#34d399" },
               { label: "Group", value: summary.groupTotal, color: "#818cf8" },
             ]}
+            fmt={fmt}
           />
         </Panel>
       )}
 
-      {/* Top groups (main report) */}
+      {/* ── Top groups ── */}
       {!hasPayers && (summary.byGroup?.length ?? 0) > 0 && (
         <Panel title="Top groups">
           <View className="gap-2.5">
@@ -93,36 +121,31 @@ export function ReportBody({ summary }: { summary: Summary }) {
                 <View className="flex-row justify-between">
                   <Text className="text-xs text-zinc-300">{g.groupName}</Text>
                   <Text className="text-xs text-zinc-300">
-                    {fmt(g.total)} <Text className="text-fuchsia-300">({fmt(g.myShare)})</Text>
+                    {fmt(g.total)}{" "}
+                    <Text className="text-fuchsia-300">({fmt(g.myShare)})</Text>
                   </Text>
                 </View>
-                <Bar pct={(g.total / maxGroup) * 100} />
+                <HBar pct={(g.total / maxGroup) * 100} />
               </View>
             ))}
           </View>
         </Panel>
       )}
 
-      {/* Day of week */}
-      {(summary.byDayOfWeek?.some((x) => x.total > 0) ?? false) && (
+      {/* ── Day of week — SVG bar chart ── */}
+      {dowData.some((x) => x.value > 0) && (
         <Panel title="Spending by day of week">
-          <View className="mt-1 h-28 flex-row items-end justify-between gap-1.5">
-            {summary.byDayOfWeek.map((x) => (
-              <View key={x.day} className="flex-1 items-center gap-1">
-                <View className="w-full justify-end" style={{ height: 80 }}>
-                  <View
-                    className="w-full rounded-t bg-cyan-500"
-                    style={{ height: Math.max(2, (x.total / maxDow) * 80) }}
-                  />
-                </View>
-                <Text className="text-[11px] text-zinc-500">{DOW[x.day]}</Text>
-              </View>
-            ))}
-          </View>
+          <BarChart
+            data={dowData}
+            height={170}
+            gradFrom="#22d3ee"
+            gradTo="#0891b2"
+            gradId="dow_grad"
+          />
         </Panel>
       )}
 
-      {/* By category donut */}
+      {/* ── By category donut ── */}
       {summary.byCategory.length > 0 && (
         <Panel title="By category">
           <DonutWithLegend
@@ -131,32 +154,44 @@ export function ReportBody({ summary }: { summary: Summary }) {
               value: c.total,
               color: categoryColor(c.category),
             }))}
+            fmt={fmt}
           />
         </Panel>
       )}
 
-      {/* Monthly trend */}
-      {summary.byMonth.length > 0 && (
+      {/* ── Monthly trend — line chart + rows ── */}
+      {monthData.length > 0 && (
         <Panel title="Monthly trend">
+          {monthData.length >= 2 && (
+            <View className="mb-3">
+              <LineChart
+                data={monthData}
+                height={80}
+                color="#a78bfa"
+                gradId="month_area"
+              />
+            </View>
+          )}
           <View className="gap-2.5">
-            {summary.byMonth.map((m) => (
+            {monthData.map((m) => (
               <View key={`${m.year}-${m.month}`}>
                 <View className="flex-row justify-between">
                   <Text className="text-xs text-zinc-400">
                     {MONTHS[m.month - 1]} {m.year}
                   </Text>
                   <Text className="text-xs font-medium text-zinc-200">
-                    {fmt(m.total)} <Text className="text-zinc-600">({m.count})</Text>
+                    {fmt(m.value)}{" "}
+                    <Text className="text-zinc-600">({m.count})</Text>
                   </Text>
                 </View>
-                <Bar pct={(m.total / maxMonth) * 100} colorHex="#a78bfa" />
+                <HBar pct={(m.value / maxMonth) * 100} colorHex="#a78bfa" />
               </View>
             ))}
           </View>
         </Panel>
       )}
 
-      {/* Category breakdown with % */}
+      {/* ── Category breakdown ── */}
       {summary.byCategory.length > 0 && (
         <Panel title="Category breakdown">
           <View className="gap-2.5">
@@ -166,13 +201,14 @@ export function ReportBody({ summary }: { summary: Summary }) {
                 <View key={c.category}>
                   <View className="flex-row justify-between">
                     <Text className="text-xs text-zinc-300">
-                      {c.category} <Text className="text-zinc-600">({c.count})</Text>
+                      {c.category}{" "}
+                      <Text className="text-zinc-600">({c.count})</Text>
                     </Text>
                     <Text className="text-xs text-zinc-300">
                       {fmt(c.total)} · {pct.toFixed(1)}%
                     </Text>
                   </View>
-                  <Bar pct={maxCat > 0 ? (c.total / maxCat) * 100 : 0} colorHex={categoryColor(c.category)} />
+                  <HBar pct={pct} colorHex={categoryColor(c.category)} />
                 </View>
               );
             })}
@@ -183,10 +219,14 @@ export function ReportBody({ summary }: { summary: Summary }) {
   );
 }
 
+/* ── Sub-components ─────────────────────────────────────── */
+
 function DonutWithLegend({
   data,
+  fmt,
 }: {
   data: { label: string; value: number; color: string }[];
+  fmt: (n: number) => string;
 }) {
   const slices = data.filter((d) => d.value > 0);
   if (slices.length === 0) return <Text className="text-xs text-zinc-500">No data</Text>;
@@ -206,13 +246,7 @@ function DonutWithLegend({
   );
 }
 
-function Bar({
-  pct,
-  colorHex,
-}: {
-  pct: number;
-  colorHex?: string;
-}) {
+function HBar({ pct, colorHex }: { pct: number; colorHex?: string }) {
   return (
     <View className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-800">
       <View
@@ -227,14 +261,30 @@ function Bar({
   );
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Stat({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: "emerald";
+}) {
   return (
     <View
-      className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+      className={`rounded-2xl border p-4 ${
+        accent === "emerald"
+          ? "border-emerald-500/30 bg-emerald-500/[0.06]"
+          : "border-white/10 bg-white/[0.04]"
+      }`}
       style={{ flexBasis: "47%", flexGrow: 1 }}
     >
       <Text className="text-[12px] uppercase tracking-wider text-zinc-500">{label}</Text>
-      <Text className="mt-1 text-xl font-bold text-zinc-50">{value}</Text>
+      <Text className={`mt-1 text-xl font-bold ${accent === "emerald" ? "text-emerald-400" : "text-zinc-50"}`}>
+        {value}
+      </Text>
       {hint && <Text className="mt-0.5 text-[12px] text-zinc-500">{hint}</Text>}
     </View>
   );

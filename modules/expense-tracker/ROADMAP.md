@@ -197,7 +197,7 @@ Dependency order matters: **money primitives** (Phase 1) unlock everything else;
       no-email-leak, bogus→404, disable revokes→404). *Deferred (4B.2): QR image, public "mark settled".*
 - [ ] **Receipt → warranty/return tracker** — reuse stored `items[]`/`receiptUrl`; surface return-window countdowns.
 - [ ] **Push notifications** — budget breaches, bills due, anomalies (Expo push on mobile).
-- [ ] **Recharts on mobile** — charts currently web-only; bring reports to parity.
+- [x] **SVG charts on mobile** — replaced View-based bars with real SVG charts via `react-native-svg` (already bundled). `SvgCharts.tsx` adds `BarChart` (gradient fill, value labels, baseline) and `LineChart` (area + line + dots). Day-of-week now renders as a proper vertical bar chart; monthly trend shows a line chart trend curve above the detail rows. `ReportBody` gained a `baseCurrency` prop (uses `formatMoney`); Reports tab fetches prefs to pass the user's base currency. Web parity achieved with no new dependencies.
 
 ---
 
@@ -257,6 +257,8 @@ A feature is **done** only when all of these are true:
 ---
 
 ## 7. Changelog (append newest at top)
+
+- 2026-06-10 — **SVG charts on mobile shipped.** `components/SvgCharts.tsx` (`BarChart` + `LineChart`) built on `react-native-svg` (no new deps). Day-of-week replaced with gradient bar chart; monthly trend gains a line chart trend view above detail rows. `ReportBody` now accepts `baseCurrency` prop + uses `formatMoney` for correct currency formatting. Reports tab fetches user prefs to pass base currency. TypeScript clean.
 
 - 2026-06-08 — **Phase 4B (shareable bill-split) shipped:** `Group.shareId` + public `GET /share/:shareId`
   (no auth, read-only who-owes-whom), public page, Share UI on web (copy link) + mobile (native share). 8/8

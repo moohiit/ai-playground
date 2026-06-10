@@ -57,6 +57,7 @@ export default function ReportsTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [baseCurrency, setBaseCurrency] = useState("INR");
 
   const fetchSummary = useCallback(async () => {
     const params = new URLSearchParams({ settled: "all", scope });
@@ -72,11 +73,23 @@ export default function ReportsTab() {
     }
   }, [scope, dateFrom, dateTo, authFetch]);
 
+  // Fetch base currency once on mount
+  const fetchPrefs = useCallback(async () => {
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/prefs");
+      const data = await res.json();
+      if (data.prefs?.baseCurrency) setBaseCurrency(data.prefs.baseCurrency);
+    } catch {
+      // keep default INR
+    }
+  }, [authFetch]);
+
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
+      fetchPrefs();
       fetchSummary().finally(() => setLoading(false));
-    }, [fetchSummary])
+    }, [fetchSummary, fetchPrefs])
   );
 
   const onRefresh = useCallback(async () => {
@@ -186,7 +199,7 @@ export default function ReportsTab() {
             <Text className="text-sm text-zinc-400">No expenses for this range.</Text>
           </View>
         ) : (
-          <ReportBody summary={summary} />
+          <ReportBody summary={summary} baseCurrency={baseCurrency} />
         )}
       </ScrollView>
     </SafeAreaView>
