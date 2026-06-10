@@ -1,9 +1,23 @@
-import * as Notifications from "expo-notifications";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { Platform } from "react-native";
-import Constants from "expo-constants";
+
+// expo-notifications was removed from Expo Go in SDK 53. Lazy-require it only
+// in dev-client / production builds to avoid the side-effect crash in Expo Go.
+const IS_EXPO_GO =
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+type ExpoNotifications = typeof import("expo-notifications");
+
+function getN(): ExpoNotifications | null {
+  if (IS_EXPO_GO) return null;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("expo-notifications") as ExpoNotifications;
+}
 
 export function setupNotificationHandler() {
-  Notifications.setNotificationHandler({
+  const N = getN();
+  if (!N) return;
+  N.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
@@ -17,28 +31,31 @@ export function setupNotificationHandler() {
 export async function registerPushToken(
   authFetch: (path: string, opts?: RequestInit) => Promise<Response>
 ) {
+  const N = getN();
+  if (!N) return;
+
   try {
     if (Platform.OS === "android") {
-      await Notifications.setNotificationChannelAsync("expense-tracker", {
+      await N.setNotificationChannelAsync("expense-tracker", {
         name: "Expense Tracker",
-        importance: Notifications.AndroidImportance.HIGH,
+        importance: N.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#6366f1",
       });
     }
 
-    const { status: existing } = await Notifications.getPermissionsAsync();
+    const { status: existing } = await N.getPermissionsAsync();
     let finalStatus = existing;
     if (existing !== "granted") {
-      const { status } = await Notifications.requestPermissionsAsync();
+      const { status } = await N.requestPermissionsAsync();
       finalStatus = status;
     }
     if (finalStatus !== "granted") return;
 
-    const projectId = (
-      Constants.expoConfig?.extra?.eas?.projectId as string | undefined
-    );
-    const tokenData = await Notifications.getExpoPushTokenAsync(
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId as
+      | string
+      | undefined;
+    const tokenData = await N.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined
     );
 

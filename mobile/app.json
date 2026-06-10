@@ -31,6 +31,14 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#6366f1",
+          "defaultChannel": "expense-tracker"
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Allow Expense Tracker to access your photos to attach a receipt.",
