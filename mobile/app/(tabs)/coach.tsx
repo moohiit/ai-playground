@@ -71,8 +71,8 @@ export default function CoachScreen() {
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={80}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
       >
         <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, gap: 10 }}>
           {messages.length === 0 ? (
