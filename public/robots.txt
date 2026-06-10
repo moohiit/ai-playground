@@ -1,0 +1,19 @@
+User-agent: *
+
+# Allow all public pages
+Allow: /
+Allow: /projects/
+
+# Block auth, account, and internal pages
+Disallow: /login
+Disallow: /forgot-password
+Disallow: /verify-email
+Disallow: /delete-account
+Disallow: /profile
+Disallow: /projects/eval-harness
+Disallow: /projects/expense-tracker/share/
+
+# Block all API routes
+Disallow: /api/
+
+Sitemap: https://aiplayground.mohitpatel.org/sitemap.xml
