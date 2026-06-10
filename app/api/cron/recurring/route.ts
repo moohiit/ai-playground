@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { runDueRecurring } from "@/modules/expense-tracker/service";
+import { connectDB } from "@/lib/db";
+import { RecurringRule } from "@/modules/expense-tracker/models";
+import { getUserPushConfig, notifyBillsDue } from "@/modules/expense-tracker/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +21,35 @@ export async function GET(req: Request) {
   }
 
   try {
-    const result = await runDueRecurring(new Date());
+    const now = new Date();
+    const result = await runDueRecurring(now);
+
+    // Notify users with due non-autoPost rules (bills they need to confirm)
+    try {
+      await connectDB();
+      const dueRules = await RecurringRule.find({
+        autoPost: false,
+        active: true,
+        nextRunAt: { $lte: now },
+      }).lean();
+
+      const byUser = new Map<string, typeof dueRules>();
+      for (const rule of dueRules) {
+        if (!byUser.has(rule.userId)) byUser.set(rule.userId, []);
+        byUser.get(rule.userId)!.push(rule);
+      }
+
+      await Promise.all(
+        Array.from(byUser.entries()).map(async ([userId, rules]) => {
+          const config = await getUserPushConfig(userId);
+          if (!config) return;
+          await notifyBillsDue(config, rules);
+        })
+      );
+    } catch (err) {
+      console.error("[cron/recurring] push notifications failed", err);
+    }
+
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[cron/recurring]", err);

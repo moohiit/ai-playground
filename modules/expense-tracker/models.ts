@@ -179,6 +179,7 @@ export type UserPrefsDoc = {
   baseCurrency: string;
   locale: string;
   weekStart: number; // 0 = Sunday, 1 = Monday
+  expoPushToken: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -189,6 +190,7 @@ const userPrefsSchema = new Schema<UserPrefsDoc>(
     baseCurrency: { type: String, default: "INR" },
     locale: { type: String, default: "en-IN" },
     weekStart: { type: Number, default: 1 },
+    expoPushToken: { type: String, default: null },
   },
   { timestamps: true }
 );
