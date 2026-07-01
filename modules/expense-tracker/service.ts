@@ -27,6 +27,39 @@ function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   return new mongoose.Types.ObjectId(id);
 }
 
+/**
+ * A user's display name is denormalized into group memberships, expense payers,
+ * and split entries (captured at write time). When the user renames themselves,
+ * those copies go stale — e.g. a group keeps showing the old "Michael" instead
+ * of the new "Mohit Patel". Call this after a profile-name change to rewrite
+ * every copy for that user. Assumes the DB connection is already open.
+ */
+export async function propagateUserName(userId: string, rawName: string) {
+  const name = rawName.trim();
+  if (!name) return;
+  await Promise.all([
+    Group.updateMany(
+      { "members.userId": userId },
+      { $set: { "members.$[m].name": name } },
+      { arrayFilters: [{ "m.userId": userId }] }
+    ),
+    Expense.updateMany(
+      { "paidBy.id": userId },
+      { $set: { "paidBy.name": name } }
+    ),
+    Expense.updateMany(
+      { "splitAmong.memberId": userId },
+      { $set: { "splitAmong.$[m].name": name } },
+      { arrayFilters: [{ "m.memberId": userId }] }
+    ),
+    Expense.updateMany(
+      { "splits.memberId": userId },
+      { $set: { "splits.$[m].name": name } },
+      { arrayFilters: [{ "m.memberId": userId }] }
+    ),
+  ]);
+}
+
 // Escape user input before using it inside a RegExp (prevents invalid/abusive patterns).
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -137,8 +170,15 @@ export async function createGroup(input: CreateGroupInput, auth: JWTPayload) {
     );
   }
 
+  // Use the creator's live name (the JWT copy can be stale after a rename).
+  const creator = await User.findById(auth.userId).lean();
   const members = [
-    { userId: auth.userId, name: auth.name, email: auth.email, isActive: true },
+    {
+      userId: auth.userId,
+      name: creator?.name ?? auth.name,
+      email: creator?.email ?? auth.email,
+      isActive: true,
+    },
     ...users
       .filter((u) => u._id.toString() !== auth.userId)
       .map((u) => ({

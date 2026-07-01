@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/auth";
 import { ApiError, handleRouteError } from "@/lib/apiError";
 import { User } from "@/models/User";
 import { Usage } from "@/models/Usage";
+import { propagateUserName } from "@/modules/expense-tracker/service";
 import {
   DEFAULT_MONTHLY_REQUEST_LIMITS,
   PROJECT_LABELS,
@@ -123,6 +124,10 @@ export async function PATCH(req: Request) {
       { new: true }
     );
     if (!user) throw new ApiError(404, "User not found");
+
+    // Keep denormalized copies (group memberships, expense payers, splits) in
+    // sync so old groups/expenses show the new name instead of a stale one.
+    await propagateUserName(auth.userId, user.name);
 
     return NextResponse.json({
       user: {

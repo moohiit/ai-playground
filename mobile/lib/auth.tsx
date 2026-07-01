@@ -42,6 +42,7 @@ type AuthContextType = {
   logout: () => Promise<void>;
   authFetch: (path: string, opts?: RequestInit) => Promise<Response>;
   applyAuth: (token: string, user: User) => Promise<void>;
+  updateUserName: (name: string) => void;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -140,6 +141,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [saveAuth]
   );
 
+  // Reflect a profile rename in the cached session immediately, so new
+  // expenses/groups created this session use the new name (the JWT still
+  // carries the old one until next login; /api/auth/me self-heals on restart).
+  const updateUserName = useCallback((name: string) => {
+    setUser((u) => (u ? { ...u, name } : u));
+  }, []);
+
   const logout = useCallback(async () => {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setToken(null);
@@ -157,7 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, register, logout, authFetch, applyAuth: saveAuth }}
+      value={{ user, token, loading, login, register, logout, authFetch, applyAuth: saveAuth, updateUserName }}
     >
       {children}
     </AuthContext.Provider>

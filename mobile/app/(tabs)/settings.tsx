@@ -26,7 +26,7 @@ type Profile = {
 };
 
 export default function SettingsScreen() {
-  const { authFetch, user, logout } = useAuth();
+  const { authFetch, user, logout, updateUserName } = useAuth();
   const router = useRouter();
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -122,7 +122,9 @@ export default function SettingsScreen() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to update name");
-      setProfile((p) => (p ? { ...p, name: data.user?.name ?? trimmed } : p));
+      const newName = data.user?.name ?? trimmed;
+      setProfile((p) => (p ? { ...p, name: newName } : p));
+      updateUserName(newName);
       Alert.alert("Saved", "Your name was updated.");
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Failed to update name");
@@ -450,7 +452,7 @@ export default function SettingsScreen() {
               onPress={() => Linking.openURL(WEB_APP_URL)}
               className="self-start rounded-lg border border-brand-500/40 bg-brand-500/10 px-4 py-2"
             >
-              <Text className="text-sm font-medium text-brand-300">
+              <Text className="text-sm font-semibold text-white">
                 Open web app ↗
               </Text>
             </Pressable>
