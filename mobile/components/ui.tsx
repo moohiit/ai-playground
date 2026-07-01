@@ -32,9 +32,12 @@ export function Input({
 }: TextInputProps & { className?: string }) {
   return (
     <TextInput
-      placeholderTextColor="#71717a"
       selectionColor="#6366f1"
       {...props}
+      // Placed AFTER {...props} so it overrides the dim per-screen values
+      // (#71717a / #52525b) that were nearly invisible on the dark background.
+      // zinc-400 reads clearly while staying softer than the typed text.
+      placeholderTextColor="#a1a1aa"
       className={className}
       style={[{ color: "#f4f4f5" }, style]}
     />
