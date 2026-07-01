@@ -220,6 +220,40 @@ export async function addMember(
   return group.toObject();
 }
 
+export async function addGuestMember(
+  groupId: string,
+  name: string,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("A name is required for a guest");
+
+  const group = await Group.findById(groupId);
+  if (!group) throw new Error("Group not found");
+  if (!group.members.some((m) => m.userId === auth.userId)) {
+    throw new Error("You are not a member of this group");
+  }
+  if (
+    group.members.some(
+      (m) => m.name.trim().toLowerCase() === trimmed.toLowerCase()
+    )
+  ) {
+    throw new Error("A member with that name is already in this group");
+  }
+
+  // Guests have no account: a synthetic userId keyed for splits/balances.
+  group.members.push({
+    userId: `guest:${randomBytes(9).toString("base64url")}`,
+    name: trimmed,
+    email: "",
+    isActive: true,
+    isGuest: true,
+  });
+  await group.save();
+  return group.toObject();
+}
+
 export async function removeMember(
   groupId: string,
   memberId: string,

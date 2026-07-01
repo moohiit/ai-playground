@@ -7,7 +7,6 @@ import {
   ScrollView,
   Share,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -25,7 +24,7 @@ import type {
   Settlement,
   SettlementRecord,
 } from "../../lib/types";
-import { AppBackground } from "../../components/ui";
+import { AppBackground, Input } from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
 import { API_BASE_URL } from "../../lib/api";
 
@@ -49,6 +48,8 @@ export default function GroupDetailScreen() {
   const [settling, setSettling] = useState(false);
   const [newMember, setNewMember] = useState("");
   const [addingMember, setAddingMember] = useState(false);
+  const [newGuest, setNewGuest] = useState("");
+  const [addingGuest, setAddingGuest] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
 
   async function shareSplit() {
@@ -59,7 +60,7 @@ export default function GroupDetailScreen() {
       setShareId(id);
     }
     if (!id) return Alert.alert("Couldn't create share link");
-    const url = `${API_BASE_URL}/projects/expense-tracker/share/${id}`;
+    const url = `${API_BASE_URL}/share/${id}`;
     await Share.share({ message: `Here's our bill split: ${url}` });
   }
 
@@ -194,6 +195,30 @@ export default function GroupDetailScreen() {
     }
   }
 
+  async function handleAddGuest() {
+    const name = newGuest.trim();
+    if (!name) return;
+    setAddingGuest(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/guests`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to add guest");
+      setNewGuest("");
+      fetchAll();
+    } catch (err) {
+      Alert.alert("Error", err instanceof Error ? err.message : "Failed");
+    } finally {
+      setAddingGuest(false);
+    }
+  }
+
   function handleDeleteGroup() {
     Alert.alert(
       "Delete group",
@@ -286,6 +311,11 @@ export default function GroupDetailScreen() {
                       className="flex-row items-center gap-2 rounded-lg border border-white/10 bg-zinc-950/50 px-3 py-2"
                     >
                       <Text className="text-sm text-zinc-200">{m.name}</Text>
+                      {m.isGuest && (
+                        <Text className="rounded-full border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[9px] uppercase text-zinc-400">
+                          guest
+                        </Text>
+                      )}
                       {bal && (
                         <Text
                           className={`text-xs font-medium ${
@@ -305,7 +335,7 @@ export default function GroupDetailScreen() {
               </View>
 
               <View className="mt-3 flex-row gap-2">
-                <TextInput
+                <Input
                   value={newMember}
                   onChangeText={setNewMember}
                   placeholder="Add member by email"
@@ -323,6 +353,27 @@ export default function GroupDetailScreen() {
                 >
                   <Text className="text-xs font-semibold text-brand-400">
                     {addingMember ? "…" : "Add"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View className="mt-2 flex-row gap-2">
+                <Input
+                  value={newGuest}
+                  onChangeText={setNewGuest}
+                  placeholder="Add a guest by name (no account)"
+                  placeholderTextColor="#71717a"
+                  className="flex-1 rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100"
+                />
+                <Pressable
+                  onPress={handleAddGuest}
+                  disabled={addingGuest || !newGuest.trim()}
+                  className={`items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 ${
+                    addingGuest || !newGuest.trim() ? "opacity-50" : ""
+                  }`}
+                >
+                  <Text className="text-xs font-semibold text-zinc-300">
+                    {addingGuest ? "…" : "Guest"}
                   </Text>
                 </Pressable>
               </View>

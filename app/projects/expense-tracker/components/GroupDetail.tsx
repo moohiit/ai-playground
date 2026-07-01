@@ -6,7 +6,13 @@ import { useAuth } from "../../../../lib/authContext";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
 
-type Member = { userId: string; email: string; name: string; isActive: boolean };
+type Member = {
+  userId: string;
+  email: string;
+  name: string;
+  isActive: boolean;
+  isGuest?: boolean;
+};
 type Group = { _id: string; name: string; description: string; members: Member[]; shareId?: string | null };
 type Balance = {
   memberId: string;
@@ -58,13 +64,15 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [newMember, setNewMember] = useState("");
   const [addingMember, setAddingMember] = useState(false);
+  const [newGuest, setNewGuest] = useState("");
+  const [addingGuest, setAddingGuest] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const shareUrl =
     typeof window !== "undefined" && shareId
-      ? `${window.location.origin}/projects/expense-tracker/share/${shareId}`
+      ? `${window.location.origin}/share/${shareId}`
       : "";
 
   async function toggleShare() {
@@ -145,6 +153,30 @@ export function GroupDetail({ groupId, onBack }: Props) {
     setNewMember("");
     setAddingMember(false);
     fetchAll();
+  }
+
+  async function handleAddGuest() {
+    const name = newGuest.trim();
+    if (!name) return;
+    setAddingGuest(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/guests`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Failed to add guest");
+      setNewGuest("");
+      fetchAll();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to add guest");
+    } finally {
+      setAddingGuest(false);
+    }
   }
 
   async function handleDeleteExpense(id: string) {
@@ -313,6 +345,10 @@ export function GroupDetail({ groupId, onBack }: Props) {
               setNewMember={setNewMember}
               onAdd={handleAddMember}
               adding={addingMember}
+              newGuest={newGuest}
+              setNewGuest={setNewGuest}
+              onAddGuest={handleAddGuest}
+              addingGuest={addingGuest}
             />
 
             {settlements.length > 0 && (
@@ -419,6 +455,10 @@ function MembersSection({
   setNewMember,
   onAdd,
   adding,
+  newGuest,
+  setNewGuest,
+  onAddGuest,
+  addingGuest,
 }: {
   members: Member[];
   balances: Balance[];
@@ -426,6 +466,10 @@ function MembersSection({
   setNewMember: (v: string) => void;
   onAdd: () => void;
   adding: boolean;
+  newGuest: string;
+  setNewGuest: (v: string) => void;
+  onAddGuest: () => void;
+  addingGuest: boolean;
 }) {
   return (
     <section className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5 backdrop-blur-sm">
@@ -452,6 +496,11 @@ function MembersSection({
                 {m.name.charAt(0).toUpperCase()}
               </span>
               <span className="text-sm text-zinc-200">{m.name}</span>
+              {m.isGuest && (
+                <span className="rounded-full border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-zinc-400">
+                  guest
+                </span>
+              )}
               {bal && (
                 <span
                   className={cn(
@@ -485,6 +534,23 @@ function MembersSection({
           className="rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5 text-xs font-semibold text-brand-500 transition-all hover:-translate-y-0.5 hover:bg-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
           {adding ? "Adding..." : "Add"}
+        </button>
+      </div>
+      <div className="mt-2 flex gap-2">
+        <input
+          type="text"
+          value={newGuest}
+          onChange={(e) => setNewGuest(e.target.value)}
+          placeholder="Add a guest by name (no account)"
+          className="flex-1 rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+          onKeyDown={(e) => e.key === "Enter" && onAddGuest()}
+        />
+        <button
+          onClick={onAddGuest}
+          disabled={addingGuest || !newGuest.trim()}
+          className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition-all hover:-translate-y-0.5 hover:bg-zinc-800/70 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+        >
+          {addingGuest ? "Adding..." : "Add guest"}
         </button>
       </div>
     </section>

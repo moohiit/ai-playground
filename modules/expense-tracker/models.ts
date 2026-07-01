@@ -5,6 +5,8 @@ export type MemberDoc = {
   name: string;
   email: string;
   isActive: boolean;
+  // Guest members have no account: a synthetic userId (`guest:...`) and no email.
+  isGuest?: boolean;
 };
 
 export type GroupDoc = {
@@ -23,8 +25,9 @@ const memberSchema = new Schema<MemberDoc>(
   {
     userId: { type: String, required: true },
     name: { type: String, required: true },
-    email: { type: String, required: true },
+    email: { type: String, default: "" },
     isActive: { type: Boolean, default: true },
+    isGuest: { type: Boolean, default: false },
   },
   { _id: false }
 );

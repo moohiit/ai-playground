@@ -78,6 +78,7 @@ export type Member = {
   name: string;
   email: string;
   isActive: boolean;
+  isGuest?: boolean;
 };
 
 export type Group = {
