@@ -522,7 +522,7 @@ export default function GroupDetailScreen() {
               onPress={shareSplit}
               className="mt-2 items-center rounded-xl border border-brand-500/30 bg-brand-500/10 py-3"
             >
-              <Text className="text-sm font-medium text-brand-300">
+              <Text className="text-sm font-medium text-white">
                 {shareId ? "🔗 Share split link" : "Share split (create link)"}
               </Text>
             </Pressable>
