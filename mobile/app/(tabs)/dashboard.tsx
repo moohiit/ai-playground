@@ -21,11 +21,28 @@ const fmt = (n: number) => `₹${n.toFixed(2)}`;
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
+// Top-of-dashboard scope switcher. "Active" (unsettled) is the default view;
+// "All time" is everything; "Settled" is what's already been settled.
+const VIEW_TABS = [
+  { id: "active", label: "Active" },
+  { id: "all", label: "All time" },
+  { id: "settled", label: "Settled" },
+] as const;
+type ViewId = (typeof VIEW_TABS)[number]["id"];
+const HERO_LABEL: Record<ViewId, string> = {
+  active: "Active spend",
+  all: "Total spend (all time)",
+  settled: "Settled spend",
+};
+
 export default function Dashboard() {
   const { user, authFetch, logout } = useAuth();
   const router = useRouter();
 
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [activeSummary, setActiveSummary] = useState<Summary | null>(null);
+  const [settledSummary, setSettledSummary] = useState<Summary | null>(null);
+  const [view, setView] = useState<ViewId>("active");
   const [personalActive, setPersonalActive] = useState<Summary | null>(null);
   const [groupActive, setGroupActive] = useState<Summary | null>(null);
   const [lastPersonalSettle, setLastPersonalSettle] = useState<string | null>(null);
@@ -108,13 +125,18 @@ export default function Dashboard() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const [allRes, pActiveRes, gActiveRes, histRes] = await Promise.all([
-        authFetch("/api/projects/expense-tracker/reports/summary?scope=all&settled=all"),
-        authFetch("/api/projects/expense-tracker/reports/summary?scope=personal&settled=false"),
-        authFetch("/api/projects/expense-tracker/reports/summary?scope=group&settled=false"),
-        authFetch("/api/projects/expense-tracker/personal/history"),
-      ]);
+      const [allRes, activeRes, settledRes, pActiveRes, gActiveRes, histRes] =
+        await Promise.all([
+          authFetch("/api/projects/expense-tracker/reports/summary?scope=all&settled=all"),
+          authFetch("/api/projects/expense-tracker/reports/summary?scope=all&settled=false"),
+          authFetch("/api/projects/expense-tracker/reports/summary?scope=all&settled=true"),
+          authFetch("/api/projects/expense-tracker/reports/summary?scope=personal&settled=false"),
+          authFetch("/api/projects/expense-tracker/reports/summary?scope=group&settled=false"),
+          authFetch("/api/projects/expense-tracker/personal/history"),
+        ]);
       setSummary((await allRes.json().catch(() => null)) as Summary);
+      setActiveSummary((await activeRes.json().catch(() => null)) as Summary);
+      setSettledSummary((await settledRes.json().catch(() => null)) as Summary);
       setPersonalActive((await pActiveRes.json().catch(() => null)) as Summary);
       setGroupActive((await gActiveRes.json().catch(() => null)) as Summary);
       const hist = await histRes.json().catch(() => ({}));
@@ -172,19 +194,25 @@ export default function Dashboard() {
   }, [fetchSummary]);
 
 
+  // The hero + stat tiles + breakdowns reflect the selected scope tab.
+  // Falls back to the all-time summary until the scoped fetch resolves.
+  const cur =
+    (view === "active" ? activeSummary : view === "settled" ? settledSummary : summary) ??
+    summary;
+
   // "This month" from the byMonth series.
   const now = new Date();
   const thisMonth =
-    summary?.byMonth?.find(
+    cur?.byMonth?.find(
       (m) => m.year === now.getFullYear() && m.month === now.getMonth() + 1
     )?.total ?? 0;
 
-  const topCats = summary?.byCategory?.slice(0, 5) ?? [];
+  const topCats = cur?.byCategory?.slice(0, 5) ?? [];
   const maxCat = topCats[0]?.total ?? 0;
-  const pvg = summary
+  const pvg = cur
     ? [
-        { label: "Personal", value: summary.personalTotal, color: "#34d399" },
-        { label: "Group", value: summary.groupTotal, color: "#818cf8" },
+        { label: "Personal", value: cur.personalTotal, color: "#34d399" },
+        { label: "Group", value: cur.groupTotal, color: "#818cf8" },
       ].filter((d) => d.value > 0)
     : [];
 
@@ -220,17 +248,41 @@ export default function Dashboard() {
           </View>
         ) : (
           <>
-            {/* Hero */}
+            {/* Scope switcher */}
             <Animated.View entering={FadeInDown.duration(400)}>
+              <View className="flex-row gap-1 rounded-xl border border-white/10 bg-zinc-900/50 p-1">
+                {VIEW_TABS.map((t) => (
+                  <Pressable
+                    key={t.id}
+                    onPress={() => setView(t.id)}
+                    className={`flex-1 rounded-lg py-2 ${view === t.id ? "bg-brand-600" : ""}`}
+                  >
+                    <Text
+                      className={`text-center text-[13px] font-semibold ${
+                        view === t.id ? "text-white" : "text-zinc-400"
+                      }`}
+                    >
+                      {t.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Animated.View>
+
+            {/* Hero */}
+            <Animated.View entering={FadeInDown.duration(400).delay(40)}>
               <GradientHero>
                 <Text className="text-[13px] uppercase tracking-wider text-zinc-300">
-                  Total Spend (all time)
+                  {HERO_LABEL[view]}
                 </Text>
                 <Text className="mt-1 text-4xl font-extrabold text-white">
-                  {fmt(summary.totalAmount)}
+                  {fmt(cur!.totalAmount)}
                 </Text>
                 <Text className="mt-0.5 text-xs text-zinc-300">
-                  {summary.totalCount} entries · {summary.daysCovered} days
+                  {cur!.totalCount} entries · {cur!.daysCovered} days
+                  {view === "settled" && lastPersonalSettle
+                    ? ` · last ${shortDate(lastPersonalSettle)}`
+                    : ""}
                 </Text>
               </GradientHero>
             </Animated.View>
@@ -258,7 +310,7 @@ export default function Dashboard() {
             <Animated.View entering={FadeInDown.duration(400).delay(80)}>
               <View className="rounded-2xl border border-brand-500/30 bg-brand-500/[0.07] p-3">
                 <View className="mb-2 flex-row items-center gap-1.5">
-                  <Text className="text-[11px] font-semibold uppercase tracking-wider text-brand-300">✨ AI quick add</Text>
+                  <Text className="text-[11px] font-semibold uppercase tracking-wider text-white">✨ AI quick add</Text>
                 </View>
                 <View className="flex-row items-center gap-2">
                   <Input
@@ -344,10 +396,10 @@ export default function Dashboard() {
               entering={FadeInDown.duration(400).delay(120)}
               style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}
             >
-              <Stat label="My share" value={fmt(summary.myShare)} />
+              <Stat label="My share" value={fmt(cur!.myShare)} />
               <Stat label="This month" value={fmt(thisMonth)} />
-              <Stat label="Paid by me" value={fmt(summary.paidByMe)} />
-              <Stat label="Avg / day" value={fmt(summary.averagePerDay)} />
+              <Stat label="Paid by me" value={fmt(cur!.paidByMe)} />
+              <Stat label="Avg / day" value={fmt(cur!.averagePerDay)} />
             </Animated.View>
 
             {/* Active vs Total breakdown */}
@@ -394,19 +446,19 @@ export default function Dashboard() {
               </View>
             </Panel>
 
-            {summary.largest && (
+            {cur!.largest && (
               <Panel title="Largest expense">
                 <View className="flex-row items-center justify-between">
                   <Text className="flex-1 font-medium text-zinc-100" numberOfLines={1}>
-                    {summary.largest.description}
+                    {cur!.largest.description}
                   </Text>
                   <Text className="font-semibold text-zinc-100">
-                    {fmt(summary.largest.amount)}
+                    {fmt(cur!.largest.amount)}
                   </Text>
                 </View>
                 <Text className="mt-0.5 text-xs text-zinc-500">
-                  {summary.largest.category} ·{" "}
-                  {new Date(summary.largest.date).toLocaleDateString()}
+                  {cur!.largest.category} ·{" "}
+                  {new Date(cur!.largest.date).toLocaleDateString()}
                 </Text>
               </Panel>
             )}
