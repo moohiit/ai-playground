@@ -36,8 +36,9 @@ export function Input({
       {...props}
       // Placed AFTER {...props} so it overrides the dim per-screen values
       // (#71717a / #52525b) that were nearly invisible on the dark background.
-      // zinc-400 reads clearly while staying softer than the typed text.
-      placeholderTextColor="#a1a1aa"
+      // zinc-200 is near-white so the hint is clearly visible; the typed text
+      // below is pure-ish white (#f4f4f5), a touch brighter still.
+      placeholderTextColor="#e4e4e7"
       className={className}
       style={[{ color: "#f4f4f5" }, style]}
     />
