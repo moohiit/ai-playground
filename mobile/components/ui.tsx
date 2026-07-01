@@ -1,8 +1,67 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  type TextInputProps,
+  View,
+} from "react-native";
+import {
+  KeyboardAwareScrollView,
+  type KeyboardAwareScrollViewProps,
+} from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 
 export const BRAND_GRADIENT = ["#6366f1", "#7c3aed", "#db2777"] as const;
+
+/**
+ * Text input with a FORCED light text color.
+ *
+ * NativeWind (v4) does not reliably apply `text-*` color classes to the typed
+ * text of a `<TextInput>` on Android — the text falls back to near-black and is
+ * invisible on our dark background. Setting `color` via the `style` prop always
+ * wins, so every input stays legible regardless of NativeWind's quirks. Callers
+ * keep passing `className` for layout/border; only the text color is pinned.
+ */
+export function Input({
+  className,
+  style,
+  ...props
+}: TextInputProps & { className?: string }) {
+  return (
+    <TextInput
+      placeholderTextColor="#71717a"
+      selectionColor="#6366f1"
+      {...props}
+      className={className}
+      style={[{ color: "#f4f4f5" }, style]}
+    />
+  );
+}
+
+/**
+ * Screen wrapper that keeps the focused input above the keyboard on BOTH
+ * platforms (auto-scrolls it into view). Drop-in replacement for a
+ * `KeyboardAvoidingView` + `ScrollView` pairing. Requires `<KeyboardProvider>`
+ * at the app root (see app/_layout.tsx).
+ */
+export function KeyboardAwareScreen({
+  children,
+  ...props
+}: KeyboardAwareScrollViewProps) {
+  return (
+    <KeyboardAwareScrollView
+      bottomOffset={24}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      {...props}
+    >
+      {children}
+    </KeyboardAwareScrollView>
+  );
+}
 
 /**
  * Ambient, multi-color glow background (soft SVG radial blobs over near-black).

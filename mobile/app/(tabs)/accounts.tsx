@@ -1,19 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
 import {
+ useCallback, useEffect, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Account, AccountKind } from "../../lib/types";
-import { AppBackground, GradientButton } from "../../components/ui";
+import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney } from "../../lib/currency";
 
 const KINDS: { id: AccountKind; label: string; icon: string }[] = [
@@ -193,11 +195,11 @@ function AddAccountModal({ visible, onClose, onSaved }: { visible: boolean; onCl
   return (
     <Sheet visible={visible} title="Add account" onClose={onClose}>
       <Field label="Name">
-        <TextInput value={name} onChangeText={setName} placeholder="e.g. HDFC Savings" placeholderTextColor="#71717a"
+        <Input value={name} onChangeText={setName} placeholder="e.g. HDFC Savings" placeholderTextColor="#71717a"
           className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
       </Field>
       <Field label="Opening balance">
-        <TextInput value={opening} onChangeText={setOpening} keyboardType="numbers-and-punctuation" placeholderTextColor="#71717a"
+        <Input value={opening} onChangeText={setOpening} keyboardType="numbers-and-punctuation" placeholderTextColor="#71717a"
           className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
       </Field>
       <Field label="Type">
@@ -261,7 +263,7 @@ function TransferModal({ visible, accounts, base, onClose, onSaved }: {
         <AccountPicker accounts={accounts} value={to} onChange={setTo} base={base} />
       </Field>
       <Field label="Amount">
-        <TextInput value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" placeholderTextColor="#71717a"
+        <Input value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" placeholderTextColor="#71717a"
           className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
       </Field>
       <GradientButton label="Transfer" onPress={submit} loading={saving} />
@@ -288,6 +290,7 @@ function AccountPicker({ accounts, value, onChange, base }: {
 function Sheet({ visible, title, onClose, children }: { visible: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <Pressable className="flex-1 justify-end bg-black/60" onPress={onClose}>
         <Pressable className="rounded-t-3xl border-t border-white/10 bg-[#0a0b14] p-5" onPress={(e) => e.stopPropagation()}>
           <View className="mb-4 flex-row items-center justify-between">
@@ -297,6 +300,7 @@ function Sheet({ visible, title, onClose, children }: { visible: boolean; title:
           <View className="gap-3">{children}</View>
         </Pressable>
       </Pressable>
+    </KeyboardAvoidingView>
     </Modal>
   );
 }

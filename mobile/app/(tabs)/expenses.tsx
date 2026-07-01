@@ -7,7 +7,6 @@ import {
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -20,7 +19,7 @@ import {
   type ExpenseListResponse,
   type Summary,
 } from "../../lib/types";
-import { AppBackground } from "../../components/ui";
+import { AppBackground, Input } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
 import { exportExpensesCsv } from "../../lib/csv";
 import { formatMoney, currencySymbol } from "../../lib/currency";
@@ -299,7 +298,7 @@ export default function ExpensesScreen() {
               </View>
 
               <View className="flex-row items-center gap-2 rounded-lg border border-white/10 bg-zinc-900/40 px-3">
-                <TextInput
+                <Input
                   value={search}
                   onChangeText={setSearch}
                   placeholder="Search description, items, category…"

@@ -1,19 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
 import {
+ useCallback, useEffect, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { CATEGORIES } from "../../lib/types";
-import { AppBackground, GradientButton } from "../../components/ui";
+import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney } from "../../lib/currency";
 import { categoryColor } from "../../lib/colors";
 
@@ -231,6 +233,7 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <Pressable className="flex-1 justify-end bg-black/60" onPress={onClose}>
         <Pressable className="rounded-t-3xl border-t border-white/10 bg-[#0a0b14] p-5" onPress={(e) => e.stopPropagation()}>
           <View className="mb-4 flex-row items-center justify-between">
@@ -274,7 +277,7 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
               </ScrollView>
             )}
 
-            <TextInput
+            <Input
               value={amount}
               onChangeText={setAmount}
               placeholder="Monthly limit"
@@ -287,6 +290,7 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
           </View>
         </Pressable>
       </Pressable>
+    </KeyboardAvoidingView>
     </Modal>
   );
 }

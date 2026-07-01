@@ -1,17 +1,14 @@
 import { useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { AuthApiError, useAuth } from "../lib/auth";
-import { AppBackground, GradientButton } from "../components/ui";
+import {
+  AppBackground,
+  GradientButton,
+  Input,
+  KeyboardAwareScreen,
+} from "../components/ui";
 import { apiUrl } from "../lib/api";
 
 type Mode = "login" | "register";
@@ -115,14 +112,9 @@ export default function LoginScreen() {
     <View className="flex-1">
       <AppBackground />
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScreen
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
       >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
-          keyboardShouldPersistTaps="handled"
-        >
           <Animated.View entering={FadeInDown.duration(500)}>
             <View className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.05] p-6">
             {prompt ? (
@@ -143,7 +135,7 @@ export default function LoginScreen() {
                 </View>
 
                 <View className="gap-3">
-                  <TextInput
+                  <Input
                     value={otp}
                     onChangeText={setOtp}
                     placeholder="6-digit code"
@@ -227,7 +219,7 @@ export default function LoginScreen() {
 
                 <View className="gap-3">
                   {mode === "register" && (
-                    <TextInput
+                    <Input
                       value={name}
                       onChangeText={setName}
                       placeholder="Full name"
@@ -235,7 +227,7 @@ export default function LoginScreen() {
                       className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
                     />
                   )}
-                  <TextInput
+                  <Input
                     value={email}
                     onChangeText={setEmail}
                     placeholder="Email"
@@ -244,7 +236,7 @@ export default function LoginScreen() {
                     keyboardType="email-address"
                     className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
                   />
-                  <TextInput
+                  <Input
                     value={password}
                     onChangeText={setPassword}
                     placeholder="Password"
@@ -282,8 +274,7 @@ export default function LoginScreen() {
             )}
             </View>
           </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScreen>
     </View>
   );
 }

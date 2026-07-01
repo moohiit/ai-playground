@@ -5,13 +5,12 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import { AppBackground } from "../../components/ui";
+import { AppBackground, Input } from "../../components/ui";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -110,7 +109,7 @@ export default function CoachScreen() {
         </ScrollView>
 
         <View className="flex-row items-center gap-2 border-t border-white/10 p-3">
-          <TextInput
+          <Input
             value={input}
             onChangeText={setInput}
             onSubmitEditing={() => send(input)}

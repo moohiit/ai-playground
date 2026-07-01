@@ -5,7 +5,6 @@ import {
   Pressable,
   RefreshControl,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,7 +12,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Group } from "../../lib/types";
-import { AppBackground, GradientButton } from "../../components/ui";
+import { AppBackground, GradientButton, Input } from "../../components/ui";
 
 export default function GroupsTab() {
   const { authFetch } = useAuth();
@@ -110,14 +109,14 @@ export default function GroupsTab() {
         ListHeaderComponent={
           showForm ? (
             <View className="mb-3 gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <TextInput
+              <Input
                 value={name}
                 onChangeText={setName}
                 placeholder="Group name (e.g. Room B4)"
                 placeholderTextColor="#71717a"
                 className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
               />
-              <TextInput
+              <Input
                 value={emails}
                 onChangeText={setEmails}
                 placeholder="Member emails (comma separated)"

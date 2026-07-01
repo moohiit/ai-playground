@@ -1,18 +1,20 @@
-import { useCallback, useState } from "react";
 import {
+ useCallback, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import { AppBackground, GradientButton } from "../../components/ui";
+import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney } from "../../lib/currency";
 
 type WarrantyEntry = {
@@ -408,7 +410,7 @@ function LabeledInput({
       <Text className="text-xs uppercase tracking-wider text-zinc-500">
         {label}
       </Text>
-      <TextInput
+      <Input
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}

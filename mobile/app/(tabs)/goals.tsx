@@ -1,19 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
 import {
+ useCallback, useEffect, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Account, Goal } from "../../lib/types";
-import { AppBackground, GradientButton } from "../../components/ui";
+import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney } from "../../lib/currency";
 
 export default function GoalsScreen() {
@@ -160,6 +162,7 @@ function ContributeSheet({ goal, base, onClose, onSaved }: {
 
   return (
     <Modal visible={!!goal} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <Pressable className="flex-1 justify-end bg-black/60" onPress={onClose}>
         <Pressable className="rounded-t-3xl border-t border-white/10 bg-[#0a0b14] p-5" onPress={(e) => e.stopPropagation()}>
           <View className="mb-1 flex-row items-center justify-between">
@@ -170,12 +173,13 @@ function ContributeSheet({ goal, base, onClose, onSaved }: {
             {goal ? `${formatMoney(goal.saved, base)} of ${formatMoney(goal.target, base)} saved` : ""} · use a minus sign to withdraw
           </Text>
           <View className="gap-3">
-            <TextInput value={amount} onChangeText={setAmount} placeholder="Amount" keyboardType="numbers-and-punctuation" placeholderTextColor="#71717a" autoFocus
+            <Input value={amount} onChangeText={setAmount} placeholder="Amount" keyboardType="numbers-and-punctuation" placeholderTextColor="#71717a" autoFocus
               className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
             <GradientButton label="Update goal" onPress={submit} loading={busy} />
           </View>
         </Pressable>
       </Pressable>
+    </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -221,6 +225,7 @@ function AddGoalSheet({ visible, accounts, onClose, onSaved }: {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <Pressable className="flex-1 justify-end bg-black/60" onPress={onClose}>
         <Pressable className="rounded-t-3xl border-t border-white/10 bg-[#0a0b14] p-5" onPress={(e) => e.stopPropagation()}>
           <View className="mb-4 flex-row items-center justify-between">
@@ -228,9 +233,9 @@ function AddGoalSheet({ visible, accounts, onClose, onSaved }: {
             <Pressable onPress={onClose} hitSlop={8}><Text className="text-sm text-zinc-500">Close</Text></Pressable>
           </View>
           <View className="gap-3">
-            <TextInput value={name} onChangeText={setName} placeholder="Goal name (e.g. Emergency fund)" placeholderTextColor="#71717a"
+            <Input value={name} onChangeText={setName} placeholder="Goal name (e.g. Emergency fund)" placeholderTextColor="#71717a"
               className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
-            <TextInput value={target} onChangeText={setTarget} placeholder="Target amount" keyboardType="decimal-pad" placeholderTextColor="#71717a"
+            <Input value={target} onChangeText={setTarget} placeholder="Target amount" keyboardType="decimal-pad" placeholderTextColor="#71717a"
               className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
             <View className="gap-1.5">
               <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Track via account (optional)</Text>
@@ -246,13 +251,14 @@ function AddGoalSheet({ visible, accounts, onClose, onSaved }: {
               </ScrollView>
             </View>
             {!linkedAccountId && (
-              <TextInput value={saved} onChangeText={setSaved} placeholder="Already saved (optional)" keyboardType="decimal-pad" placeholderTextColor="#71717a"
+              <Input value={saved} onChangeText={setSaved} placeholder="Already saved (optional)" keyboardType="decimal-pad" placeholderTextColor="#71717a"
                 className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
             )}
             <GradientButton label="Add goal" onPress={submit} loading={busy} />
           </View>
         </Pressable>
       </Pressable>
+    </KeyboardAvoidingView>
     </Modal>
   );
 }

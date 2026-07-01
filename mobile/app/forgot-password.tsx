@@ -1,18 +1,15 @@
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { useAuth } from "../lib/auth";
 import { apiUrl } from "../lib/api";
-import { AppBackground, GradientButton } from "../components/ui";
+import {
+  AppBackground,
+  GradientButton,
+  Input,
+  KeyboardAwareScreen,
+} from "../components/ui";
 
 type Stage = "email" | "code";
 
@@ -84,14 +81,9 @@ export default function ForgotPasswordScreen() {
   return (
     <View className="flex-1">
       <AppBackground />
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScreen
+        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
       >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
-          keyboardShouldPersistTaps="handled"
-        >
           <Animated.View entering={FadeInDown.duration(500)}>
             <View className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.05] p-6">
               <View className="mb-6 items-center">
@@ -111,7 +103,7 @@ export default function ForgotPasswordScreen() {
               <View className="gap-3">
                 {stage === "email" ? (
                   <>
-                    <TextInput
+                    <Input
                       value={email}
                       onChangeText={setEmail}
                       placeholder="Email"
@@ -134,7 +126,7 @@ export default function ForgotPasswordScreen() {
                         {info}
                       </Text>
                     )}
-                    <TextInput
+                    <Input
                       value={otp}
                       onChangeText={setOtp}
                       placeholder="6-digit code"
@@ -143,7 +135,7 @@ export default function ForgotPasswordScreen() {
                       maxLength={6}
                       className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-center text-lg tracking-[8px] text-zinc-100"
                     />
-                    <TextInput
+                    <Input
                       value={newPassword}
                       onChangeText={setNewPassword}
                       placeholder="New password"
@@ -174,8 +166,7 @@ export default function ForgotPasswordScreen() {
               </View>
             </View>
           </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScreen>
     </View>
   );
 }

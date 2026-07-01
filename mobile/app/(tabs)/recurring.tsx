@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
 import {
+ useCallback, useEffect, useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   Modal,
   Pressable,
@@ -7,7 +10,6 @@ import {
   ScrollView,
   Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -21,7 +23,7 @@ import {
   type RecurringRule,
 } from "../../lib/types";
 import { SUPPORTED_CURRENCIES, formatMoney } from "../../lib/currency";
-import { AppBackground, GradientButton } from "../../components/ui";
+import { AppBackground, GradientButton, Input } from "../../components/ui";
 
 const fmtDate = (s: string) =>
   new Date(s).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -203,6 +205,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <Pressable className="flex-1 justify-end bg-black/60" onPress={onClose}>
         <Pressable className="rounded-t-3xl border-t border-white/10 bg-[#0a0b14] p-5" onPress={(e) => e.stopPropagation()}>
           <View className="mb-4 flex-row items-center justify-between">
@@ -220,7 +223,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
 
             <View className="gap-1.5">
               <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Amount</Text>
-              <TextInput value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" placeholderTextColor="#71717a"
+              <Input value={amount} onChangeText={setAmount} placeholder="0.00" keyboardType="decimal-pad" placeholderTextColor="#71717a"
                 className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-lg text-zinc-100" />
             </View>
 
@@ -237,7 +240,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
 
             <View className="gap-1.5">
               <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Description</Text>
-              <TextInput value={description} onChangeText={setDescription} placeholder="e.g. Netflix, Rent" placeholderTextColor="#71717a"
+              <Input value={description} onChangeText={setDescription} placeholder="e.g. Netflix, Rent" placeholderTextColor="#71717a"
                 className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
             </View>
 
@@ -290,6 +293,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
           </ScrollView>
         </Pressable>
       </Pressable>
+    </KeyboardAvoidingView>
     </Modal>
   );
 }

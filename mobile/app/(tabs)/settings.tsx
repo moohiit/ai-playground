@@ -7,14 +7,13 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../lib/auth";
-import { AppBackground } from "../../components/ui";
+import { AppBackground, Input } from "../../components/ui";
 import { SUPPORTED_CURRENCIES, currencySymbol } from "../../lib/currency";
 const WEB_APP_URL = process.env.WEB_APP_URL || `https://aiplayground.mohitpatel.org/projects/expense-tracker`;
 
@@ -312,7 +311,7 @@ export default function SettingsScreen() {
               Display name
             </Text>
             <View className="flex-row gap-2">
-              <TextInput
+              <Input
                 value={name}
                 onChangeText={setName}
                 placeholder="Your name"
@@ -406,7 +405,7 @@ export default function SettingsScreen() {
             description="Enter your current password and a new one (min 6 characters)."
           >
             <View className="gap-2">
-              <TextInput
+              <Input
                 value={currentPw}
                 onChangeText={setCurrentPw}
                 placeholder="Current password"
@@ -414,7 +413,7 @@ export default function SettingsScreen() {
                 secureTextEntry
                 className="rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100"
               />
-              <TextInput
+              <Input
                 value={newPw}
                 onChangeText={setNewPw}
                 placeholder="New password"

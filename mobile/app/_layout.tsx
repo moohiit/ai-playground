@@ -2,6 +2,7 @@ import "../global.css";
 import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { AuthProvider, useAuth } from "../lib/auth";
 import { setupNotificationHandler, registerPushToken } from "../lib/push";
 
@@ -20,16 +21,18 @@ function PushSetup() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <PushSetup />
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: "#05060a" },
-          animation: "fade",
-        }}
-      />
-    </AuthProvider>
+    <KeyboardProvider>
+      <AuthProvider>
+        <PushSetup />
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: "#05060a" },
+            animation: "fade",
+          }}
+        />
+      </AuthProvider>
+    </KeyboardProvider>
   );
 }

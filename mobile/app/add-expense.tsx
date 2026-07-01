@@ -2,12 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -24,7 +21,12 @@ import {
   type Group,
 } from "../lib/types";
 import { SUPPORTED_CURRENCIES } from "../lib/currency";
-import { AppBackground, GradientButton } from "../components/ui";
+import {
+  AppBackground,
+  GradientButton,
+  Input,
+  KeyboardAwareScreen,
+} from "../components/ui";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -286,14 +288,9 @@ export default function AddExpenseScreen() {
         <View style={{ width: 52 }} />
       </View>
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScreen
+        contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}
       >
-        <ScrollView
-          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}
-          keyboardShouldPersistTaps="handled"
-        >
           <View className="flex-row gap-2">
             {(
               [
@@ -448,7 +445,7 @@ export default function AddExpenseScreen() {
 
           {type === "personal" && (
             <Field label="Your name (optional)">
-              <TextInput
+              <Input
                 value={paidByName}
                 onChangeText={setPaidByName}
                 placeholder={user?.name ?? "e.g. Mohit"}
@@ -461,7 +458,7 @@ export default function AddExpenseScreen() {
           <View className="flex-row gap-3">
             <View className="flex-1">
               <Field label="Amount">
-                <TextInput
+                <Input
                   value={amount}
                   onChangeText={setAmount}
                   placeholder="₹ 0.00"
@@ -532,7 +529,7 @@ export default function AddExpenseScreen() {
           )}
 
           <Field label="Description">
-            <TextInput
+            <Input
               value={description}
               onChangeText={setDescription}
               placeholder="e.g. Groceries"
@@ -571,8 +568,7 @@ export default function AddExpenseScreen() {
               loading={saving}
             />
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScreen>
     </SafeAreaView>
   );
 }

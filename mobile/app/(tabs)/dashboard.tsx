@@ -6,7 +6,6 @@ import {
   RefreshControl,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -15,7 +14,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Summary } from "../../lib/types";
 import { Donut } from "../../components/Donut";
-import { AppBackground, GradientButton, GradientHero } from "../../components/ui";
+import { AppBackground, GradientButton, GradientHero, Input } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
 
 const fmt = (n: number) => `₹${n.toFixed(2)}`;
@@ -262,7 +261,7 @@ export default function Dashboard() {
                   <Text className="text-[11px] font-semibold uppercase tracking-wider text-brand-300">✨ AI quick add</Text>
                 </View>
                 <View className="flex-row items-center gap-2">
-                  <TextInput
+                  <Input
                     value={nlText}
                     onChangeText={setNlText}
                     onSubmitEditing={handleNlParse}
