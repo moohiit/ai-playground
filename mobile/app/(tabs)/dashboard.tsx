@@ -71,15 +71,21 @@ export default function Dashboard() {
 
   const fetchForecast = useCallback(() => {
     authFetch("/api/projects/expense-tracker/forecast")
-      .then((r) => r.json())
-      .then(setForecast)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.projectedTotal === "number") setForecast(d);
+      })
       .catch(() => {});
   }, [authFetch]);
 
   const fetchInsights = useCallback(() => {
     authFetch("/api/projects/expense-tracker/insights")
-      .then((r) => r.json())
-      .then(setInsights)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        // Never store an error payload — the render assumes these arrays exist.
+        if (d && Array.isArray(d.subscriptions) && Array.isArray(d.anomalies))
+          setInsights(d);
+      })
       .catch(() => {});
   }, [authFetch]);
 
@@ -134,11 +140,26 @@ export default function Dashboard() {
           authFetch("/api/projects/expense-tracker/reports/summary?scope=group&settled=false"),
           authFetch("/api/projects/expense-tracker/personal/history"),
         ]);
-      setSummary((await allRes.json().catch(() => null)) as Summary);
-      setActiveSummary((await activeRes.json().catch(() => null)) as Summary);
-      setSettledSummary((await settledRes.json().catch(() => null)) as Summary);
-      setPersonalActive((await pActiveRes.json().catch(() => null)) as Summary);
-      setGroupActive((await gActiveRes.json().catch(() => null)) as Summary);
+      // Only store payloads that look like a Summary — a 401/500 body parsed
+      // here used to crash the render (`undefined.toFixed`). On failure we
+      // keep the last good state instead.
+      const asSummary = async (r: Response): Promise<Summary | null> => {
+        if (!r.ok) return null;
+        const d = await r.json().catch(() => null);
+        return d && typeof d.totalAmount === "number" ? (d as Summary) : null;
+      };
+      const [all, act, set, pAct, gAct] = await Promise.all([
+        asSummary(allRes),
+        asSummary(activeRes),
+        asSummary(settledRes),
+        asSummary(pActiveRes),
+        asSummary(gActiveRes),
+      ]);
+      if (all) setSummary(all);
+      if (act) setActiveSummary(act);
+      if (set) setSettledSummary(set);
+      if (pAct) setPersonalActive(pAct);
+      if (gAct) setGroupActive(gAct);
       const hist = await histRes.json().catch(() => ({}));
       setLastPersonalSettle(hist.history?.[0]?.settledAt ?? null);
     } catch {

@@ -56,7 +56,9 @@ export function GroupReportView({
       const res = await authFetch(
         `/api/projects/expense-tracker/reports/summary?${params}`
       );
-      setSummary((await res.json()) as Summary);
+      if (!res.ok) return; // keep last good state (401/500 body is not a Summary)
+      const data = (await res.json()) as Summary;
+      if (typeof data?.totalAmount === "number") setSummary(data);
     } catch {
       // keep last good state
     }

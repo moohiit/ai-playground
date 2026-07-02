@@ -155,10 +155,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const authFetch = useCallback(
-    (path: string, opts: RequestInit = {}) => {
+    async (path: string, opts: RequestInit = {}) => {
       const headers = new Headers(opts.headers);
       if (token) headers.set("Authorization", `Bearer ${token}`);
-      return fetch(apiUrl(path), { ...opts, headers });
+      const res = await fetch(apiUrl(path), { ...opts, headers });
+      // Session expired or revoked. Drop credentials so the auth gates
+      // redirect to login — otherwise every screen keeps silently rendering
+      // 401 error JSON as if it were data (blank lists, or crashes where the
+      // shape is assumed).
+      if (res.status === 401 && token) {
+        await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+        setToken(null);
+        setUser(null);
+      }
+      return res;
     },
     [token]
   );
