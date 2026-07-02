@@ -1656,17 +1656,29 @@ export async function runDueRecurring(
       now,
       rule.endDate
     );
+    if (dates.length === 0) continue;
+    // Atomically CLAIM the batch before creating expenses: advance nextRunAt
+    // only if it still holds the value we read. Concurrent invocations (daily
+    // cron overlapping a lazy-on-open run, or two devices) then can't both
+    // post the same occurrences — the loser's compare-and-swap misses and it
+    // skips. Claiming first also means a crash mid-run can at worst miss a
+    // posting (recoverable) instead of double-charging (silent corruption).
+    const claim = await RecurringRule.findOneAndUpdate(
+      { _id: rule._id, active: true, nextRunAt: rule.nextRunAt },
+      {
+        $set: {
+          nextRunAt,
+          lastRunAt: dates[dates.length - 1],
+          ...(rule.endDate && nextRunAt.getTime() > rule.endDate.getTime()
+            ? { active: false }
+            : {}),
+        },
+      }
+    );
+    if (!claim) continue;
     for (const d of dates) {
       await createExpenseFromRule(rule, d);
       created += 1;
-    }
-    if (dates.length > 0) {
-      rule.lastRunAt = dates[dates.length - 1];
-      rule.nextRunAt = nextRunAt;
-      if (rule.endDate && nextRunAt.getTime() > rule.endDate.getTime()) {
-        rule.active = false;
-      }
-      await rule.save();
     }
   }
   return { created, rules: rules.length };
@@ -1703,14 +1715,25 @@ export async function postRecurring(id: string, auth: JWTPayload) {
   if (!rule.active) throw new Error("This recurring rule is paused");
 
   const date = rule.nextRunAt;
+  const next = advance(date, rule.cadence);
+  // Claim the occurrence atomically (same compare-and-swap as runDueRecurring)
+  // so a double-tap on "Post now" or a concurrent cron run can't post it twice.
+  const claim = await RecurringRule.findOneAndUpdate(
+    { _id: rule._id, userId: auth.userId, active: true, nextRunAt: date },
+    {
+      $set: {
+        lastRunAt: date,
+        nextRunAt: next,
+        ...(rule.endDate && next.getTime() > rule.endDate.getTime()
+          ? { active: false }
+          : {}),
+      },
+    },
+    { new: true }
+  );
+  if (!claim) throw new Error("This occurrence was already posted");
   await createExpenseFromRule(rule, date);
-  rule.lastRunAt = date;
-  rule.nextRunAt = advance(date, rule.cadence);
-  if (rule.endDate && rule.nextRunAt.getTime() > rule.endDate.getTime()) {
-    rule.active = false;
-  }
-  await rule.save();
-  return rule.toObject();
+  return claim.toObject();
 }
 
 export async function updateRecurring(
