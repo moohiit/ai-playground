@@ -50,18 +50,44 @@ export function GoalsTab() {
       .catch(() => {});
   }, [authFetch]);
 
+  const [busyId, setBusyId] = useState<string | null>(null);
+
   async function contribute(g: Goal, amount: number) {
-    await authFetch(`/api/projects/expense-tracker/goals/${g._id}/contribute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount }),
-    });
-    load();
+    if (busyId) return;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("Enter a positive amount");
+      return;
+    }
+    setBusyId(g._id);
+    try {
+      const res = await authFetch(`/api/projects/expense-tracker/goals/${g._id}/contribute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Failed to add contribution");
+      }
+      await load();
+    } catch {
+      alert("Network error — contribution not saved.");
+    } finally {
+      setBusyId(null);
+    }
   }
   async function remove(id: string) {
+    if (busyId) return;
     if (!confirm("Delete this goal?")) return;
-    await authFetch(`/api/projects/expense-tracker/goals/${id}`, { method: "DELETE" });
-    load();
+    setBusyId(id);
+    try {
+      await authFetch(`/api/projects/expense-tracker/goals/${id}`, { method: "DELETE" });
+      await load();
+    } catch {
+      alert("Network error — goal not deleted.");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (

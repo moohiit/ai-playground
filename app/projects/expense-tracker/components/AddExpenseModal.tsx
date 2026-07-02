@@ -195,6 +195,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     setError(null);
 

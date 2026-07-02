@@ -79,6 +79,7 @@ export default function WarrantyScreen() {
   }, [load]);
 
   async function handleAdd() {
+    if (saving) return;
     if (!form.label.trim()) return;
     setSaving(true);
     try {
@@ -104,6 +105,18 @@ export default function WarrantyScreen() {
   }
 
   async function handleImport(expenseId: string, desc: string) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await doImport(expenseId, desc);
+    } catch {
+      Alert.alert("Error", "Network error — nothing was imported.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function doImport(expenseId: string, desc: string) {
     const res = await authFetch(
       "/api/projects/expense-tracker/warranty/from-expense",
       {

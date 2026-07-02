@@ -51,17 +51,26 @@ export default function GroupDetailScreen() {
   const [newGuest, setNewGuest] = useState("");
   const [addingGuest, setAddingGuest] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   async function shareSplit() {
-    let id = shareId;
-    if (!id) {
-      const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "POST" });
-      id = (await res.json().catch(() => ({})))?.shareId ?? null;
-      setShareId(id);
+    if (sharing) return;
+    setSharing(true);
+    try {
+      let id = shareId;
+      if (!id) {
+        const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "POST" });
+        id = res.ok ? ((await res.json().catch(() => ({})))?.shareId ?? null) : null;
+        if (id) setShareId(id);
+      }
+      if (!id) return Alert.alert("Couldn't create share link");
+      const url = `${API_BASE_URL}/share/${id}`;
+      await Share.share({ message: `Here's our bill split: ${url}` });
+    } catch {
+      Alert.alert("Error", "Couldn't share the link — try again.");
+    } finally {
+      setSharing(false);
     }
-    if (!id) return Alert.alert("Couldn't create share link");
-    const url = `${API_BASE_URL}/share/${id}`;
-    await Share.share({ message: `Here's our bill split: ${url}` });
   }
 
   function stopSharing() {

@@ -51,6 +51,7 @@ export default function GroupsTab() {
   }, [fetchGroups]);
 
   async function handleCreate() {
+    if (creating) return;
     setError(null);
     const memberEmails = emails
       .split(/[,\s]+/)

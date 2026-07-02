@@ -75,18 +75,36 @@ export function GroupDetail({ groupId, onBack }: Props) {
       ? `${window.location.origin}/share/${shareId}`
       : "";
 
+  const [shareBusy, setShareBusy] = useState(false);
+
   async function toggleShare() {
-    if (shareId) {
-      await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "DELETE" });
-      setShareId(null);
-      setShowShare(false);
-      return;
-    }
-    const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    if (data.shareId) {
-      setShareId(data.shareId);
-      setShowShare(true);
+    if (shareBusy) return;
+    setShareBusy(true);
+    try {
+      if (shareId) {
+        const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "DELETE" });
+        // Only report sharing as off if the server actually revoked it —
+        // otherwise the UI would say "off" while the public link still works.
+        if (!res.ok) {
+          alert("Couldn't turn off sharing — try again.");
+          return;
+        }
+        setShareId(null);
+        setShowShare(false);
+        return;
+      }
+      const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (data.shareId) {
+        setShareId(data.shareId);
+        setShowShare(true);
+      } else {
+        alert("Couldn't create the share link — try again.");
+      }
+    } catch {
+      alert("Network error — sharing was not changed.");
+    } finally {
+      setShareBusy(false);
     }
   }
 
@@ -156,6 +174,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   }
 
   async function handleAddGuest() {
+    if (addingGuest) return;
     const name = newGuest.trim();
     if (!name) return;
     setAddingGuest(true);

@@ -34,6 +34,9 @@ export default function RecurringScreen() {
   const [rules, setRules] = useState<RecurringRule[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  // Rule id with an in-flight post/toggle — blocks double-taps that would
+  // post the same occurrence twice.
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -54,16 +57,40 @@ export default function RecurringScreen() {
   }, [load]);
 
   async function post(id: string) {
-    await authFetch(`/api/projects/expense-tracker/recurring/${id}/post`, { method: "POST" });
-    load();
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      const res = await authFetch(`/api/projects/expense-tracker/recurring/${id}/post`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Error", data.error ?? "Failed to post");
+      }
+      await load();
+    } catch {
+      Alert.alert("Error", "Network error — the bill was not posted.");
+    } finally {
+      setBusyId(null);
+    }
   }
   async function toggle(r: RecurringRule) {
-    await authFetch(`/api/projects/expense-tracker/recurring/${r._id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active: !r.active }),
-    });
-    load();
+    if (busyId) return;
+    setBusyId(r._id);
+    try {
+      const res = await authFetch(`/api/projects/expense-tracker/recurring/${r._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: !r.active }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Error", data.error ?? "Failed to update rule");
+      }
+      await load();
+    } catch {
+      Alert.alert("Error", "Network error — rule not updated.");
+    } finally {
+      setBusyId(null);
+    }
   }
   function confirmDelete(r: RecurringRule) {
     Alert.alert("Delete rule", "Already-posted transactions stay.", [
@@ -125,9 +152,13 @@ export default function RecurringScreen() {
               </View>
               <View className="mt-3 flex-row justify-end gap-4 border-t border-white/5 pt-2">
                 {r.due && r.active && !r.autoPost && (
-                  <Pressable onPress={() => post(r._id)} hitSlop={6}><Text className="text-xs font-semibold text-amber-300">Post now</Text></Pressable>
+                  <Pressable onPress={() => post(r._id)} disabled={busyId !== null} hitSlop={6}>
+                    <Text className={`text-xs font-semibold ${busyId === r._id ? "text-zinc-500" : "text-amber-300"}`}>
+                      {busyId === r._id ? "Posting…" : "Post now"}
+                    </Text>
+                  </Pressable>
                 )}
-                <Pressable onPress={() => toggle(r)} hitSlop={6}><Text className="text-xs font-medium text-zinc-400">{r.active ? "Pause" : "Resume"}</Text></Pressable>
+                <Pressable onPress={() => toggle(r)} disabled={busyId !== null} hitSlop={6}><Text className="text-xs font-medium text-zinc-400">{r.active ? "Pause" : "Resume"}</Text></Pressable>
                 <Pressable onPress={() => confirmDelete(r)} hitSlop={6}><Text className="text-xs font-medium text-red-400">Delete</Text></Pressable>
               </View>
             </Pressable>

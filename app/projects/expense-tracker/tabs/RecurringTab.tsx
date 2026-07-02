@@ -31,6 +31,9 @@ export function RecurringTab() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  // Rule id with an in-flight mutation — a double-click on "Post now" would
+  // otherwise post the same occurrence twice.
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,21 +48,49 @@ export function RecurringTab() {
   }, [load]);
 
   async function post(id: string) {
-    await authFetch(`/api/projects/expense-tracker/recurring/${id}/post`, { method: "POST" });
-    load();
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      const res = await authFetch(`/api/projects/expense-tracker/recurring/${id}/post`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Failed to post");
+      }
+      await load();
+    } catch {
+      alert("Network error — the bill was not posted.");
+    } finally {
+      setBusyId(null);
+    }
   }
   async function toggleActive(r: Rule) {
-    await authFetch(`/api/projects/expense-tracker/recurring/${r._id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active: !r.active }),
-    });
-    load();
+    if (busyId) return;
+    setBusyId(r._id);
+    try {
+      await authFetch(`/api/projects/expense-tracker/recurring/${r._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: !r.active }),
+      });
+      await load();
+    } catch {
+      alert("Network error — rule not updated.");
+    } finally {
+      setBusyId(null);
+    }
   }
   async function remove(id: string) {
+    if (busyId) return;
     if (!confirm("Delete this recurring rule? Already-posted transactions stay.")) return;
-    await authFetch(`/api/projects/expense-tracker/recurring/${id}`, { method: "DELETE" });
-    load();
+    setBusyId(id);
+    try {
+      await authFetch(`/api/projects/expense-tracker/recurring/${id}`, { method: "DELETE" });
+      await load();
+    } catch {
+      alert("Network error — rule not deleted.");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   const dueCount = rules.filter((r) => r.due && !r.autoPost).length;
@@ -142,9 +173,10 @@ export function RecurringTab() {
                     {r.due && r.active && !r.autoPost && (
                       <button
                         onClick={() => post(r._id)}
-                        className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 font-medium text-amber-300 hover:bg-amber-500/20"
+                        disabled={busyId !== null}
+                        className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 font-medium text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
                       >
-                        Post now
+                        {busyId === r._id ? "Posting…" : "Post now"}
                       </button>
                     )}
                     <button onClick={() => toggleActive(r)} className="text-zinc-500 hover:text-zinc-200">

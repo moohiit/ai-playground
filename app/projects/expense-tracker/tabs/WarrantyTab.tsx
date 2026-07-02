@@ -67,26 +67,42 @@ export function WarrantyTab() {
     load();
   }, [load]);
 
+  const [savingAdd, setSavingAdd] = useState(false);
+
   async function handleAdd() {
+    if (savingAdd) return;
     if (!form.label.trim() || !form.purchaseDate) return;
-    await authFetch("/api/projects/expense-tracker/warranty", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        label: form.label.trim(),
-        purchaseDate: form.purchaseDate,
-        returnByDate: form.returnByDate || null,
-        warrantyExpiresAt: form.warrantyExpiresAt || null,
-        notes: form.notes,
-        expenseId: form.expenseId || null,
-      }),
-    });
-    setForm({ ...EMPTY });
-    setShowAdd(false);
-    load();
+    setSavingAdd(true);
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/warranty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: form.label.trim(),
+          purchaseDate: form.purchaseDate,
+          returnByDate: form.returnByDate || null,
+          warrantyExpiresAt: form.warrantyExpiresAt || null,
+          notes: form.notes,
+          expenseId: form.expenseId || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Failed to save");
+        return; // keep the form open so nothing typed is lost
+      }
+      setForm({ ...EMPTY });
+      setShowAdd(false);
+      load();
+    } catch {
+      alert("Network error — the item was not saved.");
+    } finally {
+      setSavingAdd(false);
+    }
   }
 
   async function handleImport(expenseId: string) {
+    if (importingId) return;
     setImportingId(expenseId);
     const res = await authFetch(
       "/api/projects/expense-tracker/warranty/from-expense",
