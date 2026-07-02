@@ -40,7 +40,7 @@ export default function SharePage({ params }: { params: { shareId: string } }) {
     `${n > 0 ? "+" : n < 0 ? "−" : ""}${money(Math.abs(n))}`;
 
   return (
-    <main className="min-h-screen bg-[#05060a] px-4 py-8 text-zinc-100">
+    <main className="min-h-screen bg-[#05060a] px-3 py-8 text-zinc-100 sm:px-4">
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-6 text-center">
           <div className="text-[11px] uppercase tracking-[0.2em] text-brand-500/90">
@@ -75,7 +75,7 @@ export default function SharePage({ params }: { params: { shareId: string } }) {
 
             {/* Settle up — who pays whom */}
             {data.settlements.length > 0 ? (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] p-5">
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] p-4 sm:p-5">
                 <div className="mb-3 text-sm font-semibold text-amber-300">
                   Settle up
                 </div>
@@ -85,16 +85,14 @@ export default function SharePage({ params }: { params: { shareId: string } }) {
                       key={i}
                       className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2.5"
                     >
-                      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
-                        <span className="truncate font-medium text-red-300">
-                          {s.from}
-                        </span>
-                        <span className="shrink-0 text-zinc-600">→</span>
-                        <span className="truncate font-medium text-emerald-300">
-                          {s.to}
-                        </span>
+                      {/* Inline spans so long names WRAP by word instead of
+                          truncating to "Deepmala P… → Nirde…" on phones. */}
+                      <div className="min-w-0 flex-1 text-sm leading-snug">
+                        <span className="font-medium text-red-300">{s.from}</span>
+                        <span className="text-zinc-600"> → </span>
+                        <span className="font-medium text-emerald-300">{s.to}</span>
                       </div>
-                      <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
+                      <span className="shrink-0 whitespace-nowrap font-mono text-sm font-semibold tabular-nums">
                         {money(s.amount)}
                       </span>
                     </div>
@@ -111,36 +109,41 @@ export default function SharePage({ params }: { params: { shareId: string } }) {
             )}
 
             {/* How it's calculated */}
-            <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5">
+            <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-4 sm:p-5">
               <div className="mb-3 text-sm font-semibold">How it’s calculated</div>
-              <div className="overflow-hidden rounded-lg border border-zinc-800/70">
-                <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-x-2 border-b border-zinc-800/70 bg-zinc-900/50 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
-                  <span>Member</span>
-                  <span className="text-right">Paid</span>
-                  <span className="text-right">Share</span>
-                  <span className="text-right">Net</span>
-                </div>
-                {data.members.map((m, i) => (
-                  <div
-                    key={i}
-                    className="grid grid-cols-[1.3fr_1fr_1fr_1fr] items-center gap-x-2 px-3 py-2 text-[11px] tabular-nums odd:bg-white/[0.015]"
-                  >
-                    <span className="truncate text-zinc-200">{m.name}</span>
-                    <span className="text-right text-zinc-400">{money(m.paid)}</span>
-                    <span className="text-right text-zinc-400">{money(m.owed)}</span>
-                    <span
-                      className={`text-right font-semibold ${
-                        m.net > 0
-                          ? "text-emerald-400"
-                          : m.net < 0
-                          ? "text-red-400"
-                          : "text-zinc-500"
-                      }`}
-                    >
-                      {signedNet(m.net)}
-                    </span>
+              {/* Money cells never wrap (a "+₹9,000.00" used to break after the
+                  sign); if the four columns outgrow a narrow phone, the table
+                  scrolls horizontally instead of cutting or stacking values. */}
+              <div className="overflow-x-auto rounded-lg border border-zinc-800/70">
+                <div className="min-w-[360px]">
+                  <div className="grid grid-cols-[minmax(72px,1.2fr)_1fr_1fr_1.1fr] gap-x-2 border-b border-zinc-800/70 bg-zinc-900/50 px-2.5 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
+                    <span>Member</span>
+                    <span className="text-right">Paid</span>
+                    <span className="text-right">Share</span>
+                    <span className="text-right">Net</span>
                   </div>
-                ))}
+                  {data.members.map((m, i) => (
+                    <div
+                      key={i}
+                      className="grid grid-cols-[minmax(72px,1.2fr)_1fr_1fr_1.1fr] items-center gap-x-2 px-2.5 py-2 text-[11px] tabular-nums odd:bg-white/[0.015]"
+                    >
+                      <span className="truncate text-zinc-200">{m.name}</span>
+                      <span className="whitespace-nowrap text-right text-zinc-400">{money(m.paid)}</span>
+                      <span className="whitespace-nowrap text-right text-zinc-400">{money(m.owed)}</span>
+                      <span
+                        className={`whitespace-nowrap text-right font-semibold ${
+                          m.net > 0
+                            ? "text-emerald-400"
+                            : m.net < 0
+                            ? "text-red-400"
+                            : "text-zinc-500"
+                        }`}
+                      >
+                        {signedNet(m.net)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
               <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
                 Net = Paid − Share. Positive → the group owes them; negative →
