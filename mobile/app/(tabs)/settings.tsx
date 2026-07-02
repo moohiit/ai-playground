@@ -13,9 +13,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../lib/auth";
+import { WEB_BASE_URL } from "../../lib/api";
 import { AppBackground, Input } from "../../components/ui";
 import { SUPPORTED_CURRENCIES, currencySymbol } from "../../lib/currency";
-const WEB_APP_URL = process.env.WEB_APP_URL || `https://aiplayground.mohitpatel.org/projects/expense-tracker`;
+const WEB_APP_URL = `${WEB_BASE_URL}/projects/expense-tracker`;
 
 type Prefs = { baseCurrency: string; locale: string; weekStart: number };
 type Profile = {

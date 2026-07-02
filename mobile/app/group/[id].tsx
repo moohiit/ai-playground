@@ -26,7 +26,7 @@ import type {
 } from "../../lib/types";
 import { AppBackground, Input } from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
-import { API_BASE_URL } from "../../lib/api";
+import { WEB_BASE_URL } from "../../lib/api";
 
 type Tab = "active" | "settled" | "report";
 
@@ -64,7 +64,7 @@ export default function GroupDetailScreen() {
         if (id) setShareId(id);
       }
       if (!id) return Alert.alert("Couldn't create share link");
-      const url = `${API_BASE_URL}/share/${id}`;
+      const url = `${WEB_BASE_URL}/share/${id}`;
       await Share.share({ message: `Here's our bill split: ${url}` });
     } catch {
       Alert.alert("Error", "Couldn't share the link — try again.");
