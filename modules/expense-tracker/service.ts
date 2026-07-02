@@ -1255,6 +1255,11 @@ export async function updatePrefs(input: UpdatePrefsInput, auth: JWTPayload) {
   // the new base, so historical amounts don't show old numbers with a new symbol.
   if (input.baseCurrency && input.baseCurrency !== prevBase) {
     await recomputeAmountBase(auth.userId, prefs!.baseCurrency);
+    // Accounts, transfers, budgets, and goals are all stored in the BASE
+    // currency too — leaving them alone turned an ₹80,000 opening balance
+    // into "$80,000" after an INR→USD switch (and budgets/goals likewise
+    // kept old-base numbers compared against new-base spending).
+    await rebaseBaseCurrencyDocs(auth.userId, prevBase, prefs!.baseCurrency);
   }
 
   return {
@@ -1262,6 +1267,53 @@ export async function updatePrefs(input: UpdatePrefsInput, auth: JWTPayload) {
     locale: prefs!.locale,
     weekStart: prefs!.weekStart,
   };
+}
+
+// Convert every base-currency-denominated document (account opening balances,
+// transfers, budget limits, goal targets/saved) from the old base to the new one.
+async function rebaseBaseCurrencyDocs(
+  userId: string,
+  fromBase: string,
+  toBase: string
+) {
+  if (fromBase === toBase) return;
+
+  const [accounts, transfers, budgets, goals] = await Promise.all([
+    Account.find({ userId }).select("openingBalance").lean(),
+    Transfer.find({ userId }).select("amount").lean(),
+    Budget.find({ userId }).select("amount").lean(),
+    Goal.find({ userId }).select("target savedAmount").lean(),
+  ]);
+
+  for (const a of accounts) {
+    await Account.updateOne(
+      { _id: a._id },
+      { $set: { openingBalance: await convert(a.openingBalance ?? 0, fromBase, toBase), currency: toBase } }
+    );
+  }
+  for (const t of transfers) {
+    await Transfer.updateOne(
+      { _id: t._id },
+      { $set: { amount: await convert(t.amount, fromBase, toBase) } }
+    );
+  }
+  for (const b of budgets) {
+    await Budget.updateOne(
+      { _id: b._id },
+      { $set: { amount: await convert(b.amount, fromBase, toBase) } }
+    );
+  }
+  for (const g of goals) {
+    await Goal.updateOne(
+      { _id: g._id },
+      {
+        $set: {
+          target: await convert(g.target, fromBase, toBase),
+          savedAmount: await convert(g.savedAmount ?? 0, fromBase, toBase),
+        },
+      }
+    );
+  }
 }
 
 // Re-convert amountBase for every expense the user owns into `base`. FX rates are
