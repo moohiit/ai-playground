@@ -488,7 +488,10 @@ export async function listExpenses(
   const skip = (filter.page - 1) * filter.limit;
   const [expenses, total] = await Promise.all([
     Expense.find(query)
-      .sort({ date: -1 })
+      // Newest expense date first; within the same day, most-recently-added
+      // first. createdAt (then _id) is a stable tiebreaker so ordering is
+      // deterministic and pagination doesn't shuffle same-date rows.
+      .sort({ date: -1, createdAt: -1, _id: -1 })
       .skip(skip)
       .limit(filter.limit)
       .lean(),
@@ -513,7 +516,7 @@ export async function exportExpensesCsv(
   await connectDB();
   const query = await buildExpenseQuery(filter, auth);
   const expenses = await Expense.find(query)
-    .sort({ date: -1 })
+    .sort({ date: -1, createdAt: -1, _id: -1 })
     .limit(CSV_EXPORT_LIMIT)
     .lean();
   return expensesToCsv(expenses);
@@ -1091,7 +1094,7 @@ export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
     type: "group",
     settledAt: { $ne: null },
   })
-    .sort({ settledAt: -1, date: -1 })
+    .sort({ settledAt: -1, date: -1, createdAt: -1, _id: -1 })
     .lean();
 
   const grouped = new Map<
@@ -1193,7 +1196,7 @@ export async function getPersonalSettlementHistory(auth: JWTPayload) {
     type: "personal",
     settledAt: { $ne: null },
   })
-    .sort({ settledAt: -1, date: -1 })
+    .sort({ settledAt: -1, date: -1, createdAt: -1, _id: -1 })
     .lean();
 
   const grouped = new Map<
