@@ -178,6 +178,7 @@ export function ReportsTab() {
               summary={summary}
               dateFrom={dateFrom || undefined}
               dateTo={dateTo || undefined}
+              base={base}
             />
           ) : null
         }

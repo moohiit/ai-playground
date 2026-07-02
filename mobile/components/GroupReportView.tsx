@@ -48,6 +48,20 @@ export function GroupReportView({
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  // Summary amounts come back in the viewer's base currency; without this the
+  // group report rendered everything as INR for non-INR users.
+  const [baseCurrency, setBaseCurrency] = useState("INR");
+
+  useFocusEffect(
+    useCallback(() => {
+      authFetch("/api/projects/expense-tracker/prefs")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d?.prefs?.baseCurrency) setBaseCurrency(d.prefs.baseCurrency);
+        })
+        .catch(() => {});
+    }, [authFetch])
+  );
 
   const fetchSummary = useCallback(async () => {
     const params = new URLSearchParams({ groupId, settled: show });
@@ -101,6 +115,7 @@ export function GroupReportView({
         userName: user?.name,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
+        baseCurrency,
       });
     } catch {
       // share cancelled / unavailable
@@ -203,7 +218,7 @@ export function GroupReportView({
           <Text className="text-sm text-zinc-400">No data for this filter.</Text>
         </View>
       ) : (
-        <ReportBody summary={summary} />
+        <ReportBody summary={summary} baseCurrency={baseCurrency} />
       )}
     </View>
   );

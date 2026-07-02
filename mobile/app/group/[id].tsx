@@ -27,8 +27,21 @@ import type {
 import { AppBackground, Input } from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
 import { WEB_BASE_URL } from "../../lib/api";
+import { formatMoney } from "../../lib/currency";
 
 type Tab = "active" | "settled" | "report";
+
+// Groups are single-currency in practice (v1); format amounts with the
+// currency most of the group's expenses were entered in, instead of a
+// hardcoded ₹ that mislabels non-INR groups.
+function dominantCurrency(expenses: { currency?: string }[]): string {
+  const counts = new Map<string, number>();
+  for (const e of expenses) {
+    const c = e.currency ?? "INR";
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "INR";
+}
 
 export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -52,6 +65,9 @@ export default function GroupDetailScreen() {
   const [addingGuest, setAddingGuest] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
+
+  const cur = dominantCurrency(expenses);
+  const money = (n: number) => formatMoney(n, cur);
 
   async function shareSplit() {
     if (sharing) return;
@@ -335,7 +351,7 @@ export default function GroupDetailScreen() {
                               : "text-zinc-500"
                           }`}
                         >
-                          {net > 0 ? "+" : ""}₹{net.toFixed(2)}
+                          {net > 0 ? "+" : ""}{money(net)}
                         </Text>
                       )}
                     </View>
@@ -415,7 +431,7 @@ export default function GroupDetailScreen() {
                       <Text className="text-zinc-500">→</Text>
                       <Text className="text-sm text-emerald-400">{s.to.name}</Text>
                       <Text className="ml-auto text-sm text-zinc-100">
-                        ₹{s.amount.toFixed(2)}
+                        {money(s.amount)}
                       </Text>
                     </View>
                   ))}
@@ -438,10 +454,10 @@ export default function GroupDetailScreen() {
                         {b.name}
                       </Text>
                       <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
-                        ₹{b.totalPaid.toFixed(2)}
+                        {money(b.totalPaid)}
                       </Text>
                       <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
-                        ₹{b.totalOwed.toFixed(2)}
+                        {money(b.totalOwed)}
                       </Text>
                       <Text
                         style={{ width: 66 }}
@@ -453,7 +469,7 @@ export default function GroupDetailScreen() {
                             : "text-zinc-500"
                         }`}
                       >
-                        {b.netBalance > 0 ? "+" : ""}₹{b.netBalance.toFixed(2)}
+                        {b.netBalance > 0 ? "+" : ""}{money(b.netBalance)}
                       </Text>
                     </View>
                   ))}
@@ -471,7 +487,7 @@ export default function GroupDetailScreen() {
                 Active Expenses ({expenses.length})
               </Text>
               <Text className="text-sm font-semibold text-zinc-100">
-                Total: ₹{activeTotal.toFixed(2)}
+                Total: {money(activeTotal)}
               </Text>
             </View>
 
@@ -504,7 +520,7 @@ export default function GroupDetailScreen() {
                       )}
                     </View>
                     <Text className="text-base font-semibold text-zinc-100">
-                      ₹{e.amount.toFixed(2)}
+                      {money(e.amount)}
                     </Text>
                   </View>
                   <View className="mt-3 flex-row justify-end gap-4 border-t border-white/5 pt-3">
@@ -589,6 +605,7 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
   const total = record.expenses.reduce((s, e) => s + e.amount, 0);
   const members = settlementMembers(record.expenses);
   const totalShare = members.reduce((s, m) => s + m.share, 0);
+  const money = (n: number) => formatMoney(n, dominantCurrency(record.expenses));
 
   return (
     <View className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -601,7 +618,7 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
           })}
         </Text>
         <Text className="text-xs text-emerald-400">
-          {record.expenses.length} expenses · ₹{total.toFixed(2)}
+          {record.expenses.length} expenses · {money(total)}
         </Text>
       </View>
 
@@ -621,10 +638,10 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
                 {m.name}
               </Text>
               <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
-                ₹{m.paid.toFixed(2)}
+                {money(m.paid)}
               </Text>
               <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
-                ₹{m.share.toFixed(2)}
+                {money(m.share)}
               </Text>
               <Text
                 style={{ width: 64 }}
@@ -636,7 +653,7 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
                     : "text-zinc-500"
                 }`}
               >
-                {net > 0 ? "+" : ""}₹{net.toFixed(2)}
+                {net > 0 ? "+" : ""}{money(net)}
               </Text>
             </View>
           );
@@ -644,10 +661,10 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
         <View className="flex-row border-t border-white/10 bg-zinc-900/40 px-3 py-2" style={{ gap: 8 }}>
           <Text style={{ flex: 1 }} className="text-xs font-semibold text-zinc-200">Total</Text>
           <Text style={{ width: 58 }} className="text-right text-[13px] font-semibold text-zinc-200">
-            ₹{total.toFixed(2)}
+            {money(total)}
           </Text>
           <Text style={{ width: 58 }} className="text-right text-[13px] font-semibold text-zinc-200">
-            ₹{totalShare.toFixed(2)}
+            {money(totalShare)}
           </Text>
           <Text style={{ width: 64 }} className="text-right text-[13px] text-zinc-500">—</Text>
         </View>
@@ -671,7 +688,7 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
                   : ""}
               </Text>
             </View>
-            <Text className="text-xs text-zinc-300">₹{e.amount.toFixed(2)}</Text>
+            <Text className="text-xs text-zinc-300">{money(e.amount)}</Text>
           </View>
         ))}
       </View>

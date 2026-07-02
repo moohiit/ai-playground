@@ -45,6 +45,7 @@ type Props = {
   dateTo?: string;
   groupId?: string;
   groupName?: string;
+  base?: string;
 };
 
 const MONTH_NAMES = [
@@ -52,13 +53,21 @@ const MONTH_NAMES = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName }: Props) {
+// jsPDF's built-in fonts can't render ₹ (or most currency symbols), so amounts
+// are prefixed with the currency CODE. Module-scoped because the render helpers
+// below also format money; set from the `base` prop at export time. The old
+// hardcoded "Rs." mislabeled non-INR users' reports.
+let pdfBase = "INR";
+const rs = (n: number) => `${pdfBase} ${n.toFixed(2)}`;
+
+export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName, base }: Props) {
   const { authFetch, user } = useAuth();
   const [exporting, setExporting] = useState(false);
   const isGroupReport = Boolean(groupId);
 
   async function handleExport() {
     setExporting(true);
+    pdfBase = base ?? "INR";
 
     try {
       const { default: jsPDF } = await import("jspdf");
@@ -103,17 +112,17 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
 
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text(`Total Expenses: Rs.${summary.totalAmount.toFixed(2)}`, 14, y);
+      doc.text(`Total Expenses: ${rs(summary.totalAmount)}`, 14, y);
       y += 6;
       doc.text(`Number of Entries: ${summary.totalCount}`, 14, y);
       y += 6;
       if (typeof summary.myShare === "number") {
-        doc.text(`My Share: Rs.${summary.myShare.toFixed(2)}`, 14, y);
+        doc.text(`My Share: ${rs(summary.myShare)}`, 14, y);
         y += 6;
       }
       if (typeof summary.paidByMe === "number") {
         doc.text(
-          `Paid by Me: Rs.${summary.paidByMe.toFixed(2)}  ·  Paid by Others: Rs.${(summary.paidByOthers ?? 0).toFixed(2)}`,
+          `Paid by Me: ${rs(summary.paidByMe)}  ·  Paid by Others: ${rs((summary.paidByOthers ?? 0))}`,
           14,
           y
         );
@@ -121,7 +130,7 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
       }
       if (typeof summary.averagePerDay === "number") {
         doc.text(
-          `Avg/Day: Rs.${summary.averagePerDay.toFixed(2)}  ·  Avg/Txn: Rs.${(summary.averagePerTransaction ?? 0).toFixed(2)}  ·  Days: ${summary.daysCovered ?? 0}`,
+          `Avg/Day: ${rs(summary.averagePerDay)}  ·  Avg/Txn: ${rs((summary.averagePerTransaction ?? 0))}  ·  Days: ${summary.daysCovered ?? 0}`,
           14,
           y
         );
@@ -129,7 +138,7 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
       }
       if (summary.largest) {
         doc.text(
-          `Largest: ${summary.largest.description} - Rs.${summary.largest.amount.toFixed(2)} (${new Date(summary.largest.date).toLocaleDateString()})`,
+          `Largest: ${summary.largest.description} - ${rs(summary.largest.amount)} (${new Date(summary.largest.date).toLocaleDateString()})`,
           14,
           y
         );
@@ -144,12 +153,12 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
         y += 4;
         (doc as any).autoTable({
           startY: y,
-          head: [["Group", "Entries", "Total (Rs.)", "My Share (Rs.)"]],
+          head: [["Group", "Entries", "Total ", "My Share "]],
           body: summary.byGroup.map((g) => [
             g.groupName,
             g.count.toString(),
-            `Rs.${g.total.toFixed(2)}`,
-            `Rs.${g.myShare.toFixed(2)}`,
+            `${rs(g.total)}`,
+            `${rs(g.myShare)}`,
           ]),
           styles: { fontSize: 9, cellPadding: 3 },
           headStyles: { fillColor: [99, 102, 241] },
@@ -165,11 +174,11 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
         y += 4;
         (doc as any).autoTable({
           startY: y,
-          head: [["Member", "Entries", "Total Paid (Rs.)", "Share"]],
+          head: [["Member", "Entries", "Total Paid ", "Share"]],
           body: summary.topPayers.map((p) => [
             p.name,
             p.count.toString(),
-            `Rs.${p.total.toFixed(2)}`,
+            `${rs(p.total)}`,
             `${((p.total / summary.totalAmount) * 100).toFixed(1)}%`,
           ]),
           styles: { fontSize: 9, cellPadding: 3 },
@@ -188,11 +197,11 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
 
         (doc as any).autoTable({
           startY: y,
-          head: [["Category", "Count", "Total (Rs.)", "% of Total"]],
+          head: [["Category", "Count", "Total ", "% of Total"]],
           body: summary.byCategory.map((c) => [
             c.category,
             c.count.toString(),
-            `Rs.${c.total.toFixed(2)}`,
+            `${rs(c.total)}`,
             `${((c.total / summary.totalAmount) * 100).toFixed(1)}%`,
           ]),
           styles: { fontSize: 9, cellPadding: 3 },
@@ -211,11 +220,11 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
 
         (doc as any).autoTable({
           startY: y,
-          head: [["Month", "Count", "Total (Rs.)"]],
+          head: [["Month", "Count", "Total "]],
           body: summary.byMonth.map((m) => [
             `${MONTH_NAMES[m.month - 1]} ${m.year}`,
             m.count.toString(),
-            `Rs.${m.total.toFixed(2)}`,
+            `${rs(m.total)}`,
           ]),
           styles: { fontSize: 9, cellPadding: 3 },
           headStyles: { fillColor: [99, 102, 241] },
@@ -284,14 +293,14 @@ async function renderAllExpenses(
 
   (doc as any).autoTable({
     startY: y,
-    head: [["Date", "Description", "Category", "Paid By", "Split Among", "Amount (Rs.)", "Type"]],
+    head: [["Date", "Description", "Category", "Paid By", "Split Among", "Amount ", "Type"]],
     body: expenses.map((e: any) => [
       new Date(e.date).toLocaleDateString(),
       e.description,
       e.category,
       e.paidBy?.name ?? "-",
       e.splitAmong?.length > 0 ? e.splitAmong.map((m: any) => m.name).join(", ") : "-",
-      `Rs.${e.amount.toFixed(2)}`,
+      `${rs(e.amount)}`,
       e.type,
     ]),
     styles: { fontSize: 7, cellPadding: 2 },
@@ -404,9 +413,9 @@ async function renderGroupSection(
         const net = m.paid - m.owes;
         return [
           m.name,
-          `Rs.${m.paid.toFixed(2)}`,
-          `Rs.${m.owes.toFixed(2)}`,
-          `${net > 0 ? "+" : ""}Rs.${net.toFixed(2)}`,
+          `${rs(m.paid)}`,
+          `${rs(m.owes)}`,
+          `${net > 0 ? "+" : ""}${rs(net)}`,
         ];
       }),
       styles: { fontSize: 9, cellPadding: 3 },
@@ -427,11 +436,11 @@ async function renderGroupSection(
 
     (doc as any).autoTable({
       startY: y,
-      head: [["From", "Pays To", "Amount (Rs.)"]],
+      head: [["From", "Pays To", "Amount "]],
       body: settlements.map((s: any) => [
         s.from.name,
         s.to.name,
-        `Rs.${s.amount.toFixed(2)}`,
+        `${rs(s.amount)}`,
       ]),
       styles: { fontSize: 9, cellPadding: 3 },
       headStyles: { fillColor: [245, 158, 11] },
@@ -458,13 +467,13 @@ async function renderGroupSection(
 
     (doc as any).autoTable({
       startY: y,
-      head: [["Date", "Description", "Paid By", "Split Among", "Amount (Rs.)"]],
+      head: [["Date", "Description", "Paid By", "Split Among", "Amount "]],
       body: groupExpenses.map((e: any) => [
         new Date(e.date).toLocaleDateString(),
         e.description,
         e.paidBy?.name ?? "-",
         e.splitAmong?.map((m: any) => m.name).join(", ") ?? "-",
-        `Rs.${e.amount.toFixed(2)}`,
+        `${rs(e.amount)}`,
       ]),
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [99, 102, 241] },

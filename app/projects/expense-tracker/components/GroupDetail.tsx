@@ -3,8 +3,21 @@
 import { useEffect, useState, useCallback } from "react";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
+import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
+
+// Groups are single-currency in practice (v1); format amounts with the
+// currency most of the group's expenses were entered in, instead of a
+// hardcoded ₹ that mislabels non-INR groups.
+function dominantCurrency(expenses: { currency?: string }[]): string {
+  const counts = new Map<string, number>();
+  for (const e of expenses) {
+    const c = e.currency ?? "INR";
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "INR";
+}
 
 type Member = {
   userId: string;
@@ -30,6 +43,7 @@ type Expense = {
   _id: string;
   paidBy: { id: string; name: string };
   amount: number;
+  currency?: string;
   description: string;
   category: string;
   date: string;
@@ -76,6 +90,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
       : "";
 
   const [shareBusy, setShareBusy] = useState(false);
+
+  const cur = dominantCurrency(expenses);
+  const money = (n: number) => formatMoney(n, cur);
 
   async function toggleShare() {
     if (shareBusy) return;
@@ -368,6 +385,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
               setNewGuest={setNewGuest}
               onAddGuest={handleAddGuest}
               addingGuest={addingGuest}
+              cur={cur}
             />
 
             {settlements.length > 0 && (
@@ -375,6 +393,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 settlements={settlements}
                 settling={settling}
                 onSettle={handleSettle}
+                cur={cur}
               />
             )}
 
@@ -388,7 +407,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 </h3>
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
-                    Total: ₹{activeAmount.toFixed(2)}
+                    Total: {money(activeAmount)}
                   </span>
                   {showPagination && (
                     <span className="text-xs text-zinc-500">
@@ -478,6 +497,7 @@ function MembersSection({
   setNewGuest,
   onAddGuest,
   addingGuest,
+  cur,
 }: {
   members: Member[];
   balances: Balance[];
@@ -489,7 +509,9 @@ function MembersSection({
   setNewGuest: (v: string) => void;
   onAddGuest: () => void;
   addingGuest: boolean;
+  cur: string;
 }) {
+  const money = (n: number) => formatMoney(n, cur);
   return (
     <section className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5 backdrop-blur-sm">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent" />
@@ -531,7 +553,7 @@ function MembersSection({
                       : "text-zinc-500"
                   )}
                 >
-                  {bal.netBalance > 0 ? "+" : ""}₹{bal.netBalance.toFixed(2)}
+                  {bal.netBalance > 0 ? "+" : ""}{money(bal.netBalance)}
                 </span>
               )}
             </div>
@@ -580,11 +602,14 @@ function SettleUpSection({
   settlements,
   settling,
   onSettle,
+  cur,
 }: {
   settlements: Settlement[];
   settling: boolean;
   onSettle: () => void;
+  cur: string;
 }) {
+  const money = (n: number) => formatMoney(n, cur);
   return (
     <section className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-b from-amber-500/10 to-amber-500/5 p-5 backdrop-blur-sm">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/70 to-transparent" />
@@ -617,7 +642,7 @@ function SettleUpSection({
             </svg>
             <span className="font-medium text-emerald-400">{s.to.name}</span>
             <span className="ml-auto font-mono tabular-nums text-zinc-100">
-              ₹{s.amount.toFixed(2)}
+              {money(s.amount)}
             </span>
           </div>
         ))}
@@ -637,6 +662,8 @@ function ExpenseRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  // Rows show the amount as entered — label it with the row's own currency.
+  const money = (n: number) => formatMoney(n, e.currency ?? "INR");
   return (
     <div
       className="animate-fade-up group flex items-center justify-between gap-3 rounded-lg border border-zinc-800/80 bg-gradient-to-b from-zinc-900/40 to-zinc-950/40 px-4 py-3 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-zinc-700"
@@ -661,7 +688,7 @@ function ExpenseRow({
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <span className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
-          ₹{e.amount.toFixed(2)}
+          {money(e.amount)}
         </span>
         <button
           onClick={onEdit}
@@ -733,6 +760,7 @@ function SettledHistoryView({ history }: { history: SettlementRecord[] }) {
 
 function SettlementSummary({ expenses }: { expenses: Expense[] }) {
   const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const money = (n: number) => formatMoney(n, dominantCurrency(expenses));
 
   const members = new Map<string, { name: string; paid: number; share: number }>();
   for (const e of expenses) {
@@ -759,7 +787,7 @@ function SettlementSummary({ expenses }: { expenses: Expense[] }) {
       <div className="text-xs text-zinc-500">
         Total:{" "}
         <span className="font-mono font-semibold text-zinc-200">
-          ₹{total.toFixed(2)}
+          {money(total)}
         </span>
       </div>
 
@@ -780,10 +808,10 @@ function SettlementSummary({ expenses }: { expenses: Expense[] }) {
                 <tr key={m.name} className="border-t border-zinc-800/40">
                   <td className="px-3 py-1.5 text-zinc-200">{m.name}</td>
                   <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-300">
-                    ₹{m.paid.toFixed(2)}
+                    {money(m.paid)}
                   </td>
                   <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-300">
-                    ₹{m.share.toFixed(2)}
+                    {money(m.share)}
                   </td>
                   <td
                     className={cn(
@@ -795,7 +823,7 @@ function SettlementSummary({ expenses }: { expenses: Expense[] }) {
                         : "text-zinc-500"
                     )}
                   >
-                    {net > 0 ? "+" : ""}₹{net.toFixed(2)}
+                    {net > 0 ? "+" : ""}{money(net)}
                   </td>
                 </tr>
               );
@@ -803,10 +831,10 @@ function SettlementSummary({ expenses }: { expenses: Expense[] }) {
             <tr className="border-t border-zinc-700">
               <td className="px-3 py-1.5 font-semibold text-zinc-200">Total</td>
               <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold text-zinc-200">
-                ₹{total.toFixed(2)}
+                {money(total)}
               </td>
               <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold text-zinc-200">
-                ₹{sorted.reduce((s, m) => s + m.share, 0).toFixed(2)}
+                {money(sorted.reduce((s, m) => s + m.share, 0))}
               </td>
               <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-500">—</td>
             </tr>
@@ -829,7 +857,7 @@ function SettlementSummary({ expenses }: { expenses: Expense[] }) {
               </span>
             </div>
             <span className="font-mono tabular-nums text-zinc-300">
-              ₹{e.amount.toFixed(2)}
+              {money(e.amount)}
             </span>
           </div>
         ))}

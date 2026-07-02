@@ -113,6 +113,14 @@ export function GroupReport({ groupId, groupName }: Props) {
   const [dateTo, setDateTo] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [base, setBase] = useState("INR");
+
+  useEffect(() => {
+    authFetch("/api/projects/expense-tracker/prefs")
+      .then((r) => r.json())
+      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
+      .catch(() => {});
+  }, [authFetch]);
 
   const settledDisabled = scope === "unsettled";
 
@@ -199,6 +207,7 @@ export function GroupReport({ groupId, groupName }: Props) {
               dateTo={dateTo || undefined}
               groupId={groupId}
               groupName={groupName}
+              base={base}
             />
           )}
         </div>

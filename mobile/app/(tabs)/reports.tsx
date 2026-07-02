@@ -139,6 +139,7 @@ export default function ReportsTab() {
                   userName: user?.name,
                   dateFrom: dateFrom || undefined,
                   dateTo: dateTo || undefined,
+                  baseCurrency,
                 });
               } catch {
                 // share cancelled / unavailable

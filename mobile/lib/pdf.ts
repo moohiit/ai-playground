@@ -1,6 +1,7 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import type { Expense, Group, Settlement, Summary } from "./types";
+import { formatMoney } from "./currency";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -24,7 +25,11 @@ const PDF_STYLE = `<style>
     tbody tr:nth-child(even) { background: #f5f5fa; }
   </style>`;
 
-const rs = (n: number) => `Rs.${n.toFixed(2)}`;
+// PDFs are HTML (expo-print), so the real currency symbol renders fine. The
+// export entry points set this from the caller's base currency; "Rs." was a
+// hardcoded INR label that mislabeled non-INR users' reports.
+let pdfCurrency = "INR";
+const rs = (n: number) => formatMoney(n, pdfCurrency);
 const esc = (s: string) =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const d = (s: string) => new Date(s).toLocaleDateString();
@@ -150,8 +155,10 @@ export async function exportFullReportPdf(opts: {
   userName?: string;
   dateFrom?: string;
   dateTo?: string;
+  baseCurrency?: string;
 }) {
   const { summary, authFetch, userName, dateFrom, dateTo } = opts;
+  pdfCurrency = opts.baseCurrency ?? "INR";
   const period =
     dateFrom || dateTo
       ? `${dateFrom || "Start"} to ${dateTo || "Present"}`
@@ -278,8 +285,10 @@ export async function exportGroupReportPdf(opts: {
   userName?: string;
   dateFrom?: string;
   dateTo?: string;
+  baseCurrency?: string;
 }) {
   const { summary, authFetch, groupId, groupName, userName, dateFrom, dateTo } = opts;
+  pdfCurrency = opts.baseCurrency ?? "INR";
   const period =
     dateFrom || dateTo ? `${dateFrom || "Start"} to ${dateTo || "Present"}` : "All time";
 

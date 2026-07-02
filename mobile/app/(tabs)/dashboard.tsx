@@ -16,8 +16,8 @@ import type { Summary } from "../../lib/types";
 import { Donut } from "../../components/Donut";
 import { AppBackground, GradientButton, GradientHero, Input } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
+import { formatMoney } from "../../lib/currency";
 
-const fmt = (n: number) => `₹${n.toFixed(2)}`;
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
@@ -51,6 +51,11 @@ export default function Dashboard() {
   const [settling, setSettling] = useState(false);
   const [nlText, setNlText] = useState("");
   const [nlBusy, setNlBusy] = useState(false);
+  // The user's base currency — every dashboard number is a base-currency
+  // amount (getSummary aggregates on amountBase), so hardcoding ₹ showed
+  // rupees to USD/EUR-base users.
+  const [base, setBase] = useState("INR");
+  const fmt = (n: number) => formatMoney(n, base);
   const [forecast, setForecast] = useState<{
     projectedTotal: number;
     monthToDate: number;
@@ -68,6 +73,15 @@ export default function Dashboard() {
     anomalies: Array<{ _id: string; description: string; category: string; amount: number; ratio: number }>;
   } | null>(null);
   const [trackingKey, setTrackingKey] = useState<string | null>(null);
+
+  const fetchPrefs = useCallback(() => {
+    authFetch("/api/projects/expense-tracker/prefs")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.prefs?.baseCurrency) setBase(d.prefs.baseCurrency);
+      })
+      .catch(() => {});
+  }, [authFetch]);
 
   const fetchForecast = useCallback(() => {
     authFetch("/api/projects/expense-tracker/forecast")
@@ -96,7 +110,10 @@ export default function Dashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: s.amount, currency: "INR", category: s.category, description: s.description,
+          // Anomaly/subscription amounts come from getInsights in the user's
+          // base currency — a hardcoded "INR" here created wrong-currency
+          // rules for non-INR users.
+          amount: s.amount, currency: base, category: s.category, description: s.description,
           direction: "expense", cadence: s.cadence, startDate: s.nextDate, autoPost: false,
         }),
       });
@@ -202,10 +219,11 @@ export default function Dashboard() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
+      fetchPrefs();
       fetchForecast();
       fetchInsights();
       fetchSummary().finally(() => setLoading(false));
-    }, [fetchSummary, fetchForecast, fetchInsights])
+    }, [fetchSummary, fetchForecast, fetchInsights, fetchPrefs])
   );
 
   const onRefresh = useCallback(async () => {
