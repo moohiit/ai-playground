@@ -219,12 +219,19 @@ export default function AddExpenseScreen() {
   }
 
   async function handleSave() {
+    if (saving) return;
     setError(null);
     const amt = parseFloat(amount);
     const effectiveType = direction === "income" ? "personal" : type;
     if (!amt || amt <= 0) return setError("Enter a valid amount");
     if (!description.trim()) return setError("Enter a description");
     if (effectiveType === "group" && !groupId) return setError("Select a group");
+    // Saving a group expense before the groups fetch resolves would silently
+    // replace the real payer with the current user and drop the saved split
+    // (both are derived from selectedGroup below). Block until it's loaded.
+    if (effectiveType === "group" && !selectedGroup) {
+      return setError("Group details are still loading — try again in a second");
+    }
 
     setSaving(true);
     try {
