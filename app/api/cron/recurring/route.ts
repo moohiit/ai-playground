@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { runDueRecurring } from "@/modules/expense-tracker/service";
 import { connectDB } from "@/lib/db";
@@ -8,16 +9,27 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// Constant-time string compare (length leak only) to avoid timing side-channels
+// on the shared-secret check.
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
 // Daily Vercel Cron (see vercel.json). Materializes due autoPost recurring rules for
-// ALL users. Vercel Cron sends `Authorization: Bearer ${CRON_SECRET}` when CRON_SECRET
-// is set in the project env — we require it so the endpoint can't be triggered openly.
+// ALL users. Vercel Cron sends `Authorization: Bearer ${CRON_SECRET}`. This endpoint
+// FAILS CLOSED: if CRON_SECRET isn't configured, nobody can trigger it — an unset env
+// var must never leave a run-recurring-for-all-users endpoint publicly callable.
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!secret) {
+    console.error("[cron/recurring] CRON_SECRET is not set — refusing to run");
+    return NextResponse.json({ error: "Cron not configured" }, { status: 503 });
+  }
+  const auth = req.headers.get("authorization") ?? "";
+  if (!safeEqual(auth, `Bearer ${secret}`)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
