@@ -601,8 +601,10 @@ export async function updateExpense(
   expense.direction = newDirection;
 
   // Re-freeze the base-currency amount whenever amount/currency changes (or backfill
-  // a pre-1B row that has no amountBase yet).
-  const { baseCurrency } = await getPrefs(auth);
+  // a pre-1B row that has no amountBase yet). amountBase is always frozen in the
+  // CREATOR's base currency — group expenses are editable by any member, and using
+  // the editor's base here would corrupt the creator's summaries/reports.
+  const baseCurrency = await getBaseCurrency(expense.createdBy);
   const newCurrency = input.currency ?? expense.currency ?? baseCurrency;
   expense.currency = newCurrency;
   if (
