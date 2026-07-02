@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
+import { localISODate } from "../../lib/dates";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney } from "../../lib/currency";
 
@@ -40,7 +41,7 @@ type ReceiptExpense = {
 
 const EMPTY = {
   label: "",
-  purchaseDate: new Date().toISOString().slice(0, 10),
+  purchaseDate: localISODate(),
   returnByDate: "",
   warrantyExpiresAt: "",
   notes: "",

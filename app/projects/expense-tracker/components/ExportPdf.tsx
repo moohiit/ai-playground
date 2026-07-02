@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "../../../../lib/authContext";
+import { localISODate } from "../../../../lib/utils";
 
 type CategoryEntry = { category: string; total: number; count: number };
 type MonthEntry = { year: number; month: number; total: number; count: number };
@@ -235,7 +236,7 @@ export function ExportPdfButton({ summary, dateFrom, dateTo, groupId, groupName 
       const prefix = isGroupReport
         ? `group-report-${groupName?.replace(/\s+/g, "-").toLowerCase()}`
         : "expense-report";
-      const fileName = `${prefix}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      const fileName = `${prefix}-${localISODate()}.pdf`;
       doc.save(fileName);
     } catch (err) {
       console.error("PDF export failed:", err);

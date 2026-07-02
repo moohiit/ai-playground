@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
 import { useAuth } from "../lib/auth";
+import { localISODate } from "../lib/dates";
 import type { Summary } from "../lib/types";
 import { exportGroupReportPdf } from "../lib/pdf";
 import { ReportBody } from "./ReportBody";
@@ -82,7 +83,7 @@ export function GroupReportView({
     const which = picker;
     setPicker(null);
     if (!date || !which) return;
-    const iso = date.toISOString().slice(0, 10);
+    const iso = localISODate(date);
     if (which === "from") setDateFrom(iso);
     else setDateTo(iso);
     setQuickRange("custom");

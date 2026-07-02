@@ -11,6 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
+import { localISODate } from "../../lib/dates";
 import type { Summary } from "../../lib/types";
 import { exportFullReportPdf } from "../../lib/pdf";
 import { AppBackground } from "../../components/ui";
@@ -36,13 +37,13 @@ const QUICK: { id: QuickRange; label: string }[] = [
 export function quickRangeToDates(r: QuickRange): { from: string; to: string } {
   if (r === "all" || r === "custom") return { from: "", to: "" };
   const now = new Date();
-  const to = now.toISOString().slice(0, 10);
+  const to = localISODate(now);
   const start = new Date(now);
   if (r === "this-month") start.setDate(1);
   else if (r === "last-30") start.setDate(start.getDate() - 30);
   else if (r === "last-90") start.setDate(start.getDate() - 90);
   else if (r === "this-year") start.setMonth(0, 1);
-  return { from: start.toISOString().slice(0, 10), to };
+  return { from: localISODate(start), to };
 }
 
 export default function ReportsTab() {
@@ -111,7 +112,7 @@ export default function ReportsTab() {
     const which = picker;
     setPicker(null);
     if (!date || !which) return;
-    const iso = date.toISOString().slice(0, 10);
+    const iso = localISODate(date);
     if (which === "from") setDateFrom(iso);
     else setDateTo(iso);
     setQuickRange("custom");

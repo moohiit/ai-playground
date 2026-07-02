@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { cn } from "../../../../lib/utils";
+import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { ExportPdfButton } from "./ExportPdf";
 import {
@@ -86,7 +86,7 @@ const QUICK_RANGES: { id: QuickRange; label: string }[] = [
 function quickRangeToDates(r: QuickRange): { from: string; to: string } {
   if (r === "all") return { from: "", to: "" };
   const now = new Date();
-  const to = now.toISOString().slice(0, 10);
+  const to = localISODate(now);
   const start = new Date(now);
   if (r === "this-month") {
     start.setDate(1);
@@ -97,7 +97,7 @@ function quickRangeToDates(r: QuickRange): { from: string; to: string } {
   } else if (r === "this-year") {
     start.setMonth(0, 1);
   }
-  return { from: start.toISOString().slice(0, 10), to };
+  return { from: localISODate(start), to };
 }
 
 type Props = {

@@ -44,8 +44,11 @@ function shiftMonth(m: string, delta: number) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 function thisMonth() {
+  // LOCAL month — with getUTC* an IST user opening this on the 1st before
+  // 05:30 landed on the previous month (and "next" was disabled for the
+  // actual current month).
   const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export function BudgetsTab() {

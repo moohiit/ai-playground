@@ -12,6 +12,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../lib/auth";
+import { localISODate } from "../lib/dates";
 import {
   CATEGORIES,
   INCOME_CATEGORIES,
@@ -28,7 +29,7 @@ import {
   KeyboardAwareScreen,
 } from "../components/ui";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localISODate();
 
 export default function AddExpenseScreen() {
   const { user, authFetch } = useAuth();
@@ -493,7 +494,7 @@ export default function AddExpenseScreen() {
               mode="date"
               onChange={(_, d) => {
                 setShowDate(false);
-                if (d) setDate(d.toISOString().slice(0, 10));
+                if (d) setDate(localISODate(d));
               }}
             />
           )}

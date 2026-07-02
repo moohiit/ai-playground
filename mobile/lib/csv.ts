@@ -1,5 +1,6 @@
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import { localISODate } from "./dates";
 
 type Fetcher = (path: string, opts?: RequestInit) => Promise<Response>;
 
@@ -19,7 +20,7 @@ export async function exportExpensesCsv(opts: {
   if (!res.ok) throw new Error("Export failed");
   const csv = await res.text();
 
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = localISODate();
   const file = new File(Paths.cache, `expenses-${stamp}.csv`);
   file.create({ overwrite: true });
   file.write(csv);

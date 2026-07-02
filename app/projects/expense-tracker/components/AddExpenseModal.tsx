@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
-import { cn } from "../../../../lib/utils";
+import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { SUPPORTED_CURRENCIES, currencySymbol } from "../../../../modules/expense-tracker/currencies";
@@ -94,7 +94,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   const [date, setDate] = useState(
     editExpense
       ? new Date(editExpense.date).toISOString().slice(0, 10)
-      : prefill?.date ?? new Date().toISOString().slice(0, 10)
+      : prefill?.date ?? localISODate()
   );
   const [presentMembers, setPresentMembers] = useState<Set<string>>(
     () => new Set(editExpense?.splitAmong?.map((m) => m.memberId) ?? [])

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { cn } from "../../../../lib/utils";
+import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { ExportPdfButton } from "../components/ExportPdf";
 import { categoryColor } from "../colors";
@@ -82,13 +82,13 @@ const SCOPES: { id: Scope; label: string }[] = [
 function quickRangeToDates(r: QuickRange): { from: string; to: string } {
   if (r === "all") return { from: "", to: "" };
   const now = new Date();
-  const to = now.toISOString().slice(0, 10);
+  const to = localISODate(now);
   const start = new Date(now);
   if (r === "this-month") start.setDate(1);
   else if (r === "last-30") start.setDate(start.getDate() - 30);
   else if (r === "last-90") start.setDate(start.getDate() - 90);
   else if (r === "this-year") start.setMonth(0, 1);
-  return { from: start.toISOString().slice(0, 10), to };
+  return { from: localISODate(start), to };
 }
 
 // `reportBase` is set on each ReportsTab render so the formatter sub-components

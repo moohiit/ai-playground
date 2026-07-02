@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
+import { localISODate } from "../../lib/dates";
 import type { Account, AccountKind } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney } from "../../lib/currency";
@@ -242,7 +243,7 @@ function TransferModal({ visible, accounts, base, onClose, onSaved }: {
       const res = await authFetch("/api/projects/expense-tracker/transfers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromAccountId: from, toAccountId: to, amount: amt, date: new Date().toISOString().slice(0, 10) }),
+        body: JSON.stringify({ fromAccountId: from, toAccountId: to, amount: amt, date: localISODate() }),
       });
       if (!res.ok) throw new Error("failed");
       setAmount("");

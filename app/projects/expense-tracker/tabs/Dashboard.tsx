@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { cn } from "../../../../lib/utils";
+import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
@@ -343,7 +343,7 @@ export function Dashboard() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `expenses-${localISODate()}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();

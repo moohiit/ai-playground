@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { cn } from "../../../../lib/utils";
+import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { SUPPORTED_CURRENCIES, formatMoney } from "../../../../modules/expense-tracker/currencies";
@@ -204,7 +204,7 @@ function AddRuleForm({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   const [category, setCategory] = useState<string>(CATEGORIES[0]);
   const [description, setDescription] = useState("");
   const [cadence, setCadence] = useState<"weekly" | "monthly" | "yearly">("monthly");
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(localISODate());
   const [autoPost, setAutoPost] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

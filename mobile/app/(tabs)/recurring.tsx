@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
+import { localISODate } from "../../lib/dates";
 import {
   CATEGORIES,
   INCOME_CATEGORIES,
@@ -180,7 +181,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
   const [category, setCategory] = useState<string>(CATEGORIES[0]);
   const [description, setDescription] = useState("");
   const [cadence, setCadence] = useState<"weekly" | "monthly" | "yearly">("monthly");
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(localISODate());
   const [showDate, setShowDate] = useState(false);
   const [autoPost, setAutoPost] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -189,7 +190,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
 
   useEffect(() => {
     if (visible) {
-      setStartDate(new Date().toISOString().slice(0, 10));
+      setStartDate(localISODate());
       authFetch("/api/projects/expense-tracker/prefs")
         .then((r) => r.json())
         .then((d) => d.prefs?.baseCurrency && setCurrency(d.prefs.baseCurrency))
@@ -310,7 +311,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
                 mode="date"
                 onChange={(_, d) => {
                   setShowDate(false);
-                  if (d) setStartDate(d.toISOString().slice(0, 10));
+                  if (d) setStartDate(localISODate(d));
                 }}
               />
             )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { cn } from "../../../../lib/utils";
+import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 
 type WarrantyEntry = {
@@ -31,7 +31,7 @@ const EMPTY: Omit<
   "_id" | "daysUntilReturn" | "daysUntilWarranty" | "returnStatus" | "warrantyStatus"
 > = {
   label: "",
-  purchaseDate: new Date().toISOString().slice(0, 10),
+  purchaseDate: localISODate(),
   returnByDate: null,
   warrantyExpiresAt: null,
   notes: "",
