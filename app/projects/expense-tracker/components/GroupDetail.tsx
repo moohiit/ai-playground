@@ -208,13 +208,16 @@ export function GroupDetail({ groupId, onBack }: Props) {
         // Most common failure: the email isn't registered. Keep the input so
         // the user can correct it instead of silently pretending success.
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Couldn't add member");
+        alert(data.error ?? "Couldn't send the invite");
         return;
       }
+      alert(
+        `Invite sent to ${newMember.trim()} — they'll join once they accept it.`
+      );
       setNewMember("");
       fetchAll();
     } catch {
-      alert("Network error — member not added.");
+      alert("Network error — invite not sent.");
     } finally {
       setAddingMember(false);
     }
@@ -652,7 +655,7 @@ function MembersSection({
           type="email"
           value={newMember}
           onChange={(e) => setNewMember(e.target.value)}
-          placeholder="Add member by email"
+          placeholder="Invite member by email"
           className="flex-1 rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
           onKeyDown={(e) => e.key === "Enter" && onAdd()}
         />
@@ -661,7 +664,7 @@ function MembersSection({
           disabled={adding || !newMember.trim()}
           className="rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5 text-xs font-semibold text-brand-500 transition-all hover:-translate-y-0.5 hover:bg-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
-          {adding ? "Adding..." : "Add"}
+          {adding ? "Inviting..." : "Invite"}
         </button>
       </div>
       <div className="mt-2 flex gap-2">

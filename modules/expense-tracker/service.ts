@@ -16,9 +16,11 @@ import {
   Warranty,
   MoneyNote,
   Todo,
+  GroupInvite,
   type ExpenseDoc,
   type RecurringRuleDoc,
 } from "./models";
+import { notifyGroupInvite } from "./push";
 import { evaluateBudget } from "./budget";
 import { advance, dueOccurrences, isDue } from "./recurring";
 import { goalProgress } from "./goal";
@@ -238,6 +240,9 @@ export async function updateGroup(
   return group.toObject();
 }
 
+// Adding a registered user now sends an INVITE they must accept (in-app +
+// push) instead of silently adding them. Guests (no account) are exempt and
+// still added directly via addGuestMember.
 export async function addMember(
   groupId: string,
   email: string,
@@ -252,29 +257,98 @@ export async function addMember(
 
   const user = await User.findOne({ email: email.toLowerCase() }).lean();
   if (!user) throw new Error("User not found. They need to register first.");
+  const invitedUserId = user._id.toString();
 
-  const existing = group.members.find(
-    (m) => m.userId === user._id.toString()
-  );
-  if (existing) {
-    // A member who previously "left" (kept for expense history) rejoins by
-    // simply being re-added — reactivate instead of erroring.
-    if (existing.isActive) throw new Error("User is already in this group");
-    existing.isActive = true;
-    existing.name = user.name;
-    existing.email = user.email;
-    await group.save();
-    return group.toObject();
+  const existing = group.members.find((m) => m.userId === invitedUserId);
+  if (existing?.isActive) throw new Error("User is already in this group");
+  // (An inactive "left" member also goes through an invite — rejoining is
+  // their choice; accepting reactivates their original entry.)
+
+  const pending = await GroupInvite.findOne({
+    groupId: group._id,
+    invitedUserId,
+    status: "pending",
+  }).lean();
+  if (pending) throw new Error("An invite is already pending for this user");
+
+  const inviter = await User.findById(auth.userId).select("name").lean();
+  const invite = await GroupInvite.create({
+    groupId: group._id,
+    groupName: group.name,
+    invitedUserId,
+    invitedEmail: user.email,
+    invitedBy: { id: auth.userId, name: inviter?.name ?? auth.name },
+  });
+
+  // Best-effort push — the invite works without it.
+  try {
+    await notifyGroupInvite(invitedUserId, group.name, inviter?.name ?? auth.name);
+  } catch {
+    /* push is optional */
   }
 
-  group.members.push({
-    userId: user._id.toString(),
-    name: user.name,
-    email: user.email,
-    isActive: true,
-  });
+  return { invited: true, invite: invite.toObject() };
+}
+
+/** Pending invites addressed to the signed-in user (newest first). */
+export async function listMyInvites(auth: JWTPayload) {
+  await connectDB();
+  const invites = await GroupInvite.find({
+    invitedUserId: auth.userId,
+    status: "pending",
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  return invites.map((i) => ({ ...i, _id: i._id.toString() }));
+}
+
+/** Accept or reject an invite. Accepting joins (or reactivates) the member. */
+export async function respondToInvite(
+  inviteId: string,
+  accept: boolean,
+  auth: JWTPayload
+) {
+  await connectDB();
+  // Atomically claim the pending invite (double-tap / two devices safe).
+  const invite = await GroupInvite.findOneAndUpdate(
+    {
+      _id: toObjectId(inviteId, "inviteId"),
+      invitedUserId: auth.userId,
+      status: "pending",
+    },
+    {
+      $set: {
+        status: accept ? "accepted" : "rejected",
+        respondedAt: new Date(),
+      },
+    },
+    { new: true }
+  );
+  if (!invite) throw new Error("Invite not found (it may already be answered)");
+
+  if (!accept) return { status: "rejected" as const };
+
+  const group = await Group.findById(invite.groupId);
+  if (!group) throw new Error("That group no longer exists");
+
+  const user = await User.findById(auth.userId).select("name email").lean();
+  const existing = group.members.find((m) => m.userId === auth.userId);
+  if (existing) {
+    existing.isActive = true;
+    if (user) {
+      existing.name = user.name;
+      existing.email = user.email;
+    }
+  } else {
+    group.members.push({
+      userId: auth.userId,
+      name: user?.name ?? auth.name,
+      email: user?.email ?? auth.email,
+      isActive: true,
+    });
+  }
   await group.save();
-  return group.toObject();
+  return { status: "accepted" as const, group: group.toObject() };
 }
 
 export async function addGuestMember(
@@ -366,6 +440,7 @@ export async function deleteGroup(id: string, auth: JWTPayload) {
     throw new Error("Only the group creator can delete it");
   }
   await Expense.deleteMany({ groupId: id });
+  await GroupInvite.deleteMany({ groupId: id });
   await Group.findByIdAndDelete(id);
 }
 
@@ -1215,6 +1290,9 @@ export async function deleteAccount(auth: JWTPayload) {
   await Warranty.deleteMany({ userId });
   await MoneyNote.deleteMany({ userId });
   await Todo.deleteMany({ userId });
+  await GroupInvite.deleteMany({
+    $or: [{ invitedUserId: userId }, { "invitedBy.id": userId }],
+  });
   await UserPrefs.deleteMany({ userId });
 
   // Remove the user from groups owned by others (their past group expenses

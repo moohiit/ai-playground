@@ -44,6 +44,22 @@ function fmt(n: number, currency: string) {
   return `${Math.round(n).toLocaleString("en")} ${currency}`;
 }
 
+/** Notify a user they've been invited to a group (best-effort). */
+export async function notifyGroupInvite(
+  userId: string,
+  groupName: string,
+  inviterName: string
+) {
+  const config = await getUserPushConfig(userId);
+  if (!config) return;
+  await sendExpoPush(
+    config.token,
+    "Group invite 👥",
+    `${inviterName} invited you to join "${groupName}" — open Groups to accept or decline.`,
+    { type: "group-invite" }
+  );
+}
+
 export async function checkAndNotifyBudget(
   userId: string,
   config: PushConfig,

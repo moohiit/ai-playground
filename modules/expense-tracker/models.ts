@@ -503,3 +503,50 @@ const todoSchema = new Schema<TodoDoc>(
 export const Todo: Model<TodoDoc> =
   (mongoose.models.Todo as Model<TodoDoc>) ||
   mongoose.model<TodoDoc>("Todo", todoSchema);
+
+// Group invites: adding a registered user to a group no longer adds them
+// directly — it creates a pending invite the invitee must accept (in-app
+// banner + push notification) or reject. Guests (no account) are exempt.
+// groupName/invitedBy.name are denormalized for display without extra joins.
+export type GroupInviteDoc = {
+  _id: Types.ObjectId;
+  groupId: Types.ObjectId;
+  groupName: string;
+  invitedUserId: string;
+  invitedEmail: string;
+  invitedBy: { id: string; name: string };
+  status: "pending" | "accepted" | "rejected";
+  respondedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const groupInviteSchema = new Schema<GroupInviteDoc>(
+  {
+    groupId: {
+      type: Schema.Types.ObjectId,
+      ref: "Group",
+      required: true,
+      index: true,
+    },
+    groupName: { type: String, required: true },
+    invitedUserId: { type: String, required: true, index: true },
+    invitedEmail: { type: String, required: true },
+    invitedBy: {
+      id: { type: String, required: true },
+      name: { type: String, required: true },
+    },
+    status: {
+      type: String,
+      enum: ["pending", "accepted", "rejected"],
+      default: "pending",
+      index: true,
+    },
+    respondedAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+
+export const GroupInvite: Model<GroupInviteDoc> =
+  (mongoose.models.GroupInvite as Model<GroupInviteDoc>) ||
+  mongoose.model<GroupInviteDoc>("GroupInvite", groupInviteSchema);

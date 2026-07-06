@@ -254,7 +254,11 @@ export default function GroupDetailScreen() {
         }
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to add member");
+      if (!res.ok) throw new Error(data.error ?? "Failed to send invite");
+      Alert.alert(
+        "Invite sent",
+        `${email} will join once they accept the invite (they'll get a notification).`
+      );
       setNewMember("");
       fetchAll();
     } catch (err) {
@@ -431,7 +435,7 @@ export default function GroupDetailScreen() {
                 <Input
                   value={newMember}
                   onChangeText={setNewMember}
-                  placeholder="Add member by email"
+                  placeholder="Invite member by email"
                   placeholderTextColor="#71717a"
                   autoCapitalize="none"
                   keyboardType="email-address"

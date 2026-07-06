@@ -258,6 +258,14 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-07-03 — **Group invites shipped.** Adding a registered user to a group now creates
+  a pending `GroupInvite` (denormalized groupName/invitedBy) instead of adding directly;
+  the invitee gets a push notification and an in-app banner on the Groups screen
+  (web + mobile) with Accept/Decline. Accepting joins (or reactivates a "left" member);
+  responses are atomically claimed so double-taps can't double-join. Guests stay
+  instant-add (no account to consent). Group creation still adds founding members
+  directly. Invites are cleaned up with their group and with either user's account.
+
 - 2026-07-03 — **Money notes + to-do list shipped.** `MoneyNote` model (lent/borrowed,
   personName, amount, givenOn, dueBy "promised return", settledAt, overdue flag) +
   `Todo` model. CRUD services + `/notes`, `/notes/:id`, `/todos`, `/todos/:id` routes.

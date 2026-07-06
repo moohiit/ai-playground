@@ -11,23 +11,58 @@ type Group = {
   members: { userId: string; email: string; name: string; isActive: boolean }[];
 };
 
+type Invite = {
+  _id: string;
+  groupName: string;
+  invitedBy: { id: string; name: string };
+  createdAt: string;
+};
+
 export function GroupsTab() {
   const { authFetch } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
+  const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
 
   async function fetchGroups() {
     setLoading(true);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/groups");
-      const data = await res.json().catch(() => ({}));
+      const [gRes, iRes] = await Promise.all([
+        authFetch("/api/projects/expense-tracker/groups"),
+        authFetch("/api/projects/expense-tracker/invites"),
+      ]);
+      const data = await gRes.json().catch(() => ({}));
+      const iData = await iRes.json().catch(() => ({}));
       setGroups(data.groups ?? []);
+      setInvites(iData.invites ?? []);
     } catch {
       // network failure — keep last list; the empty state renders if none
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function respondInvite(id: string, accept: boolean) {
+    if (respondingId) return;
+    setRespondingId(id);
+    try {
+      const res = await authFetch(`/api/projects/expense-tracker/invites/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accept }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Couldn't respond to the invite");
+      }
+      await fetchGroups();
+    } catch {
+      alert("Network error — try again.");
+    } finally {
+      setRespondingId(null);
     }
   }
 
@@ -64,6 +99,41 @@ export function GroupsTab() {
           <span className="relative">+ New Group</span>
         </button>
       </div>
+
+      {invites.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {invites.map((inv) => (
+            <div
+              key={inv._id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-500/40 bg-brand-500/[0.08] px-4 py-3"
+            >
+              <div className="text-sm text-zinc-200">
+                <span className="font-semibold">{inv.invitedBy.name}</span>{" "}
+                invited you to join{" "}
+                <span className="font-semibold text-brand-300">
+                  {inv.groupName}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => respondInvite(inv._id, true)}
+                  disabled={respondingId !== null}
+                  className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-500 disabled:opacity-50"
+                >
+                  {respondingId === inv._id ? "…" : "Accept"}
+                </button>
+                <button
+                  onClick={() => respondInvite(inv._id, false)}
+                  disabled={respondingId !== null}
+                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {showCreate && (
         <CreateGroupForm
