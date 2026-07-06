@@ -1,5 +1,7 @@
 // Mirror of modules/expense-tracker/currencies.ts for the mobile bundle.
 
+// AED removed: the FX provider (Frankfurter/ECB) can't convert it, so
+// selecting it made expenses unsavable. Symbol kept below for old rows.
 export const SUPPORTED_CURRENCIES = [
   "INR",
   "USD",
@@ -8,7 +10,6 @@ export const SUPPORTED_CURRENCIES = [
   "JPY",
   "AUD",
   "CAD",
-  "AED",
   "SGD",
   "CHF",
   "CNY",
