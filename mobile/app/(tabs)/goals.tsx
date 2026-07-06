@@ -56,8 +56,13 @@ export default function GoalsScreen() {
     Alert.alert("Delete goal", `Delete "${g.name}"?`, [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
-        await authFetch(`/api/projects/expense-tracker/goals/${g._id}`, { method: "DELETE" });
-        load();
+        try {
+          const res = await authFetch(`/api/projects/expense-tracker/goals/${g._id}`, { method: "DELETE" });
+          if (!res.ok) throw new Error();
+          load();
+        } catch {
+          Alert.alert("Error", "Couldn't delete the goal.");
+        }
       } },
     ]);
   }

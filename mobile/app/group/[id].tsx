@@ -95,8 +95,15 @@ export default function GroupDetailScreen() {
       {
         text: "Turn off", style: "destructive",
         onPress: async () => {
-          await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "DELETE" });
-          setShareId(null);
+          try {
+            const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "DELETE" });
+            // Only report sharing as off if the server revoked it — otherwise
+            // the public link would still work while the UI says it's off.
+            if (!res.ok) throw new Error();
+            setShareId(null);
+          } catch {
+            Alert.alert("Error", "Couldn't turn off sharing — try again.");
+          }
         },
       },
     ]);
@@ -151,9 +158,10 @@ export default function GroupDetailScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await authFetch(`/api/projects/expense-tracker/expenses/${e._id}`, {
+            const res = await authFetch(`/api/projects/expense-tracker/expenses/${e._id}`, {
               method: "DELETE",
             });
+            if (!res.ok) throw new Error();
             fetchAll();
           } catch {
             Alert.alert("Error", "Failed to delete");
@@ -255,10 +263,12 @@ export default function GroupDetailScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await authFetch(
+              const res = await authFetch(
                 `/api/projects/expense-tracker/groups/${groupId}`,
                 { method: "DELETE" }
               );
+              // Don't navigate away on failure — the group still exists.
+              if (!res.ok) throw new Error();
               router.back();
             } catch {
               Alert.alert("Error", "Failed to delete group");

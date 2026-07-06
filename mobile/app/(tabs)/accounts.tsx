@@ -72,8 +72,13 @@ export default function AccountsScreen() {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          await authFetch(`/api/projects/expense-tracker/accounts/${a._id}`, { method: "DELETE" });
-          load();
+          try {
+            const res = await authFetch(`/api/projects/expense-tracker/accounts/${a._id}`, { method: "DELETE" });
+            if (!res.ok) throw new Error();
+            load();
+          } catch {
+            Alert.alert("Error", "Couldn't delete the account.");
+          }
         },
       },
     ]);

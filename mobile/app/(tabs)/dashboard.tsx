@@ -106,7 +106,7 @@ export default function Dashboard() {
   async function trackSubscription(s: NonNullable<typeof insights>["subscriptions"][number]) {
     setTrackingKey(s.key);
     try {
-      await authFetch("/api/projects/expense-tracker/recurring", {
+      const res = await authFetch("/api/projects/expense-tracker/recurring", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -117,9 +117,14 @@ export default function Dashboard() {
           direction: "expense", cadence: s.cadence, startDate: s.nextDate, autoPost: false,
         }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Error", data.error ?? "Couldn't track this subscription");
+        return;
+      }
       fetchInsights();
     } catch {
-      // leave listed
+      Alert.alert("Error", "Network error — subscription not tracked.");
     } finally {
       setTrackingKey(null);
     }

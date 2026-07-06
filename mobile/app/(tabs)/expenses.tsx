@@ -172,9 +172,10 @@ export default function ExpensesScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await authFetch(`/api/projects/expense-tracker/expenses/${e._id}`, {
+            const res = await authFetch(`/api/projects/expense-tracker/expenses/${e._id}`, {
               method: "DELETE",
             });
+            if (!res.ok) throw new Error();
             fetchExpenses();
           } catch {
             Alert.alert("Error", "Failed to delete expense");
