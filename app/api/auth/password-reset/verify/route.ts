@@ -83,12 +83,17 @@ export async function POST(req: Request) {
     user.passwordResetOtpExpiresAt = undefined;
     user.passwordResetOtpAttempts = 0;
     if (user.emailVerified !== true) user.emailVerified = true;
+    // A reset usually means the old password may be compromised — bump the
+    // token version so every previously issued session is revoked. The fresh
+    // token below carries the new version.
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     await user.save();
 
     const jwt = signToken({
       userId: user._id.toString(),
       email: user.email,
       name: user.name,
+      tv: user.tokenVersion,
     });
 
     return NextResponse.json({

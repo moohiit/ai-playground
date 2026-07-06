@@ -20,6 +20,9 @@ export type UserDoc = {
   pendingEmailToken?: string;
   pendingEmailTokenExpiresAt?: Date;
   monthlyLimitOverrides?: Map<string, number>;
+  // Bumped on password change/reset; JWTs carry it as `tv` and stop
+  // validating once it moves — instant revocation of older sessions.
+  tokenVersion?: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -48,6 +51,7 @@ const userSchema = new Schema<UserDoc>(
       of: Number,
       default: undefined,
     },
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

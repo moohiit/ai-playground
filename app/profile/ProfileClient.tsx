@@ -491,7 +491,7 @@ function EmailCard({
 /* ───────── password ───────── */
 
 function PasswordCard() {
-  const { authFetch } = useAuth();
+  const { authFetch, user, applyExistingToken } = useAuth();
   const [open, setOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -512,6 +512,9 @@ function PasswordCard() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Change failed");
+      // The server revokes all old sessions (tokenVersion bump) and returns a
+      // fresh token — apply it so THIS browser stays signed in.
+      if (data.token && user) applyExistingToken(data.token, user);
       setSaved(true);
       setCurrentPassword("");
       setNewPassword("");

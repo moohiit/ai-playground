@@ -76,6 +76,18 @@ async function main() {
   }));
 
   console.log(`\nSeeding 3 expenses + 1 income for test user ${TEST_USER_ID}…`);
+  // requireAuth now verifies the user EXISTS and the token version matches
+  // (revocation check), so the minted JWT only works with a real user row.
+  await mongoose.connection.collection("users").insertOne({
+    _id: new mongoose.Types.ObjectId(TEST_USER_ID),
+    name: "Smoke Test",
+    email: "smoke@test.local",
+    passwordHash: "not-a-real-hash",
+    emailVerified: true,
+    tokenVersion: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
   await expenses.insertMany(seed);
 
   try {
@@ -624,6 +636,9 @@ async function main() {
     await mongoose.connection.collection("recurringrules").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("goals").deleteMany({ userId: TEST_USER_ID });
     await mongoose.connection.collection("groups").deleteMany({ createdBy: TEST_USER_ID });
+    await mongoose.connection
+      .collection("users")
+      .deleteMany({ email: "smoke@test.local" });
     await mongoose.disconnect();
   }
 

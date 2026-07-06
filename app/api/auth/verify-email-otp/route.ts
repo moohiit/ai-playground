@@ -42,6 +42,7 @@ export async function POST(req: Request) {
         userId: user._id.toString(),
         email: user.email,
         name: user.name,
+        tv: user.tokenVersion ?? 0,
       });
       return NextResponse.json({
         token: jwt,
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
       userId: user._id.toString(),
       email: user.email,
       name: user.name,
+      tv: user.tokenVersion ?? 0,
     });
 
     return NextResponse.json({

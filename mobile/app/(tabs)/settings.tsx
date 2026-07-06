@@ -27,7 +27,7 @@ type Profile = {
 };
 
 export default function SettingsScreen() {
-  const { authFetch, user, logout, updateUserName } = useAuth();
+  const { authFetch, user, logout, updateUserName, applyAuth } = useAuth();
   const router = useRouter();
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -203,9 +203,12 @@ export default function SettingsScreen() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to change password");
+      // The server revokes all old sessions (tokenVersion bump) and returns a
+      // fresh token — apply it so THIS device stays signed in.
+      if (data.token && user) await applyAuth(data.token, user);
       setCurrentPw("");
       setNewPw("");
-      setPwMsg({ ok: true, text: "Password changed successfully." });
+      setPwMsg({ ok: true, text: "Password changed. Other devices were signed out." });
     } catch (e) {
       setPwMsg({
         ok: false,

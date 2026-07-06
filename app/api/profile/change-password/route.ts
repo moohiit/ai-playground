@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { connectDB } from "@/lib/db";
-import { comparePassword, hashPassword, requireAuth } from "@/lib/auth";
+import { comparePassword, hashPassword, requireAuth, signToken } from "@/lib/auth";
 import { ApiError, handleRouteError } from "@/lib/apiError";
 import { User } from "@/models/User";
 
@@ -38,9 +38,19 @@ export async function POST(req: Request) {
     if (!ok) throw new ApiError(401, "Current password is incorrect.");
 
     user.passwordHash = await hashPassword(parsed.data.newPassword);
+    // Revoke every previously issued session — a leaked token must die when
+    // the password changes. The fresh token keeps THIS session signed in.
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     await user.save();
 
-    return NextResponse.json({ ok: true });
+    const token = signToken({
+      userId: user._id.toString(),
+      email: user.email,
+      name: user.name,
+      tv: user.tokenVersion,
+    });
+
+    return NextResponse.json({ ok: true, token });
   } catch (err) {
     return handleRouteError(err);
   }

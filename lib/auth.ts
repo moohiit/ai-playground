@@ -12,6 +12,10 @@ export type JWTPayload = {
   userId: string;
   email: string;
   name: string;
+  // Token version — must match User.tokenVersion for the token to be
+  // accepted. Bumped on password change/reset to revoke older sessions.
+  // Optional so pre-existing tokens (no claim) read as version 0.
+  tv?: number;
 };
 
 export function signToken(payload: JWTPayload): string {
@@ -38,11 +42,27 @@ export async function getAuthUser(
 ): Promise<JWTPayload | null> {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
+  let payload: JWTPayload;
   try {
-    return verifyToken(authHeader.slice(7));
+    payload = verifyToken(authHeader.slice(7));
   } catch {
     return null;
   }
+  // Signature alone isn't enough: the user must still exist (deleted
+  // accounts' tokens kept working for 7 days) and the token's version must
+  // match — a password change/reset bumps tokenVersion, instantly revoking
+  // every previously issued session.
+  try {
+    await connectDB();
+    const user = await User.findById(payload.userId)
+      .select("tokenVersion")
+      .lean();
+    if (!user) return null;
+    if ((payload.tv ?? 0) !== (user.tokenVersion ?? 0)) return null;
+  } catch {
+    return null;
+  }
+  return payload;
 }
 
 export async function requireAuth(req: Request): Promise<JWTPayload> {
