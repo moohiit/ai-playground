@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
@@ -135,7 +135,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
     }
   }
 
+  // Only the latest in-flight fetch may write state (rapid pagination
+  // clicks fire overlapping requests; a slow early page could win).
+  const fetchSeqRef = useRef(0);
+
   const fetchAll = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     // try/finally so a network error or non-JSON response can't strand the
     // "Loading group..." spinner forever (setLoading(false) always runs).
@@ -154,6 +159,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
         eRes.json().catch(() => ({})),
         sRes.json().catch(() => ({})),
       ]);
+      if (seq !== fetchSeqRef.current) return; // superseded by a newer fetch
       setGroup(gData.group ?? null);
       setShareId(gData.group?.shareId ?? null);
       setBalances(bData.balances ?? []);
@@ -162,9 +168,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
       setExpenseTotal(eData.total ?? 0);
       setActiveAmount(sData.totalAmount ?? 0);
     } catch {
-      setGroup(null); // renders the "group not found / failed" state
+      if (seq === fetchSeqRef.current) setGroup(null); // "not found / failed" state
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
   }, [groupId, page]);
 

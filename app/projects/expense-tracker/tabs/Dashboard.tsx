@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
@@ -120,7 +120,13 @@ export function Dashboard() {
   const [base, setBase] = useState("INR");
   const [settled, setSettled] = useState<"false" | "true" | "all">("false");
 
+  // Monotonic sequence for list fetches: changing a filter while on page > 1
+  // fires two overlapping requests (stale-page + page-reset). Only the latest
+  // request may write state, or a slow early response overwrites a newer one.
+  const fetchSeqRef = useRef(0);
+
   const fetchExpenses = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     const dateFrom = rangeToDateFrom(range);
 
@@ -151,6 +157,7 @@ export function Dashboard() {
         expRes.json().catch(() => ({})),
         sumRes.json().catch(() => ({})),
       ]);
+      if (seq !== fetchSeqRef.current) return; // superseded by a newer fetch
       setExpenses(expData.expenses ?? []);
       setTotal(expData.total ?? 0);
       setTotalAmount(sumData.totalAmount ?? 0);
@@ -159,7 +166,7 @@ export function Dashboard() {
     } catch {
       // leave the last good state in place
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
   }, [view, direction, category, debouncedSearch, range, settled, page, authFetch]);
 

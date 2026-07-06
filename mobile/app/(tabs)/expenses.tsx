@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -71,7 +71,13 @@ export default function ExpensesScreen() {
   const [exporting, setExporting] = useState(false);
   const [base, setBase] = useState("INR");
 
+  // Only the latest in-flight fetch may write state — changing a filter on
+  // page > 1 fires two overlapping requests (stale-page + page-reset), and a
+  // slow early response would otherwise overwrite the newer one.
+  const fetchSeqRef = useRef(0);
+
   const fetchExpenses = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     const dateFrom = rangeToDateFrom(range);
     const params = new URLSearchParams({
       limit: String(PAGE_SIZE),
@@ -97,6 +103,7 @@ export default function ExpensesScreen() {
       ]);
       const expData: ExpenseListResponse = await expRes.json().catch(() => ({}));
       const sumData: Summary = await sumRes.json().catch(() => ({}));
+      if (seq !== fetchSeqRef.current) return; // superseded by a newer fetch
       setExpenses(expData.expenses ?? []);
       setTotal(expData.total ?? 0);
       setTotalAmount(sumData.totalAmount ?? 0);
