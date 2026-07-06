@@ -13,6 +13,7 @@ import { CoachTab } from "./tabs/CoachTab";
 import { ReportsTab } from "./tabs/ReportsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { WarrantyTab } from "./tabs/WarrantyTab";
+import { NotesTab } from "./tabs/NotesTab";
 
 const TABS = [
   { id: "Dashboard", icon: DashboardIcon },
@@ -24,6 +25,7 @@ const TABS = [
   { id: "Groups", icon: GroupsIcon },
   { id: "Reports", icon: ReportsIcon },
   { id: "Warranties", icon: WarrantyIcon },
+  { id: "Notes", icon: NotesIcon },
   { id: "Settings", icon: SettingsIcon },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
@@ -98,6 +100,7 @@ export function ExpenseApp() {
         {tab === "Groups" && <GroupsTab />}
         {tab === "Reports" && <ReportsTab />}
         {tab === "Warranties" && <WarrantyTab />}
+        {tab === "Notes" && <NotesTab />}
         {tab === "Settings" && <SettingsTab />}
       </div>
     </div>
@@ -196,6 +199,15 @@ function WarrantyIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function NotesIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
     </svg>
   );
 }

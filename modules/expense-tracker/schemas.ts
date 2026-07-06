@@ -501,3 +501,53 @@ export const receiptResultSchema = z.object({
 });
 
 export type ReceiptResult = z.infer<typeof receiptResultSchema>;
+
+// ── Money notes + to-dos ────────────────────────────
+
+export const createMoneyNoteSchema = z
+  .object({
+    direction: z.enum(["lent", "borrowed"]).default("lent"),
+    personName: z.string().min(1, "Who was it given to?").max(100),
+    amount: z.number().positive("Amount must be positive"),
+    currency: z.string().optional(),
+    description: z.string().max(500).default(""),
+    givenOn: isoDateRequired,
+    dueBy: isoDateOpt,
+  })
+  .strict();
+
+export type CreateMoneyNoteInput = z.infer<typeof createMoneyNoteSchema>;
+
+export const updateMoneyNoteSchema = z
+  .object({
+    direction: z.enum(["lent", "borrowed"]).optional(),
+    personName: z.string().min(1).max(100).optional(),
+    amount: z.number().positive().optional(),
+    currency: z.string().optional(),
+    description: z.string().max(500).optional(),
+    givenOn: isoDateRequired.optional(),
+    dueBy: isoDateOpt.optional(),
+    settled: z.boolean().optional(),
+  })
+  .strict();
+
+export type UpdateMoneyNoteInput = z.infer<typeof updateMoneyNoteSchema>;
+
+export const createTodoSchema = z
+  .object({
+    text: z.string().min(1, "Write something to do").max(300),
+    dueDate: isoDateOpt,
+  })
+  .strict();
+
+export type CreateTodoInput = z.infer<typeof createTodoSchema>;
+
+export const updateTodoSchema = z
+  .object({
+    text: z.string().min(1).max(300).optional(),
+    done: z.boolean().optional(),
+    dueDate: isoDateOpt.optional(),
+  })
+  .strict();
+
+export type UpdateTodoInput = z.infer<typeof updateTodoSchema>;

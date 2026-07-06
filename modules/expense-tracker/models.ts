@@ -437,3 +437,69 @@ const warrantySchema = new Schema<WarrantyDoc>(
 export const Warranty: Model<WarrantyDoc> =
   (mongoose.models.Warranty as Model<WarrantyDoc>) ||
   mongoose.model<WarrantyDoc>("Warranty", warrantySchema);
+
+// Money notes: informal lent/borrowed money tracked OUTSIDE the ledger —
+// "gave Rahul 2000 for the concert, he'll return it by the 15th". Not an
+// expense (it's expected back) and not a group split (the other person needs
+// no account). settledAt records when it was actually returned/paid back.
+export type MoneyNoteDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  direction: "lent" | "borrowed";
+  personName: string;
+  amount: number;
+  currency: string;
+  description: string;
+  givenOn: Date;
+  dueBy: Date | null;
+  settledAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const moneyNoteSchema = new Schema<MoneyNoteDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    direction: { type: String, enum: ["lent", "borrowed"], default: "lent" },
+    personName: { type: String, required: true },
+    amount: { type: Number, required: true },
+    currency: { type: String, default: "INR" },
+    description: { type: String, default: "" },
+    givenOn: { type: Date, required: true },
+    dueBy: { type: Date, default: null },
+    settledAt: { type: Date, default: null, index: true },
+  },
+  { timestamps: true }
+);
+
+export const MoneyNote: Model<MoneyNoteDoc> =
+  (mongoose.models.MoneyNote as Model<MoneyNoteDoc>) ||
+  mongoose.model<MoneyNoteDoc>("MoneyNote", moneyNoteSchema);
+
+// Simple personal to-do list (money chores: "pay electricity bill",
+// "ask Rahul for the 2000 back").
+export type TodoDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  text: string;
+  done: boolean;
+  doneAt: Date | null;
+  dueDate: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const todoSchema = new Schema<TodoDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    text: { type: String, required: true },
+    done: { type: Boolean, default: false, index: true },
+    doneAt: { type: Date, default: null },
+    dueDate: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+
+export const Todo: Model<TodoDoc> =
+  (mongoose.models.Todo as Model<TodoDoc>) ||
+  mongoose.model<TodoDoc>("Todo", todoSchema);

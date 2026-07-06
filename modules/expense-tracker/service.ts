@@ -14,6 +14,8 @@ import {
   RecurringRule,
   Goal,
   Warranty,
+  MoneyNote,
+  Todo,
   type ExpenseDoc,
   type RecurringRuleDoc,
 } from "./models";
@@ -123,6 +125,10 @@ import {
   type CreateGoalInput,
   type UpdateGoalInput,
   type ContributeGoalInput,
+  type CreateMoneyNoteInput,
+  type UpdateMoneyNoteInput,
+  type CreateTodoInput,
+  type UpdateTodoInput,
   geminiReceiptSchema,
   receiptResultSchema,
   geminiNlSchema,
@@ -1207,6 +1213,8 @@ export async function deleteAccount(auth: JWTPayload) {
   await RecurringRule.deleteMany({ userId });
   await Goal.deleteMany({ userId });
   await Warranty.deleteMany({ userId });
+  await MoneyNote.deleteMany({ userId });
+  await Todo.deleteMany({ userId });
   await UserPrefs.deleteMany({ userId });
 
   // Remove the user from groups owned by others (their past group expenses
@@ -2213,5 +2221,145 @@ export async function removeGoal(id: string, auth: JWTPayload) {
     userId: auth.userId,
   });
   if (res.deletedCount === 0) throw new Error("Goal not found");
+  return { deleted: true };
+}
+
+// ── Money notes (informal lent/borrowed) ────────────
+
+export async function listMoneyNotes(auth: JWTPayload) {
+  await connectDB();
+  const notes = await MoneyNote.find({ userId: auth.userId }).lean();
+  const now = Date.now();
+  // Outstanding first (soonest due at the top, no-due-date last), then
+  // settled ones newest-first.
+  const open = notes
+    .filter((n) => !n.settledAt)
+    .sort((a, b) => {
+      const ad = a.dueBy ? new Date(a.dueBy).getTime() : Infinity;
+      const bd = b.dueBy ? new Date(b.dueBy).getTime() : Infinity;
+      return ad - bd;
+    });
+  const settled = notes
+    .filter((n) => n.settledAt)
+    .sort(
+      (a, b) =>
+        new Date(b.settledAt!).getTime() - new Date(a.settledAt!).getTime()
+    );
+  return [...open, ...settled].map((n) => ({
+    ...n,
+    _id: n._id.toString(),
+    overdue: !n.settledAt && !!n.dueBy && new Date(n.dueBy).getTime() < now,
+  }));
+}
+
+export async function createMoneyNote(
+  input: CreateMoneyNoteInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const currency = input.currency ?? (await getBaseCurrency(auth.userId));
+  const note = await MoneyNote.create({
+    userId: auth.userId,
+    direction: input.direction,
+    personName: input.personName.trim(),
+    amount: input.amount,
+    currency,
+    description: input.description,
+    givenOn: new Date(input.givenOn),
+    dueBy: input.dueBy ? new Date(input.dueBy) : null,
+  });
+  return note.toObject();
+}
+
+export async function updateMoneyNote(
+  id: string,
+  input: UpdateMoneyNoteInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const note = await MoneyNote.findOne({
+    _id: toObjectId(id, "noteId"),
+    userId: auth.userId,
+  });
+  if (!note) throw new Error("Money note not found");
+
+  if (input.direction !== undefined) note.direction = input.direction;
+  if (input.personName !== undefined) note.personName = input.personName.trim();
+  if (input.amount !== undefined) note.amount = input.amount;
+  if (input.currency !== undefined) note.currency = input.currency;
+  if (input.description !== undefined) note.description = input.description;
+  if (input.givenOn !== undefined) note.givenOn = new Date(input.givenOn);
+  if (input.dueBy !== undefined)
+    note.dueBy = input.dueBy ? new Date(input.dueBy) : null;
+  // settled: true stamps now (idempotent); false re-opens the note.
+  if (input.settled !== undefined)
+    note.settledAt = input.settled ? note.settledAt ?? new Date() : null;
+
+  await note.save();
+  return note.toObject();
+}
+
+export async function removeMoneyNote(id: string, auth: JWTPayload) {
+  await connectDB();
+  const res = await MoneyNote.deleteOne({
+    _id: toObjectId(id, "noteId"),
+    userId: auth.userId,
+  });
+  if (res.deletedCount === 0) throw new Error("Money note not found");
+  return { deleted: true };
+}
+
+// ── To-dos ──────────────────────────────────────────
+
+export async function listTodos(auth: JWTPayload) {
+  await connectDB();
+  // Open items first (oldest due first, then newest created), done items last.
+  const todos = await Todo.find({ userId: auth.userId })
+    .sort({ done: 1, dueDate: 1, createdAt: -1 })
+    .lean();
+  return todos.map((t) => ({ ...t, _id: t._id.toString() }));
+}
+
+export async function createTodo(input: CreateTodoInput, auth: JWTPayload) {
+  await connectDB();
+  const todo = await Todo.create({
+    userId: auth.userId,
+    text: input.text.trim(),
+    dueDate: input.dueDate ? new Date(input.dueDate) : null,
+  });
+  return todo.toObject();
+}
+
+export async function updateTodo(
+  id: string,
+  input: UpdateTodoInput,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const todo = await Todo.findOne({
+    _id: toObjectId(id, "todoId"),
+    userId: auth.userId,
+  });
+  if (!todo) throw new Error("To-do not found");
+
+  if (input.text !== undefined) todo.text = input.text.trim();
+  if (input.dueDate !== undefined)
+    todo.dueDate = input.dueDate ? new Date(input.dueDate) : null;
+  if (input.done !== undefined) {
+    todo.done = input.done;
+    todo.doneAt = input.done ? todo.doneAt ?? new Date() : null;
+  }
+
+  await todo.save();
+  return todo.toObject();
+}
+
+export async function removeTodo(id: string, auth: JWTPayload) {
+  await connectDB();
+  const res = await Todo.deleteOne({
+    _id: toObjectId(id, "todoId"),
+    userId: auth.userId,
+  });
+  if (res.deletedCount === 0) throw new Error("To-do not found");
   return { deleted: true };
 }

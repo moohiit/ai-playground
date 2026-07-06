@@ -258,6 +258,18 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-07-03 — **Money notes + to-do list shipped.** `MoneyNote` model (lent/borrowed,
+  personName, amount, givenOn, dueBy "promised return", settledAt, overdue flag) +
+  `Todo` model. CRUD services + `/notes`, `/notes/:id`, `/todos`, `/todos/:id` routes.
+  Web "Notes" tab (outstanding lent/borrowed summary, mark returned/repaid, checklist)
+  + mobile "Notes & To-dos" screen via More menu. Both cleaned up on account deletion.
+
+- 2026-07-03 — **Member soft-remove shipped.** Removing a group member who has recorded
+  expenses deactivates them (`isActive:false`, "left" badge) instead of hard-deleting,
+  so their name/attribution and balances stay intact; re-adding (email or same guest
+  name) reactivates. Expense-free members are still fully removed. Creator-only; the
+  creator can't be removed. Pickers exclude departed members for new expenses.
+
 - 2026-06-10 — **Warranty / return tracker shipped.** All Phase 4 items complete. Expense tracker roadmap fully shipped.
 
 - 2026-06-10 — **Push notifications shipped.** `UserPrefs.expoPushToken`, `push.ts` (Expo Push API), `/api/push/register` (POST/DELETE), expense POST hooks (budget warn/over + anomaly 3×), cron hook (bill-due for manual recurring rules), mobile `lib/push.ts` + `_layout.tsx` `PushSetup`.
