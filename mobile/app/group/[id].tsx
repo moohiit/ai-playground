@@ -21,6 +21,7 @@ import type {
   Balance,
   Expense,
   Group,
+  Member,
   Settlement,
   SettlementRecord,
 } from "../../lib/types";
@@ -87,6 +88,41 @@ export default function GroupDetailScreen() {
     } finally {
       setSharing(false);
     }
+  }
+
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+
+  function confirmRemoveMember(m: Member) {
+    Alert.alert(
+      `Remove ${m.name}?`,
+      "Their past expenses and balances stay recorded — if they have any, they'll be marked as \"left\" and excluded from new expenses. Re-adding them brings them back.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            setRemovingMemberId(m.userId);
+            try {
+              const res = await authFetch(
+                `/api/projects/expense-tracker/groups/${groupId}/members?memberId=${encodeURIComponent(m.userId)}`,
+                { method: "DELETE" }
+              );
+              if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                Alert.alert("Error", data.error ?? "Couldn't remove member");
+                return;
+              }
+              fetchAll();
+            } catch {
+              Alert.alert("Error", "Network error — member not removed.");
+            } finally {
+              setRemovingMemberId(null);
+            }
+          },
+        },
+      ]
+    );
   }
 
   function stopSharing() {
@@ -340,15 +376,26 @@ export default function GroupDetailScreen() {
                 {group?.members.map((m) => {
                   const bal = balances.find((b) => b.memberId === m.userId);
                   const net = bal?.netBalance ?? 0;
+                  const canRemove =
+                    user?.userId === group.createdBy &&
+                    m.isActive &&
+                    m.userId !== group.createdBy;
                   return (
                     <View
                       key={m.userId}
-                      className="flex-row items-center gap-2 rounded-lg border border-white/10 bg-zinc-950/50 px-3 py-2"
+                      className={`flex-row items-center gap-2 rounded-lg border border-white/10 bg-zinc-950/50 px-3 py-2 ${
+                        m.isActive ? "" : "opacity-60"
+                      }`}
                     >
                       <Text className="text-sm text-zinc-200">{m.name}</Text>
                       {m.isGuest && (
                         <Text className="rounded-full border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[9px] uppercase text-zinc-400">
                           guest
+                        </Text>
+                      )}
+                      {!m.isActive && (
+                        <Text className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] uppercase text-amber-400">
+                          left
                         </Text>
                       )}
                       {bal && (
@@ -363,6 +410,17 @@ export default function GroupDetailScreen() {
                         >
                           {net > 0 ? "+" : ""}{money(net)}
                         </Text>
+                      )}
+                      {canRemove && (
+                        <Pressable
+                          onPress={() => confirmRemoveMember(m)}
+                          hitSlop={8}
+                          disabled={removingMemberId !== null}
+                        >
+                          <Text className="text-xs text-zinc-600">
+                            {removingMemberId === m.userId ? "…" : "✕"}
+                          </Text>
+                        </Pressable>
                       )}
                     </View>
                   );

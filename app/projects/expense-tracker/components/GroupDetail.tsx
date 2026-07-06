@@ -26,7 +26,7 @@ type Member = {
   isActive: boolean;
   isGuest?: boolean;
 };
-type Group = { _id: string; name: string; description: string; members: Member[]; shareId?: string | null };
+type Group = { _id: string; name: string; description: string; createdBy: string; members: Member[]; shareId?: string | null };
 type Balance = {
   memberId: string;
   name: string;
@@ -62,7 +62,7 @@ type Props = { groupId: string; onBack: () => void };
 const PAGE_SIZE = 10;
 
 export function GroupDetail({ groupId, onBack }: Props) {
-  const { authFetch } = useAuth();
+  const { authFetch, user } = useAuth();
   const [group, setGroup] = useState<Group | null>(null);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
@@ -217,6 +217,35 @@ export function GroupDetail({ groupId, onBack }: Props) {
       alert("Network error — member not added.");
     } finally {
       setAddingMember(false);
+    }
+  }
+
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+
+  async function handleRemoveMember(m: Member) {
+    if (removingMemberId) return;
+    if (
+      !confirm(
+        `Remove ${m.name} from the group?\n\nTheir past expenses and balances stay recorded — if they have any, they'll be marked as "left" and excluded from new expenses. Re-adding them brings them back.`
+      )
+    )
+      return;
+    setRemovingMemberId(m.userId);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/members?memberId=${encodeURIComponent(m.userId)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Couldn't remove member");
+        return;
+      }
+      fetchAll();
+    } catch {
+      alert("Network error — member not removed.");
+    } finally {
+      setRemovingMemberId(null);
     }
   }
 
@@ -416,6 +445,10 @@ export function GroupDetail({ groupId, onBack }: Props) {
               onAddGuest={handleAddGuest}
               addingGuest={addingGuest}
               cur={cur}
+              canManage={user?.userId === group.createdBy}
+              creatorId={group.createdBy}
+              onRemove={handleRemoveMember}
+              removingId={removingMemberId}
             />
 
             {settlements.length > 0 && (
@@ -528,6 +561,10 @@ function MembersSection({
   onAddGuest,
   addingGuest,
   cur,
+  canManage,
+  creatorId,
+  onRemove,
+  removingId,
 }: {
   members: Member[];
   balances: Balance[];
@@ -540,6 +577,10 @@ function MembersSection({
   onAddGuest: () => void;
   addingGuest: boolean;
   cur: string;
+  canManage: boolean;
+  creatorId: string;
+  onRemove: (m: Member) => void;
+  removingId: string | null;
 }) {
   const money = (n: number) => formatMoney(n, cur);
   return (
@@ -549,12 +590,13 @@ function MembersSection({
       <div className="mb-3 flex flex-wrap gap-2">
         {members.map((m) => {
           const bal = balances.find((b) => b.memberId === m.userId);
-          const tone =
-            bal && bal.netBalance > 0.01
-              ? "border-emerald-500/30 bg-emerald-500/5"
-              : bal && bal.netBalance < -0.01
-              ? "border-red-500/30 bg-red-500/5"
-              : "border-zinc-800 bg-zinc-950/60";
+          const tone = !m.isActive
+            ? "border-zinc-800/60 bg-zinc-950/40 opacity-60"
+            : bal && bal.netBalance > 0.01
+            ? "border-emerald-500/30 bg-emerald-500/5"
+            : bal && bal.netBalance < -0.01
+            ? "border-red-500/30 bg-red-500/5"
+            : "border-zinc-800 bg-zinc-950/60";
           return (
             <div
               key={m.userId}
@@ -572,6 +614,11 @@ function MembersSection({
                   guest
                 </span>
               )}
+              {!m.isActive && (
+                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-amber-400">
+                  left
+                </span>
+              )}
               {bal && (
                 <span
                   className={cn(
@@ -585,6 +632,16 @@ function MembersSection({
                 >
                   {bal.netBalance > 0 ? "+" : ""}{money(bal.netBalance)}
                 </span>
+              )}
+              {canManage && m.isActive && m.userId !== creatorId && (
+                <button
+                  onClick={() => onRemove(m)}
+                  disabled={removingId !== null}
+                  title={`Remove ${m.name} (their expenses stay)`}
+                  className="ml-0.5 rounded p-0.5 text-zinc-600 transition-colors hover:text-red-400 disabled:opacity-40"
+                >
+                  {removingId === m.userId ? "…" : "✕"}
+                </button>
               )}
             </div>
           );

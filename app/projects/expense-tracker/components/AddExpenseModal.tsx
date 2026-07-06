@@ -154,9 +154,10 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
         );
         setPresentMembers(ids);
       }
-      if (!paidById && selectedGroup.members.length > 0) {
-        setPaidById(selectedGroup.members[0].userId);
-        setPaidByName(selectedGroup.members[0].name);
+      const firstActive = selectedGroup.members.find((m) => m.isActive);
+      if (!paidById && firstActive) {
+        setPaidById(firstActive.userId);
+        setPaidByName(firstActive.name);
       }
     }
   }, [selectedGroup]);
@@ -387,11 +388,16 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                         }}
                         className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
                       >
-                        {selectedGroup.members.map((m) => (
-                          <option key={m.userId} value={m.userId}>
-                            {m.name}
-                          </option>
-                        ))}
+                        {selectedGroup.members
+                          // Members who left can't pay NEW expenses, but keep
+                          // the current payer listed when editing an old one.
+                          .filter((m) => m.isActive || m.userId === paidById)
+                          .map((m) => (
+                            <option key={m.userId} value={m.userId}>
+                              {m.name}
+                              {!m.isActive ? " (left)" : ""}
+                            </option>
+                          ))}
                       </select>
                     </div>
 

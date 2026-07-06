@@ -85,6 +85,7 @@ export type Group = {
   _id: string;
   name: string;
   description?: string;
+  createdBy: string;
   members: Member[];
   shareId?: string | null;
 };

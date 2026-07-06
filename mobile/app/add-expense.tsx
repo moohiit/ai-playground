@@ -147,9 +147,10 @@ export default function AddExpenseScreen() {
         )
       );
     }
-    if (!paidById && selectedGroup.members.length > 0) {
-      setPaidById(selectedGroup.members[0].userId);
-      setPaidByName(selectedGroup.members[0].name);
+    const firstActive = selectedGroup.members.find((m) => m.isActive);
+    if (!paidById && firstActive) {
+      setPaidById(firstActive.userId);
+      setPaidByName(firstActive.name);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroup]);
@@ -418,11 +419,15 @@ export default function AddExpenseScreen() {
                 <>
                   <Field label="Paid by">
                     <View className="flex-row flex-wrap gap-2">
-                      {selectedGroup.members.map((m) => (
+                      {selectedGroup.members
+                        // Members who left can't pay NEW expenses, but keep the
+                        // current payer visible when editing an old one.
+                        .filter((m) => m.isActive || m.userId === paidById)
+                        .map((m) => (
                         <Chip
                           key={m.userId}
                           active={paidById === m.userId}
-                          label={m.name}
+                          label={m.isActive ? m.name : `${m.name} (left)`}
                           onPress={() => {
                             setPaidById(m.userId);
                             setPaidByName(m.name);

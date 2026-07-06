@@ -247,8 +247,18 @@ export async function addMember(
   const user = await User.findOne({ email: email.toLowerCase() }).lean();
   if (!user) throw new Error("User not found. They need to register first.");
 
-  if (group.members.some((m) => m.userId === user._id.toString())) {
-    throw new Error("User is already in this group");
+  const existing = group.members.find(
+    (m) => m.userId === user._id.toString()
+  );
+  if (existing) {
+    // A member who previously "left" (kept for expense history) rejoins by
+    // simply being re-added — reactivate instead of erroring.
+    if (existing.isActive) throw new Error("User is already in this group");
+    existing.isActive = true;
+    existing.name = user.name;
+    existing.email = user.email;
+    await group.save();
+    return group.toObject();
   }
 
   group.members.push({
@@ -275,12 +285,17 @@ export async function addGuestMember(
   if (!group.members.some((m) => m.userId === auth.userId)) {
     throw new Error("You are not a member of this group");
   }
-  if (
-    group.members.some(
-      (m) => m.name.trim().toLowerCase() === trimmed.toLowerCase()
-    )
-  ) {
-    throw new Error("A member with that name is already in this group");
+  const sameName = group.members.find(
+    (m) => m.name.trim().toLowerCase() === trimmed.toLowerCase()
+  );
+  if (sameName) {
+    // A guest who "left" (kept for history) can rejoin under the same name.
+    if (sameName.isActive) {
+      throw new Error("A member with that name is already in this group");
+    }
+    sameName.isActive = true;
+    await group.save();
+    return group.toObject();
   }
 
   // Guests have no account: a synthetic userId keyed for splits/balances.
@@ -306,9 +321,33 @@ export async function removeMember(
   if (group.createdBy !== auth.userId) {
     throw new Error("Only the group creator can remove members");
   }
-  group.members = group.members.filter(
-    (m) => m.userId !== memberId
-  ) as typeof group.members;
+  if (memberId === group.createdBy) {
+    throw new Error("The group creator can't be removed — delete the group instead");
+  }
+
+  // If the member appears in any of this group's expenses (as payer or in a
+  // split), hard-removing them would orphan that history: their name would
+  // vanish from Members/balances and editing those expenses would fail
+  // validation. Deactivate instead — name & details stay, they're excluded
+  // from new splits, and re-adding them reactivates the same entry.
+  const hasExpenses = await Expense.exists({
+    groupId: group._id,
+    $or: [
+      { "paidBy.id": memberId },
+      { "splitAmong.memberId": memberId },
+      { "splits.memberId": memberId },
+    ],
+  });
+
+  if (hasExpenses) {
+    const member = group.members.find((m) => m.userId === memberId);
+    if (!member) throw new Error("Member not found in this group");
+    member.isActive = false;
+  } else {
+    group.members = group.members.filter(
+      (m) => m.userId !== memberId
+    ) as typeof group.members;
+  }
   await group.save();
   return group.toObject();
 }
