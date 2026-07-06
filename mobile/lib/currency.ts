@@ -35,6 +35,20 @@ export function currencySymbol(code: string): string {
   return SYMBOLS[code] ?? `${code} `;
 }
 
+/**
+ * Strict money-input parser. parseFloat silently truncated garbage:
+ * "12,50" (Android decimal-comma keyboards) became 12 — losing the fraction —
+ * and "12abc" became 12. A single comma between digits is treated as the
+ * decimal separator; anything else non-numeric returns NaN so callers'
+ * `!amt` validation rejects it.
+ */
+export function parseAmount(raw: string): number {
+  let s = raw.trim();
+  if (/^\d+,\d+$/.test(s)) s = s.replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(s)) return NaN;
+  return Number(s);
+}
+
 export function formatMoney(amount: number, code = "INR"): string {
   const sign = amount < 0 ? "-" : "";
   return `${sign}${currencySymbol(code)}${Math.abs(amount).toLocaleString("en-IN", {

@@ -21,7 +21,7 @@ import {
   type Expense,
   type Group,
 } from "../lib/types";
-import { SUPPORTED_CURRENCIES } from "../lib/currency";
+import { SUPPORTED_CURRENCIES, parseAmount } from "../lib/currency";
 import {
   AppBackground,
   GradientButton,
@@ -222,7 +222,7 @@ export default function AddExpenseScreen() {
   async function handleSave() {
     if (saving) return;
     setError(null);
-    const amt = parseFloat(amount);
+    const amt = parseAmount(amount);
     const effectiveType = direction === "income" ? "personal" : type;
     if (!amt || amt <= 0) return setError("Enter a valid amount");
     if (!description.trim()) return setError("Enter a description");

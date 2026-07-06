@@ -23,7 +23,7 @@ import {
   type Direction,
   type RecurringRule,
 } from "../../lib/types";
-import { SUPPORTED_CURRENCIES, formatMoney } from "../../lib/currency";
+import { SUPPORTED_CURRENCIES, formatMoney, parseAmount } from "../../lib/currency";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 
 const fmtDate = (s: string) =>
@@ -210,7 +210,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
   }
 
   async function submit() {
-    const amt = parseFloat(amount);
+    const amt = parseAmount(amount);
     if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
     if (!description.trim()) return Alert.alert("Enter a description");
     setSaving(true);

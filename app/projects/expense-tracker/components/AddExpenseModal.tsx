@@ -199,6 +199,17 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (saving) return;
+    // type="number" happily submits negatives/zero/partial garbage —
+    // validate before sending (a -100 income silently shrank totals).
+    const amt = parseFloat(amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setError("Enter an amount greater than 0");
+      return;
+    }
+    if (direction === "expense" && type === "group" && !groupId) {
+      setError("Select a group for this expense");
+      return;
+    }
     setSaving(true);
     setError(null);
 
@@ -235,7 +246,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
             direction === "income" || type === "personal" ? accountId || null : null,
           groupId: direction === "expense" && type === "group" ? groupId : undefined,
           paidBy: payer,
-          amount: parseFloat(amount),
+          amount: amt,
           description,
           category,
           date,

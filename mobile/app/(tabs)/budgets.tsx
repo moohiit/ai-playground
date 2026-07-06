@@ -16,7 +16,7 @@ import { useFocusEffect } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { CATEGORIES } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
-import { formatMoney } from "../../lib/currency";
+import { formatMoney, parseAmount } from "../../lib/currency";
 import { categoryColor } from "../../lib/colors";
 
 type BudgetItem = {
@@ -214,7 +214,7 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
   }, [visible]);
 
   async function submit() {
-    const amt = parseFloat(amount);
+    const amt = parseAmount(amount);
     if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
     if (scope === "category" && !category) return Alert.alert("Pick a category");
     setSaving(true);

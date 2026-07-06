@@ -16,7 +16,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Account, Goal } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
-import { formatMoney } from "../../lib/currency";
+import { formatMoney, parseAmount } from "../../lib/currency";
 
 export default function GoalsScreen() {
   const { authFetch } = useAuth();
@@ -149,8 +149,8 @@ function ContributeSheet({ goal, base, onClose, onSaved }: {
   useEffect(() => { if (goal) setAmount(""); }, [goal]);
 
   async function submit() {
-    const amt = parseFloat(amount);
-    if (!amt) return Alert.alert("Enter an amount");
+    const amt = parseAmount(amount);
+    if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
     setBusy(true);
     try {
       const res = await authFetch(`/api/projects/expense-tracker/goals/${goal!._id}/contribute`, {
@@ -205,7 +205,7 @@ function AddGoalSheet({ visible, accounts, onClose, onSaved }: {
 
   async function submit() {
     if (!name.trim()) return Alert.alert("Enter a name");
-    const t = parseFloat(target);
+    const t = parseAmount(target);
     if (!t || t <= 0) return Alert.alert("Enter a target");
     setBusy(true);
     try {
@@ -213,7 +213,7 @@ function AddGoalSheet({ visible, accounts, onClose, onSaved }: {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(), target: t,
-          savedAmount: linkedAccountId ? 0 : parseFloat(saved) || 0,
+          savedAmount: linkedAccountId ? 0 : parseAmount(saved) || 0,
           linkedAccountId: linkedAccountId || undefined,
         }),
       });

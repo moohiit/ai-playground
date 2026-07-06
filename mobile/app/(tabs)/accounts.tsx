@@ -17,7 +17,7 @@ import { useAuth } from "../../lib/auth";
 import { localISODate } from "../../lib/dates";
 import type { Account, AccountKind } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
-import { formatMoney } from "../../lib/currency";
+import { formatMoney, parseAmount } from "../../lib/currency";
 
 const KINDS: { id: AccountKind; label: string; icon: string }[] = [
   { id: "bank", label: "Bank", icon: "🏦" },
@@ -186,7 +186,7 @@ function AddAccountModal({ visible, onClose, onSaved }: { visible: boolean; onCl
       const res = await authFetch("/api/projects/expense-tracker/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), kind, openingBalance: parseFloat(opening) || 0 }),
+        body: JSON.stringify({ name: name.trim(), kind, openingBalance: parseAmount(opening) || 0 }),
       });
       if (!res.ok) throw new Error("failed");
       setName(""); setOpening("0"); setKind("bank");
@@ -241,7 +241,7 @@ function TransferModal({ visible, accounts, base, onClose, onSaved }: {
 
   async function submit() {
     if (from === to) return Alert.alert("Pick two different accounts");
-    const amt = parseFloat(amount);
+    const amt = parseAmount(amount);
     if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
     setSaving(true);
     try {
