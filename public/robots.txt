@@ -11,7 +11,10 @@ Disallow: /verify-email
 Disallow: /delete-account
 Disallow: /profile
 Disallow: /projects/eval-harness
-Disallow: /projects/expense-tracker/share/
+
+# Public bill-split share links are private-by-obscurity — keep them out of
+# search indexes.
+Disallow: /share/
 
 # Block all API routes
 Disallow: /api/
