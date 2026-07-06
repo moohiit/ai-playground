@@ -450,7 +450,7 @@ export default function SettingsScreen() {
 
           <Card
             title="Open on the web"
-            description="Use the full Expense Tracker in your browser — same account, same data."
+            description="Use the full SpendWise AI in your browser — same account, same data."
           >
             <Pressable
               onPress={() => Linking.openURL(WEB_APP_URL)}

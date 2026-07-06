@@ -152,7 +152,7 @@ export default function SharePage({ params }: { params: { shareId: string } }) {
             </div>
 
             <p className="text-center text-[11px] text-zinc-600">
-              Read-only view · powered by Expense Tracker
+              Read-only view · powered by SpendWise AI
             </p>
           </div>
         )}
