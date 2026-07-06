@@ -542,6 +542,15 @@ export async function updateExpense(
     throw new Error("Access denied");
   }
 
+  // Settled rows are part of a recorded settlement — editing them would
+  // silently rewrite settlement history (getSettlementHistory re-reads live
+  // rows) without resetting settledAt.
+  if (expense.settledAt) {
+    throw new Error(
+      "This expense is already settled — settled records can't be edited"
+    );
+  }
+
   // 2. Determine the effective target (direction/type/group) after this update.
   // Income is personal-only (D-6), so it always forces type "personal".
   const newDirection = input.direction ?? expense.direction ?? "expense";
@@ -630,6 +639,15 @@ export async function updateExpense(
     !(INCOME_CATEGORIES as readonly string[]).includes(expense.category)
   ) {
     throw new Error("Income must use an income category");
+  }
+  // Mirror guard: flipping income → expense used to keep the income category
+  // (e.g. a "Salary" spending row), polluting byCategory and never matching
+  // any category budget.
+  if (
+    newDirection === "expense" &&
+    !(CATEGORIES as readonly string[]).includes(expense.category)
+  ) {
+    throw new Error("Spending must use an expense category");
   }
 
   await expense.save();
@@ -1719,7 +1737,18 @@ export async function runDueRecurring(
       now,
       rule.endDate
     );
-    if (dates.length === 0) continue;
+    if (dates.length === 0) {
+      // A rule whose endDate passed before nextRunAt yields no occurrences
+      // but still matches the cron filter (active, nextRunAt <= now) — it
+      // would be re-scanned every day forever. Retire it.
+      if (rule.endDate && rule.endDate.getTime() < rule.nextRunAt.getTime()) {
+        await RecurringRule.updateOne(
+          { _id: rule._id, active: true },
+          { $set: { active: false } }
+        );
+      }
+      continue;
+    }
     // Atomically CLAIM the batch before creating expenses: advance nextRunAt
     // only if it still holds the value we read. Concurrent invocations (daily
     // cron overlapping a lazy-on-open run, or two devices) then can't both
