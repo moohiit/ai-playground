@@ -52,15 +52,20 @@ export function WarrantyTab() {
   const [form, setForm] = useState({ ...EMPTY });
 
   const load = useCallback(async () => {
-    const [wRes, rRes] = await Promise.all([
-      authFetch("/api/projects/expense-tracker/warranty"),
-      authFetch("/api/projects/expense-tracker/warranty?receipts=1"),
-    ]);
-    const wData = await wRes.json().catch(() => ({}));
-    const rData = await rRes.json().catch(() => ({}));
-    setItems(wData.warranties ?? []);
-    setReceipts(rData.expenses ?? []);
-    setLoading(false);
+    try {
+      const [wRes, rRes] = await Promise.all([
+        authFetch("/api/projects/expense-tracker/warranty"),
+        authFetch("/api/projects/expense-tracker/warranty?receipts=1"),
+      ]);
+      const wData = await wRes.json().catch(() => ({}));
+      const rData = await rRes.json().catch(() => ({}));
+      setItems(wData.warranties ?? []);
+      setReceipts(rData.expenses ?? []);
+    } catch {
+      // network failure — keep last list
+    } finally {
+      setLoading(false);
+    }
   }, [authFetch]);
 
   useEffect(() => {

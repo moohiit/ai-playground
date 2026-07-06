@@ -33,10 +33,15 @@ export function AccountsTab() {
   const [showTransfer, setShowTransfer] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await authFetch("/api/projects/expense-tracker/accounts");
-    const data = await res.json().catch(() => ({}));
-    setAccounts(data.accounts ?? []);
-    setLoading(false);
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/accounts");
+      const data = await res.json().catch(() => ({}));
+      setAccounts(data.accounts ?? []);
+    } catch {
+      // network failure — keep last list
+    } finally {
+      setLoading(false);
+    }
   }, [authFetch]);
 
   useEffect(() => {

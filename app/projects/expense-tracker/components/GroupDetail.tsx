@@ -137,36 +137,47 @@ export function GroupDetail({ groupId, onBack }: Props) {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [gRes, bRes, eRes, sRes] = await Promise.all([
-      authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
-      authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
-      authFetch(
-        `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=${PAGE_SIZE}&page=${page}&settled=false`
-      ),
-      authFetch(`/api/projects/expense-tracker/reports/summary?groupId=${groupId}&settled=false`),
-    ]);
-    const [gData, bData, eData, sData] = await Promise.all([
-      gRes.json(),
-      bRes.json(),
-      eRes.json(),
-      sRes.json(),
-    ]);
-    setGroup(gData.group ?? null);
-    setShareId(gData.group?.shareId ?? null);
-    setBalances(bData.balances ?? []);
-    setSettlements(bData.settlements ?? []);
-    setExpenses(eData.expenses ?? []);
-    setExpenseTotal(eData.total ?? 0);
-    setActiveAmount(sData.totalAmount ?? 0);
-    setLoading(false);
+    // try/finally so a network error or non-JSON response can't strand the
+    // "Loading group..." spinner forever (setLoading(false) always runs).
+    try {
+      const [gRes, bRes, eRes, sRes] = await Promise.all([
+        authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
+        authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
+        authFetch(
+          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=${PAGE_SIZE}&page=${page}&settled=false`
+        ),
+        authFetch(`/api/projects/expense-tracker/reports/summary?groupId=${groupId}&settled=false`),
+      ]);
+      const [gData, bData, eData, sData] = await Promise.all([
+        gRes.json().catch(() => ({})),
+        bRes.json().catch(() => ({})),
+        eRes.json().catch(() => ({})),
+        sRes.json().catch(() => ({})),
+      ]);
+      setGroup(gData.group ?? null);
+      setShareId(gData.group?.shareId ?? null);
+      setBalances(bData.balances ?? []);
+      setSettlements(bData.settlements ?? []);
+      setExpenses(eData.expenses ?? []);
+      setExpenseTotal(eData.total ?? 0);
+      setActiveAmount(sData.totalAmount ?? 0);
+    } catch {
+      setGroup(null); // renders the "group not found / failed" state
+    } finally {
+      setLoading(false);
+    }
   }, [groupId, page]);
 
   const fetchHistory = useCallback(async () => {
-    const res = await authFetch(
-      `/api/projects/expense-tracker/groups/${groupId}/history`
-    );
-    const data = await res.json();
-    setSettlementHistory(data.history ?? []);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/history`
+      );
+      const data = await res.json().catch(() => ({}));
+      setSettlementHistory(data.history ?? []);
+    } catch {
+      // keep whatever history we had; the tab shows its empty state otherwise
+    }
   }, [groupId]);
 
   useEffect(() => {
@@ -178,16 +189,29 @@ export function GroupDetail({ groupId, onBack }: Props) {
   }, [tab, fetchHistory]);
 
   async function handleAddMember() {
+    if (addingMember) return;
     if (!newMember.trim()) return;
     setAddingMember(true);
-    await authFetch(`/api/projects/expense-tracker/groups/${groupId}/members`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: newMember.trim() }),
-    });
-    setNewMember("");
-    setAddingMember(false);
-    fetchAll();
+    try {
+      const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newMember.trim() }),
+      });
+      if (!res.ok) {
+        // Most common failure: the email isn't registered. Keep the input so
+        // the user can correct it instead of silently pretending success.
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Couldn't add member");
+        return;
+      }
+      setNewMember("");
+      fetchAll();
+    } catch {
+      alert("Network error — member not added.");
+    } finally {
+      setAddingMember(false);
+    }
   }
 
   async function handleAddGuest() {

@@ -317,10 +317,29 @@ export function Dashboard() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
-      method: "DELETE",
-    });
+    try {
+      const res = await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Couldn't delete the expense");
+        return;
+      }
+      refreshAll();
+    } catch {
+      alert("Network error — expense not deleted.");
+    }
+  }
+
+  // Everything a saved/deleted expense can affect: the list, the
+  // personal/group breakdown (incl. the Settle button count), the month
+  // forecast, and insights. Refreshing only the list left the rest stale.
+  function refreshAll() {
     fetchExpenses();
+    fetchBreakdown();
+    fetchForecast();
+    fetchInsights();
   }
 
   async function handleExportCsv() {
@@ -771,8 +790,7 @@ export function Dashboard() {
           onClose={() => setShowAdd(false)}
           onSaved={() => {
             setShowAdd(false);
-            fetchExpenses();
-            fetchForecast();
+            refreshAll();
           }}
         />
       )}
@@ -783,8 +801,7 @@ export function Dashboard() {
           onClose={() => setEditingExpense(null)}
           onSaved={() => {
             setEditingExpense(null);
-            fetchExpenses();
-            fetchForecast();
+            refreshAll();
           }}
         />
       )}
@@ -795,8 +812,7 @@ export function Dashboard() {
           onClose={() => setPrefillDraft(null)}
           onSaved={() => {
             setPrefillDraft(null);
-            fetchExpenses();
-            fetchForecast();
+            refreshAll();
           }}
         />
       )}

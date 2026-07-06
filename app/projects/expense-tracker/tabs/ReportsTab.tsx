@@ -130,15 +130,24 @@ export function ReportsTab() {
 
   const fetchSummary = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ settled: "all", scope });
-    if (dateFrom) params.set("dateFrom", dateFrom);
-    if (dateTo) params.set("dateTo", dateTo);
-    const res = await authFetch(
-      `/api/projects/expense-tracker/reports/summary?${params}`
-    );
-    const data = await res.json();
-    setSummary(data);
-    setLoading(false);
+    try {
+      const params = new URLSearchParams({ settled: "all", scope });
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      const res = await authFetch(
+        `/api/projects/expense-tracker/reports/summary?${params}`
+      );
+      // Only store a real summary — a 500/error body stored blindly would
+      // crash the charts (summary.byCategory would be undefined).
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && Array.isArray(data.byCategory)) setSummary(data);
+      }
+    } catch {
+      // keep last good summary
+    } finally {
+      setLoading(false);
+    }
   }, [dateFrom, dateTo, scope]);
 
   useEffect(() => {

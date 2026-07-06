@@ -29,10 +29,15 @@ export function GoalsTab() {
   const [showAdd, setShowAdd] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await authFetch("/api/projects/expense-tracker/goals");
-    const data = await res.json().catch(() => ({}));
-    setGoals(data.goals ?? []);
-    setLoading(false);
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/goals");
+      const data = await res.json().catch(() => ({}));
+      setGoals(data.goals ?? []);
+    } catch {
+      // network failure — keep last list
+    } finally {
+      setLoading(false);
+    }
   }, [authFetch]);
 
   useEffect(() => {

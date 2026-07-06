@@ -20,10 +20,15 @@ export function GroupsTab() {
 
   async function fetchGroups() {
     setLoading(true);
-    const res = await authFetch("/api/projects/expense-tracker/groups");
-    const data = await res.json();
-    setGroups(data.groups ?? []);
-    setLoading(false);
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/groups");
+      const data = await res.json().catch(() => ({}));
+      setGroups(data.groups ?? []);
+    } catch {
+      // network failure — keep last list; the empty state renders if none
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {

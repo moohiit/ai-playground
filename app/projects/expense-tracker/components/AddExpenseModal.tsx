@@ -106,7 +106,10 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   useEffect(() => {
     authFetch("/api/projects/expense-tracker/groups")
       .then((r) => r.json())
-      .then((d) => setGroups(d.groups ?? []));
+      .then((d) => setGroups(d.groups ?? []))
+      // Surface the failure: without groups, editing a group expense shows an
+      // empty dropdown and looks like data loss rather than a fetch error.
+      .catch(() => setError("Couldn't load your groups — close and retry."));
   }, []);
 
   // Default a new entry's currency to the user's base currency (unless prefilled).
