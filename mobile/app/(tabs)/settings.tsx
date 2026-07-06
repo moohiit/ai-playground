@@ -14,7 +14,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../lib/auth";
 import { WEB_BASE_URL } from "../../lib/api";
-import { AppBackground, Input } from "../../components/ui";
+import { AppBackground, Input, KeyboardAwareScreen } from "../../components/ui";
 import { SUPPORTED_CURRENCIES, currencySymbol } from "../../lib/currency";
 const WEB_APP_URL = `${WEB_BASE_URL}/projects/expense-tracker`;
 
@@ -262,7 +262,7 @@ export default function SettingsScreen() {
           <ActivityIndicator color="#6366f1" />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        <KeyboardAwareScreen contentContainerStyle={{ padding: 16, gap: 16 }}>
           {/* Profile */}
           <View className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <View className="flex-row items-center gap-3">
@@ -484,7 +484,7 @@ export default function SettingsScreen() {
               the groups you created. This cannot be undone.
             </Text>
           </Card>
-        </ScrollView>
+        </KeyboardAwareScreen>
       )}
     </SafeAreaView>
   );

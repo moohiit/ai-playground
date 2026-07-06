@@ -14,7 +14,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Summary } from "../../lib/types";
 import { Donut } from "../../components/Donut";
-import { AppBackground, GradientButton, GradientHero, Input } from "../../components/ui";
+import { AppBackground, GradientButton, GradientHero, Input, KeyboardAwareScreen } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
 import { formatMoney } from "../../lib/currency";
 
@@ -276,7 +276,7 @@ export default function Dashboard() {
         </Pressable>
       </View>
 
-      <ScrollView
+      <KeyboardAwareScreen
         contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 14 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
@@ -558,7 +558,7 @@ export default function Dashboard() {
             )}
           </>
         )}
-      </ScrollView>
+      </KeyboardAwareScreen>
     </SafeAreaView>
   );
 }

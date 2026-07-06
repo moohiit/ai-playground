@@ -24,7 +24,7 @@ import type {
   Settlement,
   SettlementRecord,
 } from "../../lib/types";
-import { AppBackground, Input } from "../../components/ui";
+import { AppBackground, Input, KeyboardAwareScreen } from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
 import { WEB_BASE_URL } from "../../lib/api";
 import { formatMoney } from "../../lib/currency";
@@ -321,7 +321,7 @@ export default function GroupDetailScreen() {
         ))}
       </View>
 
-      <ScrollView
+      <KeyboardAwareScreen
         contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 14 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
@@ -589,7 +589,7 @@ export default function GroupDetailScreen() {
         ) : (
           <GroupReportView groupId={groupId} groupName={group?.name ?? "Group"} />
         )}
-      </ScrollView>
+      </KeyboardAwareScreen>
     </SafeAreaView>
   );
 }

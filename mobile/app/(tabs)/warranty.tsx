@@ -213,7 +213,19 @@ export default function WarrantyScreen() {
       </ScrollView>
 
       {/* Add modal */}
-      <Modal visible={showAdd} animationType="slide" transparent>
+      <Modal
+        visible={showAdd}
+        animationType="slide"
+        transparent
+        onRequestClose={() => {
+          setShowAdd(false);
+          setForm({ ...EMPTY });
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
         <View className="flex-1 justify-end bg-black/60">
           <View className="rounded-t-3xl border-t border-white/10 bg-zinc-950 px-5 pb-10 pt-5">
             <Text className="mb-4 text-base font-bold text-zinc-100">
@@ -271,10 +283,16 @@ export default function WarrantyScreen() {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Import from receipt modal */}
-      <Modal visible={showImport} animationType="slide" transparent>
+      <Modal
+        visible={showImport}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowImport(false)}
+      >
         <View className="flex-1 justify-end bg-black/60">
           <View className="max-h-[70%] rounded-t-3xl border-t border-white/10 bg-zinc-950 px-5 pb-10 pt-5">
             <Text className="mb-4 text-base font-bold text-zinc-100">
