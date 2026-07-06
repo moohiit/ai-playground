@@ -432,9 +432,10 @@ export default function GroupDetailScreen() {
                   </Pressable>
                 </View>
                 <View className="gap-2">
-                  {settlements.map((s, i) => (
+                  {settlements.map((s) => (
                     <View
-                      key={i}
+                      // A minimal-transfer plan never repeats a payer→payee pair.
+                      key={`${s.from.name}→${s.to.name}`}
                       className="flex-row items-center gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2"
                     >
                       <Text className="text-sm text-red-400">{s.from.name}</Text>
@@ -596,13 +597,13 @@ export default function GroupDetailScreen() {
 
 /** Per-member Paid / Share / Net for a settled batch (mirrors the web summary). */
 function settlementMembers(expenses: Expense[]) {
-  const map = new Map<string, { name: string; paid: number; share: number }>();
+  const map = new Map<string, { id: string; name: string; paid: number; share: number }>();
   for (const e of expenses) {
     const pid = e.paidBy?.id ?? e.paidBy?.name ?? "?";
-    if (!map.has(pid)) map.set(pid, { name: e.paidBy?.name ?? "-", paid: 0, share: 0 });
+    if (!map.has(pid)) map.set(pid, { id: pid, name: e.paidBy?.name ?? "-", paid: 0, share: 0 });
     map.get(pid)!.paid += e.amount;
     for (const s of e.splits ?? []) {
-      if (!map.has(s.memberId)) map.set(s.memberId, { name: s.name, paid: 0, share: 0 });
+      if (!map.has(s.memberId)) map.set(s.memberId, { id: s.memberId, name: s.name, paid: 0, share: 0 });
       map.get(s.memberId)!.share += s.amount;
     }
   }
@@ -643,7 +644,7 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
         {members.map((m) => {
           const net = m.paid - m.share;
           return (
-            <View key={m.name} className="flex-row border-t border-white/5 px-3 py-2" style={{ gap: 8 }}>
+            <View key={m.id} className="flex-row border-t border-white/5 px-3 py-2" style={{ gap: 8 }}>
               <Text style={{ flex: 1 }} className="text-xs text-zinc-200" numberOfLines={1}>
                 {m.name}
               </Text>

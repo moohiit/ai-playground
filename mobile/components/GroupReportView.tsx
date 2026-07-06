@@ -7,7 +7,7 @@ import { localISODate } from "../lib/dates";
 import type { Summary } from "../lib/types";
 import { exportGroupReportPdf } from "../lib/pdf";
 import { ReportBody } from "./ReportBody";
-import { Chip, DateField, quickRangeToDates } from "../app/(tabs)/reports";
+import { Chip, DateField, quickRangeToDates } from "./reportControls";
 
 type Show = "false" | "true" | "all";
 type QuickRange =

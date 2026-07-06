@@ -268,9 +268,11 @@ export const updateBudgetSchema = z
 export type UpdateBudgetInput = z.infer<typeof updateBudgetSchema>;
 
 // "YYYY-MM"; defaults are applied by the service when omitted.
+// Month is validated as 01–12 — \d{2} alone accepted "2026-13", which
+// Date.UTC silently rolled into January of the next year.
 export const monthSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}$/, "Use YYYY-MM")
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use YYYY-MM")
   .optional();
 
 // ── Recurring rules (Phase 2B) ─────────────────────

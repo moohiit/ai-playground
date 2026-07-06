@@ -16,15 +16,14 @@ import type { Summary } from "../../lib/types";
 import { exportFullReportPdf } from "../../lib/pdf";
 import { AppBackground } from "../../components/ui";
 import { ReportBody } from "../../components/ReportBody";
+import {
+  Chip,
+  DateField,
+  quickRangeToDates,
+  type QuickRange,
+} from "../../components/reportControls";
 
 type Scope = "all" | "personal" | "group";
-type QuickRange =
-  | "all"
-  | "this-month"
-  | "last-30"
-  | "last-90"
-  | "this-year"
-  | "custom";
 
 const QUICK: { id: QuickRange; label: string }[] = [
   { id: "all", label: "All time" },
@@ -33,18 +32,6 @@ const QUICK: { id: QuickRange; label: string }[] = [
   { id: "last-90", label: "Last 90d" },
   { id: "this-year", label: "This year" },
 ];
-
-export function quickRangeToDates(r: QuickRange): { from: string; to: string } {
-  if (r === "all" || r === "custom") return { from: "", to: "" };
-  const now = new Date();
-  const to = localISODate(now);
-  const start = new Date(now);
-  if (r === "this-month") start.setDate(1);
-  else if (r === "last-30") start.setDate(start.getDate() - 30);
-  else if (r === "last-90") start.setDate(start.getDate() - 90);
-  else if (r === "this-year") start.setMonth(0, 1);
-  return { from: localISODate(start), to };
-}
 
 export default function ReportsTab() {
   const { user, authFetch } = useAuth();
@@ -210,47 +197,3 @@ export default function ReportsTab() {
   );
 }
 
-export function DateField({
-  label,
-  value,
-  onPress,
-}: {
-  label: string;
-  value: string;
-  onPress: () => void;
-}) {
-  return (
-    <View className="flex-1 gap-1.5">
-      <Text className="text-[13px] uppercase tracking-wider text-zinc-500">{label}</Text>
-      <Pressable
-        onPress={onPress}
-        className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3"
-      >
-        <Text className={value ? "text-zinc-100" : "text-zinc-500"}>{value || "Any"}</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-export function Chip({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className={`rounded-lg border px-3 py-1.5 ${
-        active ? "border-brand-500/60 bg-brand-500/15" : "border-white/10 bg-zinc-900/40"
-      }`}
-    >
-      <Text className={`text-xs font-medium capitalize ${active ? "text-brand-400" : "text-zinc-400"}`}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
