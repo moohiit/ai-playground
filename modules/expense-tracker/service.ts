@@ -13,6 +13,7 @@ import {
   Budget,
   RecurringRule,
   Goal,
+  Warranty,
   type ExpenseDoc,
   type RecurringRuleDoc,
 } from "./models";
@@ -1140,12 +1141,15 @@ export async function deleteAccount(auth: JWTPayload) {
   // Delete the groups they own.
   await Group.deleteMany({ createdBy: userId });
 
-  // Remove the user's accounts/wallets, transfers, budgets, recurring, goals, prefs.
+  // Remove the user's accounts/wallets, transfers, budgets, recurring, goals,
+  // warranties, prefs. (Warranties were previously missed — orphaned personal
+  // data surviving account deletion is a privacy defect.)
   await Account.deleteMany({ userId });
   await Transfer.deleteMany({ userId });
   await Budget.deleteMany({ userId });
   await RecurringRule.deleteMany({ userId });
   await Goal.deleteMany({ userId });
+  await Warranty.deleteMany({ userId });
   await UserPrefs.deleteMany({ userId });
 
   // Remove the user from groups owned by others (their past group expenses
@@ -1454,6 +1458,13 @@ export async function removeAccount(id: string, auth: JWTPayload) {
   await Goal.updateMany(
     { userId: auth.userId, linkedAccountId: account._id },
     { $set: { linkedAccountId: null } }
+  );
+  // Recurring templates that paid from this account would otherwise keep
+  // stamping new expenses with a dead accountId — those rows silently vanish
+  // from every account balance.
+  await RecurringRule.updateMany(
+    { userId: auth.userId, "template.accountId": account._id },
+    { $set: { "template.accountId": null } }
   );
   await Account.findByIdAndDelete(account._id);
   return { deleted: true };
@@ -2047,11 +2058,13 @@ export async function listGoals(auth: JWTPayload) {
     .sort({ createdAt: 1 })
     .lean();
 
-  // Account-linked goals track that account's live balance.
+  // Account-linked goals track that account's live balance. Include archived
+  // accounts — archiving an account shouldn't zero a linked goal's progress
+  // (the money didn't move, only the visibility flag).
   const needBalances = goals.some((g) => g.linkedAccountId);
   const balanceById = new Map<string, number>();
   if (needBalances) {
-    const accounts = await listAccounts(auth);
+    const accounts = await listAccounts(auth, { includeArchived: true });
     for (const a of accounts) balanceById.set(a._id.toString(), a.balance);
   }
 
