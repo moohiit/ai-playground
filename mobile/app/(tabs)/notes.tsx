@@ -266,9 +266,9 @@ export default function NotesScreen() {
         </View>
         <Pressable
           onPress={() => setShowAdd(true)}
-          className="rounded-lg border border-brand-500/40 bg-brand-500/15 px-3 py-1.5"
+          className="rounded-lg border border-brand-500/40 bg-brand-500 px-3 py-1.5"
         >
-          <Text className="text-xs font-semibold text-brand-300">+ Note</Text>
+          <Text className="text-xs font-semibold text-white">+ Note</Text>
         </Pressable>
       </View>
 
