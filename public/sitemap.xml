@@ -4,12 +4,12 @@
       xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd"
       xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
-<!-- AI Playground — aiplayground.mohitpatel.org — last updated 2026-06-10 -->
+<!-- AI Playground — aiplayground.mohitpatel.org — last updated 2026-07-07 -->
 
 <!-- Home -->
 <url>
   <loc>https://aiplayground.mohitpatel.org/</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>1.0000</priority>
 </url>
@@ -17,55 +17,55 @@
 <!-- GenAI Modules -->
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/expense-tracker</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.9000</priority>
 </url>
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/resume-matcher</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.9000</priority>
 </url>
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/pdf-chat</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.9000</priority>
 </url>
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/sql-generator</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.9000</priority>
 </url>
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/youtube-qa</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.9000</priority>
 </url>
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/content-generator</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.8000</priority>
 </url>
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/repo-explainer</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.8000</priority>
 </url>
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/voice-assistant</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.8000</priority>
 </url>
 <url>
   <loc>https://aiplayground.mohitpatel.org/projects/web-agent</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.8000</priority>
 </url>
@@ -73,7 +73,7 @@
 <!-- Legal -->
 <url>
   <loc>https://aiplayground.mohitpatel.org/privacy</loc>
-  <lastmod>2026-06-10T00:00:00+00:00</lastmod>
+  <lastmod>2026-07-07T00:00:00+00:00</lastmod>
   <changefreq>yearly</changefreq>
   <priority>0.4000</priority>
 </url>

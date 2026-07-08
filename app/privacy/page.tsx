@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy · Expense Tracker",
+  title: "Privacy Policy · Splitzy AI (Expense Tracker)",
   description:
-    "Privacy policy for the Expense Tracker app — what data we collect, how it's used, and your choices.",
+    "Privacy policy for the Splitzy AI expense tracker app — what data we collect, how it's used, and your choices.",
 };
 
 const UPDATED = "June 3, 2026";

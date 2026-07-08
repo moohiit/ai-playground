@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Delete Your Account & Data · Expense Tracker",
+  title: "Delete Your Account & Data · Splitzy AI (Expense Tracker)",
   description:
-    "How to delete your Expense Tracker account and data, what is removed, and how long it takes.",
+    "How to delete your Splitzy AI account and data, what is removed, and how long it takes.",
 };
 
 const CONTACT = "pmohit645@gmail.com";
