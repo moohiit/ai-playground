@@ -2,6 +2,9 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -25,7 +28,7 @@ import type {
   Settlement,
   SettlementRecord,
 } from "../../lib/types";
-import { AppBackground, Input, KeyboardAwareScreen } from "../../components/ui";
+import { AppBackground, GradientButton, Input, KeyboardAwareScreen } from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
 import { WEB_BASE_URL } from "../../lib/api";
 import { formatMoney } from "../../lib/currency";
@@ -292,6 +295,38 @@ export default function GroupDetailScreen() {
     }
   }
 
+  const [renameVisible, setRenameVisible] = useState(false);
+  const [renameText, setRenameText] = useState("");
+  const [renaming, setRenaming] = useState(false);
+
+  async function handleRename() {
+    if (renaming) return;
+    const name = renameText.trim();
+    if (!name) return Alert.alert("Enter a group name");
+    setRenaming(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Error", data.error ?? "Couldn't rename the group");
+        return;
+      }
+      setRenameVisible(false);
+      fetchAll();
+    } catch {
+      Alert.alert("Error", "Network error — group not renamed.");
+    } finally {
+      setRenaming(false);
+    }
+  }
+
   function handleDeleteGroup() {
     Alert.alert(
       "Delete group",
@@ -328,9 +363,21 @@ export default function GroupDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Text className="text-sm text-zinc-400">← Groups</Text>
         </Pressable>
-        <Text className="flex-1 px-3 text-center text-base font-semibold text-zinc-100" numberOfLines={1}>
-          {group?.name ?? "Group"}
-        </Text>
+        <Pressable
+          className="flex-1 flex-row items-center justify-center gap-1.5 px-3"
+          disabled={user?.userId !== group?.createdBy}
+          onPress={() => {
+            setRenameText(group?.name ?? "");
+            setRenameVisible(true);
+          }}
+        >
+          <Text className="text-center text-base font-semibold text-zinc-100" numberOfLines={1}>
+            {group?.name ?? "Group"}
+          </Text>
+          {user?.userId === group?.createdBy && (
+            <Text className="text-xs text-zinc-500">✎</Text>
+          )}
+        </Pressable>
         <Pressable
           onPress={() =>
             router.push({ pathname: "/add-expense", params: { groupId } })
@@ -653,6 +700,47 @@ export default function GroupDetailScreen() {
           <GroupReportView groupId={groupId} groupName={group?.name ?? "Group"} />
         )}
       </KeyboardAwareScreen>
+
+      {/* Rename group */}
+      <Modal
+        visible={renameVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setRenameVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <View className="flex-1 justify-end bg-black/60">
+            <View className="rounded-t-3xl border-t border-white/10 bg-zinc-950 px-5 pb-10 pt-5">
+              <Text className="mb-4 text-base font-bold text-zinc-100">
+                Rename group
+              </Text>
+              <Input
+                value={renameText}
+                onChangeText={setRenameText}
+                placeholder="Group name"
+                autoFocus
+                className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
+              />
+              <View className="mt-4 gap-2">
+                <GradientButton
+                  label="Save name"
+                  onPress={handleRename}
+                  loading={renaming}
+                />
+                <Pressable
+                  onPress={() => setRenameVisible(false)}
+                  className="items-center py-2"
+                >
+                  <Text className="text-sm text-zinc-500">Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }

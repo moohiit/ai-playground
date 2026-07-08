@@ -294,6 +294,27 @@ export function GroupDetail({ groupId, onBack }: Props) {
     onBack();
   }
 
+  async function handleRenameGroup() {
+    if (!group) return;
+    const name = prompt("Group name", group.name)?.trim();
+    if (!name || name === group.name) return;
+    try {
+      const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Couldn't rename the group");
+        return;
+      }
+      fetchAll();
+    } catch {
+      alert("Network error — group not renamed.");
+    }
+  }
+
   async function handleSettle() {
     if (
       !confirm(
@@ -346,8 +367,17 @@ export function GroupDetail({ groupId, onBack }: Props) {
             <span className="transition-transform group-hover:-translate-x-1">←</span>
             Back to groups
           </button>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-100">
+          <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-zinc-100">
             {group.name}
+            {user?.userId === group.createdBy && (
+              <button
+                onClick={handleRenameGroup}
+                title="Rename group"
+                className="text-sm text-zinc-600 transition-colors hover:text-brand-400"
+              >
+                ✎
+              </button>
+            )}
           </h2>
           {group.description && (
             <p className="text-xs text-zinc-500">{group.description}</p>

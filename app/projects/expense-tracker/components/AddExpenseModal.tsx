@@ -52,6 +52,9 @@ type Props = {
 };
 
 export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpense, prefill }: Props) {
+  // Opened from inside a group detail: the group is fixed — hide the
+  // expense/income + personal/group toggles and the group picker.
+  const lockedToGroup = !editExpense && !!preselectedGroupId;
   const { authFetch, user } = useAuth();
   const isEdit = !!editExpense;
   const [direction, setDirection] = useState<Direction>(
@@ -305,6 +308,17 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
           className="max-h-[calc(100vh-15rem)] overflow-y-auto px-6 py-5"
         >
           <div className="flex flex-col gap-4">
+            {lockedToGroup && selectedGroup && (
+              <div className="rounded-lg border border-brand-500/30 bg-brand-500/[0.07] px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                  Adding to group
+                </div>
+                <div className="text-sm font-semibold text-white">
+                  {selectedGroup.name}
+                </div>
+              </div>
+            )}
+            {!lockedToGroup && (
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
@@ -329,8 +343,9 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                 </button>
               ))}
             </div>
+            )}
 
-            {direction === "expense" && (
+            {direction === "expense" && !lockedToGroup && (
               <div className="flex gap-2">
                 {(["personal", "group"] as const).map((t) => (
                   <button
@@ -352,6 +367,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
 
             {direction === "expense" && type === "group" && (
               <>
+                {!lockedToGroup && (
                 <div>
                   <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                     Group
@@ -359,7 +375,9 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                   <select
                     value={groupId}
                     onChange={(e) => setGroupId(e.target.value)}
-                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                    // Explicit option colors: some browsers render native option
+                    // lists with their own bg, making the selected text invisible.
+                    className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-white transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 [&>option]:bg-zinc-900 [&>option]:text-white"
                   >
                     <option value="">Select group...</option>
                     {groups.map((g) => (
@@ -369,6 +387,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                     ))}
                   </select>
                 </div>
+                )}
 
                 {selectedGroup && (
                   <>

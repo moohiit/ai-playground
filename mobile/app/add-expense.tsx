@@ -55,6 +55,10 @@ export default function AddExpenseScreen() {
   }, [params.prefill]);
   const isEdit = !!editExpense;
   const preGroupId = typeof params.groupId === "string" ? params.groupId : "";
+  // Opened from inside a group ("+" on the group screen): the group is fixed —
+  // hide the personal/group toggle and the group picker, and force expense
+  // direction (income is personal-only).
+  const lockedToGroup = !params.expense && !!preGroupId;
 
   const [direction, setDirection] = useState<Direction>(
     editExpense?.direction ?? pre?.direction ?? "expense"
@@ -300,6 +304,7 @@ export default function AddExpenseScreen() {
       <KeyboardAwareScreen
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}
       >
+          {!lockedToGroup && (
           <View className="flex-row gap-2">
             {(
               [
@@ -335,6 +340,18 @@ export default function AddExpenseScreen() {
               );
             })}
           </View>
+          )}
+
+          {lockedToGroup && selectedGroup && (
+            <View className="rounded-xl border border-brand-500/30 bg-brand-500/[0.07] px-4 py-3">
+              <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+                Adding to group
+              </Text>
+              <Text className="mt-0.5 text-sm font-semibold text-white">
+                {selectedGroup.name}
+              </Text>
+            </View>
+          )}
 
           {!isEdit && direction === "expense" && (
             <Pressable
@@ -356,7 +373,7 @@ export default function AddExpenseScreen() {
             </Pressable>
           )}
 
-          {direction === "expense" && (
+          {direction === "expense" && !lockedToGroup && (
             <View className="flex-row gap-2">
               {(["personal", "group"] as const).map((t) => (
                 <Pressable
@@ -382,6 +399,7 @@ export default function AddExpenseScreen() {
 
           {direction === "expense" && type === "group" && (
             <View className="gap-3">
+              {!lockedToGroup && (
               <Field label="Group">
                 {groups.length === 0 ? (
                   <Text className="text-xs text-zinc-500">
@@ -395,17 +413,23 @@ export default function AddExpenseScreen() {
                         onPress={() => setGroupId(g._id)}
                         className={`rounded-lg border px-3 py-2 ${
                           groupId === g._id
-                            ? "border-brand-500/60 bg-brand-500/10"
+                            ? "border-brand-500/60 bg-brand-500/15"
                             : "border-white/10 bg-zinc-950/50"
                         }`}
                       >
                         <Text
                           className={
-                            groupId === g._id ? "text-brand-300" : "text-zinc-300"
+                            groupId === g._id
+                              ? "font-semibold text-white"
+                              : "text-zinc-300"
                           }
                         >
                           {g.name}{" "}
-                          <Text className="text-xs text-zinc-500">
+                          <Text
+                            className={`text-xs ${
+                              groupId === g._id ? "text-zinc-300" : "text-zinc-500"
+                            }`}
+                          >
                             ({g.members.length})
                           </Text>
                         </Text>
@@ -414,6 +438,7 @@ export default function AddExpenseScreen() {
                   </View>
                 )}
               </Field>
+              )}
 
               {selectedGroup && (
                 <>
