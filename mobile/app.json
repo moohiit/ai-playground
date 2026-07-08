@@ -3,7 +3,7 @@
     "name": "Splitzy AI",
     "slug": "expense-tracker",
     "scheme": "expensetracker",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
