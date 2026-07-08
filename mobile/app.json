@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "SpendWise AI",
+    "name": "Splitzy AI",
     "slug": "expense-tracker",
     "scheme": "expensetracker",
     "version": "1.6.0",
@@ -42,8 +42,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow SpendWise AI to access your photos to attach a receipt.",
-          "cameraPermission": "Allow SpendWise AI to use the camera to scan a receipt.",
+          "photosPermission": "Allow Splitzy AI to access your photos to attach a receipt.",
+          "cameraPermission": "Allow Splitzy AI to use the camera to scan a receipt.",
           "microphonePermission": false
         }
       ],

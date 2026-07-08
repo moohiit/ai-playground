@@ -39,7 +39,7 @@ export async function registerPushToken(
       // Channel ID stays "expense-tracker" (changing it orphans users'
       // notification preferences); only the visible name is rebranded.
       await N.setNotificationChannelAsync("expense-tracker", {
-        name: "SpendWise AI",
+        name: "Splitzy AI",
         importance: N.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#6366f1",
