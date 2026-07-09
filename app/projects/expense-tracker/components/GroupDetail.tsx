@@ -850,7 +850,7 @@ function SettledHistoryView({ history }: { history: SettlementRecord[] }) {
       {history.map((record, i) => (
         <section
           key={record.settlementId}
-          className="animate-fade-up relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5 backdrop-blur-sm"
+          className="animate-fade-up relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-3 backdrop-blur-sm sm:p-5"
           style={{ animationDelay: `${i * 50}ms` }}
         >
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/60 to-transparent" />
@@ -902,64 +902,106 @@ function SettlementSummary({ expenses }: { expenses: Expense[] }) {
     (a, b) => b.paid - b.share - (a.paid - a.share)
   );
 
+  // Minimal-transfer plan recomputed from Paid − Share (greedy
+  // largest-creditor/largest-debtor matching — same as the active settle).
+  const creditors = sorted
+    .filter((m) => m.paid - m.share > 0.01)
+    .map((m) => ({ name: m.name, amt: m.paid - m.share }));
+  const debtors = sorted
+    .filter((m) => m.share - m.paid > 0.01)
+    .map((m) => ({ name: m.name, amt: m.share - m.paid }))
+    .sort((a, b) => b.amt - a.amt);
+  const plan: { from: string; to: string; amount: number }[] = [];
+  let ci = 0;
+  let di = 0;
+  while (di < debtors.length && ci < creditors.length) {
+    const x = Math.min(debtors[di].amt, creditors[ci].amt);
+    plan.push({
+      from: debtors[di].name,
+      to: creditors[ci].name,
+      amount: Math.round(x * 100) / 100,
+    });
+    debtors[di].amt -= x;
+    creditors[ci].amt -= x;
+    if (debtors[di].amt < 0.01) di++;
+    if (creditors[ci].amt < 0.01) ci++;
+  }
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-xs text-zinc-500">
+      <div className="text-[11px] text-zinc-500">
         Total:{" "}
-        <span className="font-mono font-semibold text-zinc-200">
+        <span className="font-semibold tabular-nums text-zinc-200">
           {money(total)}
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-zinc-800/60">
-        <table className="w-full text-xs">
-          <thead className="bg-zinc-900/80">
-            <tr>
-              <th className="px-3 py-2 text-left font-semibold text-zinc-500">Member</th>
-              <th className="px-3 py-2 text-right font-semibold text-zinc-500">Paid</th>
-              <th className="px-3 py-2 text-right font-semibold text-zinc-500">Share</th>
-              <th className="px-3 py-2 text-right font-semibold text-zinc-500">Net</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((m) => {
-              const net = m.paid - m.share;
-              return (
-                <tr key={m.name} className="border-t border-zinc-800/40">
-                  <td className="px-3 py-1.5 text-zinc-200">{m.name}</td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-300">
-                    {money(m.paid)}
-                  </td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-300">
-                    {money(m.share)}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-3 py-1.5 text-right font-mono tabular-nums",
-                      net > 0.01
-                        ? "text-emerald-400"
-                        : net < -0.01
-                        ? "text-red-400"
-                        : "text-zinc-500"
-                    )}
-                  >
-                    {net > 0 ? "+" : ""}{money(net)}
-                  </td>
-                </tr>
-              );
-            })}
-            <tr className="border-t border-zinc-700">
-              <td className="px-3 py-1.5 font-semibold text-zinc-200">Total</td>
-              <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold text-zinc-200">
-                {money(total)}
-              </td>
-              <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold text-zinc-200">
-                {money(sorted.reduce((s, m) => s + m.share, 0))}
-              </td>
-              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-500">—</td>
-            </tr>
-          </tbody>
-        </table>
+      {/* Who paid whom in this settlement */}
+      {plan.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/90">
+            Settled via
+          </div>
+          {plan.map((p) => (
+            <div
+              key={`${p.from}→${p.to}`}
+              className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-2.5 py-1.5"
+            >
+              <div className="min-w-0 flex-1 text-[11px] leading-snug">
+                <span className="text-red-400">{p.from}</span>
+                <span className="text-zinc-600"> → </span>
+                <span className="text-emerald-400">{p.to}</span>
+              </div>
+              <span className="shrink-0 whitespace-nowrap text-[11px] font-semibold tabular-nums text-zinc-200">
+                {money(p.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Compact grid table (app-style) — fits phone widths without the
+          oversized monospace look; numbers never wrap. */}
+      <div className="overflow-hidden rounded-lg border border-zinc-800/60">
+        <div className="grid grid-cols-[minmax(64px,1.2fr)_1fr_1fr_1.1fr] gap-x-2 border-b border-zinc-800/60 bg-zinc-900/60 px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+          <span>Member</span>
+          <span className="text-right">Paid</span>
+          <span className="text-right">Share</span>
+          <span className="text-right">Net</span>
+        </div>
+        {sorted.map((m) => {
+          const net = m.paid - m.share;
+          return (
+            <div
+              key={m.name}
+              className="grid grid-cols-[minmax(64px,1.2fr)_1fr_1fr_1.1fr] items-center gap-x-2 px-2.5 py-1.5 text-[11px] tabular-nums odd:bg-white/[0.015]"
+            >
+              <span className="truncate text-zinc-200">{m.name}</span>
+              <span className="whitespace-nowrap text-right text-zinc-400">{money(m.paid)}</span>
+              <span className="whitespace-nowrap text-right text-zinc-400">{money(m.share)}</span>
+              <span
+                className={cn(
+                  "whitespace-nowrap text-right font-semibold",
+                  net > 0.01
+                    ? "text-emerald-400"
+                    : net < -0.01
+                    ? "text-red-400"
+                    : "text-zinc-500"
+                )}
+              >
+                {net > 0 ? "+" : ""}{money(net)}
+              </span>
+            </div>
+          );
+        })}
+        <div className="grid grid-cols-[minmax(64px,1.2fr)_1fr_1fr_1.1fr] gap-x-2 border-t border-zinc-700/60 bg-zinc-900/40 px-2.5 py-1.5 text-[11px] tabular-nums">
+          <span className="font-semibold text-zinc-200">Total</span>
+          <span className="whitespace-nowrap text-right font-semibold text-zinc-200">{money(total)}</span>
+          <span className="whitespace-nowrap text-right font-semibold text-zinc-200">
+            {money(sorted.reduce((s, m) => s + m.share, 0))}
+          </span>
+          <span className="text-right text-zinc-500">—</span>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">

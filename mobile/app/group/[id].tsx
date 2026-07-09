@@ -762,10 +762,42 @@ function settlementMembers(expenses: Expense[]) {
   );
 }
 
+/** Minimal-transfer plan for a settled batch, recomputed from Paid − Share
+ *  (greedy largest-creditor/largest-debtor matching — same as active settle). */
+function settlementPlan(
+  members: { id: string; name: string; paid: number; share: number }[]
+) {
+  const creditors = members
+    .filter((m) => m.paid - m.share > 0.01)
+    .map((m) => ({ name: m.name, amt: m.paid - m.share }))
+    .sort((a, b) => b.amt - a.amt);
+  const debtors = members
+    .filter((m) => m.share - m.paid > 0.01)
+    .map((m) => ({ name: m.name, amt: m.share - m.paid }))
+    .sort((a, b) => b.amt - a.amt);
+  const plan: { from: string; to: string; amount: number }[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const x = Math.min(debtors[i].amt, creditors[j].amt);
+    plan.push({
+      from: debtors[i].name,
+      to: creditors[j].name,
+      amount: Math.round(x * 100) / 100,
+    });
+    debtors[i].amt -= x;
+    creditors[j].amt -= x;
+    if (debtors[i].amt < 0.01) i++;
+    if (creditors[j].amt < 0.01) j++;
+  }
+  return plan;
+}
+
 function SettlementCard({ record }: { record: SettlementRecord }) {
   const total = record.expenses.reduce((s, e) => s + e.amount, 0);
   const members = settlementMembers(record.expenses);
   const totalShare = members.reduce((s, m) => s + m.share, 0);
+  const plan = settlementPlan(members);
   const money = (n: number) => formatMoney(n, dominantCurrency(record.expenses));
 
   return (
@@ -782,6 +814,30 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
           {record.expenses.length} expenses · {money(total)}
         </Text>
       </View>
+
+      {/* Who paid whom in this settlement */}
+      {plan.length > 0 && (
+        <View className="mb-3 gap-1.5">
+          <Text className="text-[11px] uppercase tracking-wider text-amber-400/90">
+            Settled via
+          </Text>
+          {plan.map((p) => (
+            <View
+              key={`${p.from}→${p.to}`}
+              className="flex-row items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2"
+            >
+              <Text className="flex-1 text-xs" numberOfLines={1}>
+                <Text className="text-red-400">{p.from}</Text>
+                <Text className="text-zinc-600"> → </Text>
+                <Text className="text-emerald-400">{p.to}</Text>
+              </Text>
+              <Text className="text-xs font-semibold text-zinc-200">
+                {money(p.amount)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Member calculation table */}
       <View className="overflow-hidden rounded-xl border border-white/10">
