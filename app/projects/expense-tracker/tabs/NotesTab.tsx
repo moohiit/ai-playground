@@ -35,6 +35,7 @@ const shortDate = (iso: string) =>
 
 export function NotesTab() {
   const { authFetch } = useAuth();
+  const [view, setView] = useState<"notes" | "todos">("notes");
   const [notes, setNotes] = useState<MoneyNote[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -221,6 +222,29 @@ export function NotesTab() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Section switcher */}
+      <div className="flex w-full max-w-xs gap-1 rounded-xl border border-zinc-800 bg-zinc-900/50 p-1">
+        {(
+          [
+            ["notes", "Money notes"],
+            ["todos", "To-dos"],
+          ] as const
+        ).map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={cn(
+              "flex-1 rounded-lg py-1.5 text-sm font-semibold",
+              view === v ? "bg-brand-600 text-white" : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "notes" && (
+      <>
       {/* ── Money notes ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -363,8 +387,13 @@ export function NotesTab() {
         </div>
       )}
 
+      </>
+      )}
+
+      {view === "todos" && (
+      <>
       {/* ── To-dos ── */}
-      <div className="mt-2">
+      <div>
         <h2 className="text-lg font-semibold text-zinc-100">To-do list</h2>
         <p className="mt-0.5 text-sm text-zinc-500">
           Money chores — bills to pay, people to remind.
@@ -434,6 +463,8 @@ export function NotesTab() {
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );

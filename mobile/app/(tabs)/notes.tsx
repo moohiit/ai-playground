@@ -48,6 +48,7 @@ const shortDate = (iso: string) =>
 
 export default function NotesScreen() {
   const { authFetch } = useAuth();
+  const [view, setView] = useState<"notes" | "todos">("notes");
   const [notes, setNotes] = useState<MoneyNote[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -257,19 +258,51 @@ export default function NotesScreen() {
   return (
     <SafeAreaView className="flex-1" edges={["top"]}>
       <AppBackground />
-      <View className="flex-row items-center justify-between px-5 pb-2 pt-2">
-        <View>
+      <View className="flex-row items-center justify-between gap-2 px-5 pb-2 pt-2">
+        {/* flex-1 + numberOfLines keep the long subtitle from pushing the
+            button off-screen */}
+        <View className="flex-1">
           <Text className="text-xl font-bold text-zinc-50">Notes & To-dos</Text>
-          <Text className="text-xs text-zinc-500">
-            Money you've lent or borrowed, and chores to remember
+          <Text className="text-xs text-zinc-500" numberOfLines={1}>
+            {view === "notes"
+              ? "Money you've lent or borrowed"
+              : "Money chores to remember"}
           </Text>
         </View>
-        <Pressable
-          onPress={() => setShowAdd(true)}
-          className="rounded-lg border border-brand-500/40 bg-brand-500 px-3 py-1.5"
-        >
-          <Text className="text-xs font-semibold text-white">+ Note</Text>
-        </Pressable>
+        {view === "notes" && (
+          <Pressable
+            onPress={() => setShowAdd(true)}
+            className="shrink-0 rounded-lg border border-brand-500/40 bg-brand-500 px-3 py-1.5"
+          >
+            <Text className="text-xs font-semibold text-white">+ Note</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Section switcher */}
+      <View className="mx-4 mb-1 flex-row gap-1 rounded-xl border border-white/10 bg-zinc-900/50 p-1">
+        {(
+          [
+            ["notes", "Money notes"],
+            ["todos", "To-dos"],
+          ] as const
+        ).map(([v, label]) => (
+          <Pressable
+            key={v}
+            onPress={() => setView(v)}
+            className={`flex-1 items-center rounded-lg py-2 ${
+              view === v ? "bg-brand-600" : ""
+            }`}
+          >
+            <Text
+              className={`text-[13px] font-semibold ${
+                view === v ? "text-white" : "text-zinc-400"
+              }`}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
       <KeyboardAwareScreen
@@ -282,7 +315,7 @@ export default function NotesScreen() {
           <View className="items-center py-16">
             <ActivityIndicator color="#6366f1" />
           </View>
-        ) : (
+        ) : view === "notes" ? (
           <>
             {(owedToMe > 0 || iOwe > 0) && (
               <View className="flex-row gap-2">
@@ -344,11 +377,10 @@ export default function NotesScreen() {
                 ))}
               </>
             )}
-
+          </>
+        ) : (
+          <>
             {/* To-dos */}
-            <Text className="mt-3 text-base font-semibold text-zinc-100">
-              To-do list
-            </Text>
             <View className="flex-row gap-2">
               <Input
                 value={todoText}
