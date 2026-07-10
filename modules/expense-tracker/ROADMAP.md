@@ -258,6 +258,13 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-07-10 — **Individual settle-up shipped.** Each Settle-Up transfer row has a
+  "Settle" button (web + mobile) that records an `isSettlement` expense (payer's paid ↑,
+  receiver's share ↑ — nets offset, row disappears; original expenses untouched).
+  Settlement entries are excluded from all spending summaries, shown with a ↔ badge
+  (Undo instead of Edit/Delete), and swept into settled history with the batch by
+  "Mark as Settled". `POST /groups/:id/settle-payment`.
+
 - 2026-07-03 — **Group invites shipped.** Adding a registered user to a group now creates
   a pending `GroupInvite` (denormalized groupName/invitedBy) instead of adding directly;
   the invitee gets a push notification and an in-app banner on the Groups screen

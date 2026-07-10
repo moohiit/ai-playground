@@ -64,6 +64,7 @@ export type Expense = {
   date: string;
   splitAmong?: { memberId: string; name: string }[];
   splits: { memberId: string; name: string; amount: number }[];
+  isSettlement?: boolean;
 };
 
 export type ExpenseListResponse = {

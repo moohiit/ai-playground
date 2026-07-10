@@ -551,3 +551,15 @@ export const updateTodoSchema = z
   .strict();
 
 export type UpdateTodoInput = z.infer<typeof updateTodoSchema>;
+
+// ── Individual settle-up payment ─────────────────────
+
+export const settlePaymentSchema = z
+  .object({
+    fromMemberId: z.string().min(1),
+    toMemberId: z.string().min(1),
+    amount: z.number().positive("Amount must be positive"),
+  })
+  .strict();
+
+export type SettlePaymentInput = z.infer<typeof settlePaymentSchema>;

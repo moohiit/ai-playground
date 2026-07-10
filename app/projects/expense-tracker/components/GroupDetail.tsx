@@ -49,6 +49,7 @@ type Expense = {
   date: string;
   splitAmong: { memberId: string; name: string }[];
   splits: { memberId: string; name: string; amount: number }[];
+  isSettlement?: boolean;
 };
 type SettlementRecord = {
   settlementId: string;
@@ -315,6 +316,43 @@ export function GroupDetail({ groupId, onBack }: Props) {
     }
   }
 
+  const [payingKey, setPayingKey] = useState<string | null>(null);
+
+  async function handleSettlePayment(s: Settlement) {
+    if (payingKey) return;
+    if (
+      !confirm(
+        `Record that ${s.from.name} paid ${s.to.name} ${formatMoney(s.amount, cur)}?\n\nThis adds a settlement entry — their balances offset and this row disappears. Original expenses stay untouched.`
+      )
+    )
+      return;
+    setPayingKey(`${s.from.id}→${s.to.id}`);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/settle-payment`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fromMemberId: s.from.id,
+            toMemberId: s.to.id,
+            amount: s.amount,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error ?? "Couldn't record the payment");
+        return;
+      }
+      fetchAll();
+    } catch {
+      alert("Network error — payment not recorded.");
+    } finally {
+      setPayingKey(null);
+    }
+  }
+
   async function handleSettle() {
     if (
       !confirm(
@@ -489,6 +527,8 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 settlements={settlements}
                 settling={settling}
                 onSettle={handleSettle}
+                onSettlePayment={handleSettlePayment}
+                payingKey={payingKey}
                 cur={cur}
               />
             )}
@@ -722,11 +762,15 @@ function SettleUpSection({
   settlements,
   settling,
   onSettle,
+  onSettlePayment,
+  payingKey,
   cur,
 }: {
   settlements: Settlement[];
   settling: boolean;
   onSettle: () => void;
+  onSettlePayment: (s: Settlement) => void;
+  payingKey: string | null;
   cur: string;
 }) {
   const money = (n: number) => formatMoney(n, cur);
@@ -750,22 +794,33 @@ function SettleUpSection({
         </button>
       </div>
       <div className="flex flex-col gap-2">
-        {settlements.map((s, i) => (
-          <div
-            key={i}
-            className="animate-fade-up flex items-center gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2 text-sm"
-            style={{ animationDelay: `${i * 50}ms` }}
-          >
-            <span className="font-medium text-red-400">{s.from.name}</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500">
-              <path d="M5 12h14M13 6l6 6-6 6" />
-            </svg>
-            <span className="font-medium text-emerald-400">{s.to.name}</span>
-            <span className="ml-auto font-mono tabular-nums text-zinc-100">
-              {money(s.amount)}
-            </span>
-          </div>
-        ))}
+        {settlements.map((s, i) => {
+          const rowKey = `${s.from.id}→${s.to.id}`;
+          return (
+            <div
+              key={rowKey}
+              className="animate-fade-up flex items-center gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2 text-sm"
+              style={{ animationDelay: `${i * 50}ms` }}
+            >
+              <span className="min-w-0 truncate font-medium text-red-400">{s.from.name}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-zinc-500">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+              <span className="min-w-0 truncate font-medium text-emerald-400">{s.to.name}</span>
+              <span className="ml-auto whitespace-nowrap font-mono tabular-nums text-zinc-100">
+                {money(s.amount)}
+              </span>
+              <button
+                onClick={() => onSettlePayment(s)}
+                disabled={payingKey !== null}
+                title={`Record that ${s.from.name} paid ${s.to.name}`}
+                className="shrink-0 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                {payingKey === rowKey ? "…" : "Settle"}
+              </button>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -791,36 +846,54 @@ function ExpenseRow({
     >
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-zinc-100">{e.description}</span>
-          <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
-            {e.category}
+          <span className="text-sm font-medium text-zinc-100">
+            {e.isSettlement ? "↔ " : ""}{e.description}
           </span>
+          {e.isSettlement ? (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-emerald-400">
+              settlement
+            </span>
+          ) : (
+            <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
+              {e.category}
+            </span>
+          )}
         </div>
         <span className="text-[11px] text-zinc-500">
-          Paid by{" "}
-          <span className="font-medium text-zinc-300">{e.paidBy.name}</span> ·
-          Split {e.splitAmong.length} ways ·{" "}
-          {new Date(e.date).toLocaleDateString()}
+          {e.isSettlement ? (
+            <>Recorded {new Date(e.date).toLocaleDateString()}</>
+          ) : (
+            <>
+              Paid by{" "}
+              <span className="font-medium text-zinc-300">{e.paidBy.name}</span> ·
+              Split {e.splitAmong.length} ways ·{" "}
+              {new Date(e.date).toLocaleDateString()}
+            </>
+          )}
         </span>
-        <span className="truncate text-[11px] text-zinc-600">
-          {e.splitAmong.map((m) => m.name).join(", ")}
-        </span>
+        {!e.isSettlement && (
+          <span className="truncate text-[11px] text-zinc-600">
+            {e.splitAmong.map((m) => m.name).join(", ")}
+          </span>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <span className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
           {money(e.amount)}
         </span>
-        <button
-          onClick={onEdit}
-          className="text-[11px] text-zinc-500 transition-colors hover:text-brand-400"
-        >
-          Edit
-        </button>
+        {!e.isSettlement && (
+          <button
+            onClick={onEdit}
+            className="text-[11px] text-zinc-500 transition-colors hover:text-brand-400"
+          >
+            Edit
+          </button>
+        )}
         <button
           onClick={onDelete}
           className="text-[11px] text-zinc-500 transition-colors hover:text-red-400"
         >
-          Delete
+          {e.isSettlement ? "Undo" : "Delete"}
         </button>
       </div>
     </div>

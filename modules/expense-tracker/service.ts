@@ -856,6 +856,10 @@ export async function getSummary(
     }
   }
 
+  // Settlement payments (member repaying member) are balance entries, not
+  // spending — keep them out of every summary/report figure.
+  match.isSettlement = { $ne: true };
+
   if (filter.category) match.category = filter.category;
   if (filter.q) {
     const rx = new RegExp(escapeRegex(filter.q), "i");
@@ -1179,6 +1183,57 @@ export async function getSharedGroup(shareId: string) {
       amount: s.amount,
     })),
   };
+}
+
+/**
+ * Individual settle-up: record that one member paid another. Modeled as a
+ * settlement entry — payer's "paid" rises, receiver's "share" rises by the
+ * same amount, so their nets offset and the derived transfer plan drops (or
+ * shrinks) that row. Original expenses are untouched; the entry is excluded
+ * from spending summaries (isSettlement) and gets swept into settled history
+ * with the batch when the group is fully settled.
+ */
+export async function recordSettlementPayment(
+  groupId: string,
+  input: { fromMemberId: string; toMemberId: string; amount: number },
+  auth: JWTPayload
+) {
+  await connectDB();
+  const group = await Group.findById(groupId).lean();
+  if (!group) throw new Error("Group not found");
+  if (!group.members.some((m) => m.userId === auth.userId)) {
+    throw new Error("You are not a member of this group");
+  }
+  const from = group.members.find((m) => m.userId === input.fromMemberId);
+  const to = group.members.find((m) => m.userId === input.toMemberId);
+  if (!from || !to) {
+    throw new Error("Both people must be members of this group");
+  }
+  if (from.userId === to.userId) {
+    throw new Error("Payer and receiver must be different members");
+  }
+  if (!(input.amount > 0)) throw new Error("Amount must be positive");
+
+  const { baseCurrency } = await getPrefs(auth);
+  const amount = Math.round(input.amount * 100) / 100;
+
+  const expense = await Expense.create({
+    type: "group",
+    direction: "expense",
+    groupId: group._id,
+    createdBy: auth.userId,
+    paidBy: { id: from.userId, name: from.name },
+    amount,
+    currency: baseCurrency,
+    amountBase: amount,
+    description: `${from.name} paid ${to.name}`,
+    category: "Settlement",
+    date: new Date(),
+    splitAmong: [{ memberId: to.userId, name: to.name }],
+    splits: [{ memberId: to.userId, name: to.name, amount }],
+    isSettlement: true,
+  });
+  return expense.toObject();
 }
 
 export async function settleGroup(groupId: string, auth: JWTPayload) {

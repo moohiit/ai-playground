@@ -295,6 +295,50 @@ export default function GroupDetailScreen() {
     }
   }
 
+  // Record an individual "X paid Y" settlement payment for one transfer row.
+  const [payingKey, setPayingKey] = useState<string | null>(null);
+
+  function confirmSettlePayment(s: Settlement) {
+    Alert.alert(
+      "Record payment",
+      `${s.from.name} paid ${s.to.name} ${money(s.amount)}?\n\nThis adds a settlement entry — their balances offset and this row disappears. Original expenses stay untouched.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Record",
+          onPress: async () => {
+            const rowKey = `${s.from.id}→${s.to.id}`;
+            setPayingKey(rowKey);
+            try {
+              const res = await authFetch(
+                `/api/projects/expense-tracker/groups/${groupId}/settle-payment`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    fromMemberId: s.from.id,
+                    toMemberId: s.to.id,
+                    amount: s.amount,
+                  }),
+                }
+              );
+              if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                Alert.alert("Error", data.error ?? "Couldn't record the payment");
+                return;
+              }
+              fetchAll();
+            } catch {
+              Alert.alert("Error", "Network error — payment not recorded.");
+            } finally {
+              setPayingKey(null);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameText, setRenameText] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -541,20 +585,38 @@ export default function GroupDetailScreen() {
                   </Pressable>
                 </View>
                 <View className="gap-2">
-                  {settlements.map((s) => (
-                    <View
-                      // A minimal-transfer plan never repeats a payer→payee pair.
-                      key={`${s.from.name}→${s.to.name}`}
-                      className="flex-row items-center gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2"
-                    >
-                      <Text className="text-sm text-red-400">{s.from.name}</Text>
-                      <Text className="text-zinc-500">→</Text>
-                      <Text className="text-sm text-emerald-400">{s.to.name}</Text>
-                      <Text className="ml-auto text-sm text-zinc-100">
-                        {money(s.amount)}
-                      </Text>
-                    </View>
-                  ))}
+                  {settlements.map((s) => {
+                    const rowKey = `${s.from.id}→${s.to.id}`;
+                    return (
+                      <View
+                        // A minimal-transfer plan never repeats a payer→payee pair.
+                        key={rowKey}
+                        className="flex-row items-center gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2"
+                      >
+                        <Text className="shrink text-sm text-red-400" numberOfLines={1}>
+                          {s.from.name}
+                        </Text>
+                        <Text className="text-zinc-500">→</Text>
+                        <Text className="shrink text-sm text-emerald-400" numberOfLines={1}>
+                          {s.to.name}
+                        </Text>
+                        <Text className="ml-auto text-sm text-zinc-100">
+                          {money(s.amount)}
+                        </Text>
+                        <Pressable
+                          onPress={() => confirmSettlePayment(s)}
+                          disabled={payingKey !== null}
+                          className={`rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 ${
+                            payingKey !== null ? "opacity-50" : ""
+                          }`}
+                        >
+                          <Text className="text-[11px] font-semibold text-emerald-300">
+                            {payingKey === rowKey ? "…" : "Settle"}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
                 </View>
 
                 {/* Calculation details */}
@@ -621,19 +683,30 @@ export default function GroupDetailScreen() {
               expenses.map((e) => (
                 <View
                   key={e._id}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+                  className={`rounded-2xl border p-4 ${
+                    e.isSettlement
+                      ? "border-emerald-500/20 bg-emerald-500/[0.04]"
+                      : "border-white/10 bg-white/[0.04]"
+                  }`}
                 >
                   <View className="flex-row items-start justify-between gap-3">
                     <View className="flex-1">
-                      <Text className="font-medium text-zinc-100" numberOfLines={1}>
-                        {e.description}
-                      </Text>
+                      <View className="flex-row items-center gap-1.5">
+                        <Text className="shrink font-medium text-zinc-100" numberOfLines={1}>
+                          {e.isSettlement ? "↔ " : ""}{e.description}
+                        </Text>
+                        {e.isSettlement && (
+                          <Text className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] uppercase text-emerald-400">
+                            settlement
+                          </Text>
+                        )}
+                      </View>
                       <Text className="mt-0.5 text-xs text-zinc-500">
-                        Paid by {e.paidBy.name} ·{" "}
-                        {new Date(e.date).toLocaleDateString()} · split{" "}
-                        {e.splitAmong?.length ?? 0} ways
+                        {e.isSettlement
+                          ? `Recorded ${new Date(e.date).toLocaleDateString()}`
+                          : `Paid by ${e.paidBy.name} · ${new Date(e.date).toLocaleDateString()} · split ${e.splitAmong?.length ?? 0} ways`}
                       </Text>
-                      {e.splitAmong && e.splitAmong.length > 0 && (
+                      {!e.isSettlement && e.splitAmong && e.splitAmong.length > 0 && (
                         <Text className="mt-0.5 text-[13px] text-zinc-600" numberOfLines={2}>
                           Split: {e.splitAmong.map((m) => m.name).join(", ")}
                         </Text>
@@ -644,6 +717,7 @@ export default function GroupDetailScreen() {
                     </Text>
                   </View>
                   <View className="mt-3 flex-row justify-end gap-4 border-t border-white/5 pt-3">
+                    {!e.isSettlement && (
                     <Pressable
                       hitSlop={8}
                       onPress={() =>
@@ -655,8 +729,11 @@ export default function GroupDetailScreen() {
                     >
                       <Text className="text-xs font-medium text-zinc-400">Edit</Text>
                     </Pressable>
+                    )}
                     <Pressable hitSlop={8} onPress={() => handleDelete(e)}>
-                      <Text className="text-xs font-medium text-red-400">Delete</Text>
+                      <Text className="text-xs font-medium text-red-400">
+                        {e.isSettlement ? "Undo" : "Delete"}
+                      </Text>
                     </Pressable>
                   </View>
                 </View>

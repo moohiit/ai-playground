@@ -78,6 +78,11 @@ export type ExpenseDoc = {
   accountId: Types.ObjectId | null;
   // Phase 2B: links a transaction generated from a recurring rule back to it.
   recurringId: Types.ObjectId | null;
+  // Individual settle-up: a payment recorded between two group members
+  // (payer's paid ↑, receiver's share ↑ — nets offset). Part of balance math
+  // but EXCLUDED from spending reports/budgets/insights (money moving back,
+  // not new spending).
+  isSettlement: boolean;
   description: string;
   category: string;
   date: Date;
@@ -146,6 +151,7 @@ const expenseSchema = new Schema<ExpenseDoc>(
       ref: "RecurringRule",
       default: null,
     },
+    isSettlement: { type: Boolean, default: false },
     description: { type: String, required: true },
     category: { type: String, required: true, index: true },
     date: { type: Date, required: true, index: true },
