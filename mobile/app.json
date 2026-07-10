@@ -3,7 +3,7 @@
     "name": "Splitzy AI",
     "slug": "expense-tracker",
     "scheme": "expensetracker",
-    "version": "1.7.0",
+    "version": "1.8.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -34,8 +34,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#6366f1",
+          "icon": "./assets/notification-icon.png",
+          "color": "#0ea5e9",
           "defaultChannel": "expense-tracker"
         }
       ],
