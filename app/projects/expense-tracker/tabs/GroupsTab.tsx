@@ -3,12 +3,16 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "../../../../lib/authContext";
 import { GroupDetail } from "../components/GroupDetail";
+import { relativeTime } from "../../../../lib/utils";
 
 type Group = {
   _id: string;
   name: string;
   description: string;
   members: { userId: string; email: string; name: string; isActive: boolean }[];
+  // Newest expense recorded in the group; null when it has none yet. The list
+  // API sorts on this, so the most recently used group comes back first.
+  lastExpenseAt?: string | null;
 };
 
 type Invite = {
@@ -189,9 +193,16 @@ export function GroupsTab() {
                     </p>
                   )}
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium uppercase text-brand-500 ring-1 ring-brand-500/30">
-                  {g.members.length} members
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium uppercase text-brand-500 ring-1 ring-brand-500/30">
+                    {g.members.length} members
+                  </span>
+                  <span className="text-[10px] text-zinc-500">
+                    {g.lastExpenseAt
+                      ? `active ${relativeTime(g.lastExpenseAt)}`
+                      : "no expenses yet"}
+                  </span>
+                </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {g.members.slice(0, 6).map((m) => (

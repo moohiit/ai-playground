@@ -14,6 +14,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import type { Group } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
+import { relativeTime } from "../../lib/dates";
 
 type Invite = {
   _id: string;
@@ -246,6 +247,9 @@ export default function GroupsTab() {
             <Text className="mt-2 text-[13px] text-zinc-500">
               {item.members.length}{" "}
               {item.members.length === 1 ? "member" : "members"}
+              {item.lastExpenseAt
+                ? ` · active ${relativeTime(item.lastExpenseAt)}`
+                : " · no expenses yet"}
             </Text>
           </Pressable>
           </Animated.View>

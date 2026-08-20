@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { ExportPdfButton } from "../components/ExportPdf";
-import { categoryColor } from "../colors";
+import { categoryColor, personalVsGroupSlices } from "../colors";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 import {
   PieChart,
@@ -418,10 +418,13 @@ function InsightsRow({ summary }: { summary: Summary }) {
 }
 
 function PersonalVsGroupCard({ summary }: { summary: Summary }) {
-  const data = [
-    { name: "Personal", value: summary.personalTotal, color: "#34d399" },
-    { name: "Group", value: summary.groupTotal, color: "#818cf8" },
-  ].filter((d) => d.value > 0);
+  // The group slice splits into my share and what the other members carry —
+  // personal spend is mine by definition, so it stays one slice.
+  const data = personalVsGroupSlices(summary).map((d) => ({
+    name: d.label,
+    value: d.value,
+    color: d.color,
+  }));
   const has = data.length > 0;
   return (
     <ChartPanel title="Personal vs Group" accent="from-emerald-500/40">

@@ -36,6 +36,10 @@ const RANGES: { key: RangeKey; label: string }[] = [
   { key: "7d", label: "Last 7d" },
 ];
 
+// My-share as a percentage of the filtered total — "—" when nothing matched.
+const sharePct = (m: number, total: number) =>
+  total > 0 ? `${Math.round((m / total) * 100)}%` : "—";
+
 function rangeToDateFrom(range: RangeKey): string | null {
   if (range === "all") return null;
   const now = new Date();
@@ -50,7 +54,7 @@ function rangeToDateFrom(range: RangeKey): string | null {
 }
 
 export default function ExpensesScreen() {
-  const { authFetch } = useAuth();
+  const { authFetch, user } = useAuth();
   const router = useRouter();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -65,6 +69,10 @@ export default function ExpensesScreen() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [range, setRange] = useState<RangeKey>("all");
   const [settled, setSettled] = useState<"false" | "true" | "all">("false");
+  // "Only mine" narrows the list to entries I carry a share of — group spend
+  // split among other members drops out of both the rows and the totals.
+  const [mine, setMine] = useState(false);
+  const [myShareAmount, setMyShareAmount] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -89,9 +97,11 @@ export default function ExpensesScreen() {
     if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
     params.set("settled", settled);
+    if (mine) params.set("mine", "true");
 
     // Summary is direction-agnostic so Income/Net always reflect the full picture.
     const summaryParams = new URLSearchParams({ scope: view, settled });
+    if (mine) summaryParams.set("mine", "true");
     if (category) summaryParams.set("category", category);
     if (debouncedSearch) summaryParams.set("q", debouncedSearch);
     if (dateFrom) summaryParams.set("dateFrom", dateFrom);
@@ -107,12 +117,13 @@ export default function ExpensesScreen() {
       setExpenses(expData.expenses ?? []);
       setTotal(expData.total ?? 0);
       setTotalAmount(sumData.totalAmount ?? 0);
+      setMyShareAmount(sumData.myShare ?? 0);
       setIncomeAmount(sumData.incomeAmount ?? 0);
       setNetAmount(sumData.netAmount ?? 0);
     } catch {
       // keep last good state on transient errors
     }
-  }, [view, direction, category, debouncedSearch, range, settled, page, authFetch]);
+  }, [view, direction, category, debouncedSearch, range, settled, mine, page, authFetch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -136,7 +147,7 @@ export default function ExpensesScreen() {
 
   useEffect(() => {
     setPage(1);
-  }, [view, direction, category, debouncedSearch, range, settled]);
+  }, [view, direction, category, debouncedSearch, range, settled, mine]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -155,6 +166,7 @@ export default function ExpensesScreen() {
     if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
     params.set("settled", settled);
+    if (mine) params.set("mine", "true");
     try {
       await exportExpensesCsv({ authFetch, params });
     } catch {
@@ -199,7 +211,8 @@ export default function ExpensesScreen() {
     category !== "" ||
     search !== "" ||
     range !== "all" ||
-    settled !== "false";
+    settled !== "false" ||
+    mine;
 
   // Headline follows the active flow filter so it matches the listed rows.
   const headline =
@@ -262,7 +275,24 @@ export default function ExpensesScreen() {
               </Text>
               <Text className="mt-0.5 text-xs text-zinc-500">
                 {total} {total === 1 ? "entry" : "entries"} · {view}
+                {mine ? " · only mine" : ""}
               </Text>
+              {/* My share of the same filtered rows: personal entries in full,
+                  group entries only for my split. */}
+              {direction === "expense" && (
+                <View className="mt-3 flex-row items-center gap-1.5 border-t border-white/5 pt-3">
+                  <View
+                    style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#34d399" }}
+                  />
+                  <Text className="text-base font-bold text-emerald-300">
+                    {formatMoney(myShareAmount, base)}
+                  </Text>
+                  <Text className="text-xs text-zinc-400">my share</Text>
+                  <Text className="text-xs text-zinc-600">
+                    · {sharePct(myShareAmount, totalAmount)} of total
+                  </Text>
+                </View>
+              )}
               <View className="mt-3 flex-row gap-4 border-t border-white/5 pt-3">
                 <Text className="text-xs text-zinc-400">
                   Income{" "}
@@ -297,6 +327,7 @@ export default function ExpensesScreen() {
                       setSearch("");
                       setRange("all");
                       setSettled("false");
+                      setMine(false);
                     }}
                     hitSlop={8}
                   >
@@ -362,6 +393,19 @@ export default function ExpensesScreen() {
                 })}
               </View>
 
+              <View className="flex-row gap-2">
+                <Chip
+                  label="Only mine"
+                  active={mine}
+                  onPress={() => setMine((m) => !m)}
+                />
+                <Chip
+                  label="Everyone"
+                  active={!mine}
+                  onPress={() => setMine(false)}
+                />
+              </View>
+
               <View className="flex-row flex-wrap gap-2">
                 {RANGES.map((r) => (
                   <Chip
@@ -401,6 +445,7 @@ export default function ExpensesScreen() {
             <ExpenseCard
               expense={item}
               base={base}
+              userId={user?.userId}
               onEdit={() => handleEdit(item)}
               onDelete={() => handleDelete(item)}
             />
@@ -495,11 +540,13 @@ function PageBtn({
 function ExpenseCard({
   expense: e,
   base,
+  userId,
   onEdit,
   onDelete,
 }: {
   expense: Expense;
   base: string;
+  userId?: string;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -507,6 +554,17 @@ function ExpenseCard({
     e.splitAmong && e.splitAmong.length > 0
       ? e.splitAmong.map((m) => m.name).join(", ")
       : null;
+
+  // What this row cost me. Splits are stored in the entry currency, so scale
+  // by the same base/entry ratio the headline amount uses. Personal entries
+  // are wholly mine and need no "share" line at all.
+  const myShare = (() => {
+    if (e.type !== "group" || e.direction === "income" || !userId) return null;
+    const part = e.splits?.find((sp) => sp.memberId === userId);
+    if (!part) return 0;
+    const ratio = e.amount > 0 ? (e.amountBase ?? e.amount) / e.amount : 1;
+    return part.amount * ratio;
+  })();
 
   return (
     <View className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -532,6 +590,15 @@ function ExpenseCard({
             <Text className="text-[10px] text-zinc-500">
               {currencySymbol(e.currency)}
               {e.amount.toFixed(2)} {e.currency}
+            </Text>
+          )}
+          {myShare !== null && (
+            <Text
+              className={`mt-0.5 text-[13px] font-semibold ${
+                myShare > 0 ? "text-emerald-300" : "text-zinc-600"
+              }`}
+            >
+              {myShare > 0 ? `${formatMoney(myShare, base)} mine` : "not yours"}
             </Text>
           )}
           <View

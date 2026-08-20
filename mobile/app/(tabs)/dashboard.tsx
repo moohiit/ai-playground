@@ -15,11 +15,15 @@ import { useAuth } from "../../lib/auth";
 import type { Summary } from "../../lib/types";
 import { Donut } from "../../components/Donut";
 import { AppBackground, GradientButton, GradientHero, Input, KeyboardAwareScreen } from "../../components/ui";
-import { categoryColor } from "../../lib/colors";
+import { categoryColor, personalVsGroupSlices } from "../../lib/colors";
 import { formatMoney } from "../../lib/currency";
 
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+
+// My-share as a share of the overall figure — "—" when there is nothing spent.
+const sharePct = (mine: number, total: number) =>
+  total > 0 ? `${Math.round((mine / total) * 100)}%` : "—";
 
 // Top-of-dashboard scope switcher. "Active" (unsettled) is the default view;
 // "All time" is everything; "Settled" is what's already been settled.
@@ -31,7 +35,7 @@ const VIEW_TABS = [
 type ViewId = (typeof VIEW_TABS)[number]["id"];
 const HERO_LABEL: Record<ViewId, string> = {
   active: "Active spend",
-  all: "Total spend (all time)",
+  all: "All-time spend",
   settled: "Settled spend",
 };
 
@@ -251,14 +255,15 @@ export default function Dashboard() {
       (m) => m.year === now.getFullYear() && m.month === now.getMonth() + 1
     )?.total ?? 0;
 
+  // All-time group my-share: getSummary's myShare is personal-in-full plus my
+  // split of every group entry, so subtracting personalTotal leaves the group part.
+  const groupAllTimeMine = Math.max(0, (summary?.myShare ?? 0) - (summary?.personalTotal ?? 0));
+
   const topCats = cur?.byCategory?.slice(0, 5) ?? [];
   const maxCat = topCats[0]?.total ?? 0;
-  const pvg = cur
-    ? [
-        { label: "Personal", value: cur.personalTotal, color: "#34d399" },
-        { label: "Group", value: cur.groupTotal, color: "#818cf8" },
-      ].filter((d) => d.value > 0)
-    : [];
+  // Group spend is split into the part that is mine and the part other members
+  // carry, so the donut answers "how much of this was actually me?".
+  const pvg = cur ? personalVsGroupSlices(cur) : [];
 
   return (
     <SafeAreaView className="flex-1" edges={["top"]}>
@@ -317,10 +322,14 @@ export default function Dashboard() {
             <Animated.View entering={FadeInDown.duration(400).delay(40)}>
               <GradientHero>
                 <Text className="text-[13px] uppercase tracking-wider text-zinc-300">
-                  {HERO_LABEL[view]}
+                  {HERO_LABEL[view]} · my share
                 </Text>
-                <Text className="mt-1 text-4xl font-extrabold text-white">
-                  {fmt(cur!.totalAmount)}
+                {/* Headline is what this scope actually cost *me* (personal
+                    entries in full + only my split of every group entry).
+                    Overall — the same entries including every other member's
+                    share — sits below so both numbers stay comparable. */}
+                <Text className="mt-1 text-4xl font-extrabold text-emerald-300">
+                  {fmt(cur!.myShare)}
                 </Text>
                 <Text className="mt-0.5 text-xs text-zinc-300">
                   {cur!.totalCount} entries · {cur!.daysCovered} days
@@ -328,6 +337,26 @@ export default function Dashboard() {
                     ? ` · last ${shortDate(lastPersonalSettle)}`
                     : ""}
                 </Text>
+                <View className="mt-3 flex-row gap-3 border-t border-white/10 pt-3">
+                  <View className="flex-1">
+                    <Text className="text-[11px] uppercase tracking-wider text-zinc-400">
+                      Overall
+                    </Text>
+                    <Text className="mt-0.5 text-lg font-bold text-indigo-300">
+                      {fmt(cur!.totalAmount)}
+                    </Text>
+                    <Text className="text-[11px] text-zinc-400">incl. all members</Text>
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-[11px] uppercase tracking-wider text-zinc-400">
+                      Your share
+                    </Text>
+                    <Text className="mt-0.5 text-lg font-bold text-emerald-300">
+                      {sharePct(cur!.myShare, cur!.totalAmount)}
+                    </Text>
+                    <Text className="text-[11px] text-zinc-400">of overall</Text>
+                  </View>
+                </View>
               </GradientHero>
             </Animated.View>
 
@@ -440,7 +469,10 @@ export default function Dashboard() {
               entering={FadeInDown.duration(400).delay(120)}
               style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}
             >
-              <Stat label="My share" value={fmt(cur!.myShare)} />
+              <Stat
+                label="Others’ share"
+                value={fmt(Math.max(0, cur!.totalAmount - cur!.myShare))}
+              />
               <Stat label="This month" value={fmt(thisMonth)} />
               <Stat label="Paid by me" value={fmt(cur!.paidByMe)} />
               <Stat label="Avg / day" value={fmt(cur!.averagePerDay)} />
@@ -448,9 +480,13 @@ export default function Dashboard() {
 
             {/* Active vs Total breakdown */}
             <Panel title="Active vs total">
+              <Legend />
+
               <View>
                 <View className="flex-row items-center justify-between">
-                  <Text className="text-sm font-semibold text-zinc-100">Personal</Text>
+                  <Text className="text-sm font-semibold text-zinc-100">
+                    Personal <Text className="text-[12px] font-normal text-zinc-500">· all yours</Text>
+                  </Text>
                   {(personalActive?.totalCount ?? 0) > 0 && (
                     <Pressable
                       onPress={handleSettlePersonal}
@@ -483,10 +519,30 @@ export default function Dashboard() {
                   <MiniStat
                     label="Active"
                     value={fmt(groupActive?.totalAmount ?? 0)}
+                    mine={fmt(groupActive?.myShare ?? 0)}
                     hint={`${groupActive?.totalCount ?? 0} entries`}
                   />
-                  <MiniStat label="Total" value={fmt(summary.groupTotal)} />
+                  <MiniStat
+                    label="Total"
+                    value={fmt(summary.groupTotal)}
+                    mine={fmt(groupAllTimeMine)}
+                  />
                 </View>
+              </View>
+
+              <View className="my-3 h-px bg-white/5" />
+
+              <View className="flex-row gap-3">
+                <MiniStat
+                  label="Active · all"
+                  value={fmt(activeSummary?.totalAmount ?? 0)}
+                  mine={fmt(activeSummary?.myShare ?? 0)}
+                />
+                <MiniStat
+                  label="Total · all"
+                  value={fmt(summary.totalAmount)}
+                  mine={fmt(summary.myShare)}
+                />
               </View>
             </Panel>
 
@@ -512,14 +568,25 @@ export default function Dashboard() {
               <Panel title="Personal vs Group">
                 <View className="items-center gap-4">
                   <Donut data={pvg.map((d) => ({ value: d.value, color: d.color }))} size={150} />
-                  <View className="w-full flex-row justify-center gap-5">
+                  {/* One row per slice — three labels no longer fit side by side
+                      on a phone once the group slice is split. */}
+                  <View className="w-full gap-2">
                     {pvg.map((d) => (
-                      <View key={d.label} className="flex-row items-center gap-1.5">
-                        <View
-                          style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: d.color }}
-                        />
-                        <Text className="text-xs text-zinc-400">{d.label}</Text>
-                        <Text className="text-xs text-zinc-300">{fmt(d.value)}</Text>
+                      <View
+                        key={d.label}
+                        className="flex-row items-center justify-between gap-2"
+                      >
+                        <View className="flex-1 flex-row items-center gap-1.5">
+                          <View
+                            style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: d.color }}
+                          />
+                          <Text className="text-xs text-zinc-400" numberOfLines={1}>
+                            {d.label}
+                          </Text>
+                        </View>
+                        <Text className="text-xs font-semibold text-zinc-200">
+                          {fmt(d.value)}
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -583,19 +650,53 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+// Overall (indigo) vs my share (emerald) — the same two colours the Active vs
+// total legend explains, so the pair reads the same way in every tile.
+const MINE_COLOR = "#34d399";
+const OVERALL_COLOR = "#818cf8";
+
+function Legend() {
+  return (
+    <View className="mb-3 flex-row items-center gap-4">
+      {[
+        { label: "Overall", color: OVERALL_COLOR },
+        { label: "My share", color: MINE_COLOR },
+      ].map((l) => (
+        <View key={l.label} className="flex-row items-center gap-1.5">
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: l.color }} />
+          <Text className="text-[12px] text-zinc-400">{l.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function MiniStat({
   label,
   value,
+  mine,
   hint,
 }: {
   label: string;
   value: string;
+  mine?: string;
   hint?: string;
 }) {
   return (
     <View className="flex-1 rounded-xl border border-white/10 bg-zinc-950/40 p-3">
       <Text className="text-[12px] uppercase tracking-wider text-zinc-500">{label}</Text>
-      <Text className="mt-0.5 text-base font-bold text-zinc-50">{value}</Text>
+      <Text className="mt-0.5 text-base font-bold" style={{ color: OVERALL_COLOR }}>
+        {value}
+      </Text>
+      {mine !== undefined && (
+        <View className="mt-1 flex-row items-center gap-1.5">
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: MINE_COLOR }} />
+          <Text className="text-[13px] font-semibold" style={{ color: MINE_COLOR }}>
+            {mine}
+          </Text>
+          <Text className="text-[11px] text-zinc-500">mine</Text>
+        </View>
+      )}
       {hint && <Text className="mt-0.5 text-[12px] text-zinc-500">{hint}</Text>}
     </View>
   );

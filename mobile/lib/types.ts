@@ -89,6 +89,9 @@ export type Group = {
   createdBy: string;
   members: Member[];
   shareId?: string | null;
+  // Newest expense recorded in the group; null when it has none yet. The list
+  // API sorts on this, so the most recently used group comes back first.
+  lastExpenseAt?: string | null;
 };
 
 export type Balance = {

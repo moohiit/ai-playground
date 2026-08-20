@@ -154,6 +154,10 @@ export const expenseFilterSchema = z.object({
   dateFrom: isoDate,
   dateTo: isoDate,
   settled: z.enum(["true", "false", "all"]).optional().default("false"),
+  // "true" narrows to entries I carry a share of — my personal entries plus
+  // group entries I am split into. Group spend split only among other members
+  // is filtered out.
+  mine: z.enum(["true", "false"]).optional().default("false"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(500).default(20),
 });
@@ -168,6 +172,8 @@ export const reportFilterSchema = z.object({
   dateTo: isoDate,
   settled: z.enum(["true", "false", "all"]).optional().default("all"),
   scope: z.enum(["all", "personal", "group"]).optional().default("all"),
+  // Mirrors expenseFilterSchema.mine so a filtered list and its summary agree.
+  mine: z.enum(["true", "false"]).optional().default("false"),
 });
 
 export type ReportFilter = z.infer<typeof reportFilterSchema>;

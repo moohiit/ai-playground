@@ -26,3 +26,23 @@ export function categoryColor(category: string): string {
   for (let i = 0; i < category.length; i++) h += category.charCodeAt(i);
   return FALLBACK[h % FALLBACK.length];
 }
+
+// Personal vs Group slices for the donut charts. Personal spend is mine by
+// definition, so only the group slice splits into my share and the part the
+// other members carry. Zero-value slices are dropped by the caller's filter.
+export function personalVsGroupSlices(summary: {
+  personalTotal: number;
+  groupTotal: number;
+  myShare: number;
+}): { label: string; value: number; color: string }[] {
+  const groupMine = Math.max(0, summary.myShare - summary.personalTotal);
+  return [
+    { label: "Personal", value: summary.personalTotal, color: "#34d399" },
+    { label: "Group · mine", value: groupMine, color: "#818cf8" },
+    {
+      label: "Group · others",
+      value: Math.max(0, summary.groupTotal - groupMine),
+      color: "#3730a3",
+    },
+  ].filter((d) => d.value > 0);
+}

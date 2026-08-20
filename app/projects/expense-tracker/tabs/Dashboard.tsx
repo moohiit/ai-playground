@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
@@ -56,6 +56,12 @@ type Breakdown = {
   personalActiveCount: number;
   groupActive: number;
   groupActiveCount: number;
+  // My-share twins of the figures above: personal entries count in full, group
+  // entries only for my split, so these are what the spend actually cost me.
+  personalActiveMine: number;
+  groupActiveMine: number;
+  groupTotalMine: number;
+  allTotalMine: number;
   lastPersonalSettle: string | null;
 };
 
@@ -67,6 +73,22 @@ const RANGES: { key: RangeKey; label: string }[] = [
   { key: "30d", label: "Last 30d" },
   { key: "7d", label: "Last 7d" },
 ];
+
+// What a single row cost me. Splits are stored in the entry currency, so scale
+// them by the same base/entry ratio the displayed amount uses. Personal rows are
+// wholly mine and return null — there is no "share" to show.
+function rowMyShare(e: Expense, userId?: string): number | null {
+  if (e.type !== "group" || e.direction === "income" || !userId) return null;
+  const part = e.splits?.find((sp) => sp.memberId === userId);
+  if (!part) return 0;
+  const ratio = e.amount > 0 ? (e.amountBase ?? e.amount) / e.amount : 1;
+  return part.amount * ratio;
+}
+
+// My-share as a percentage of the overall figure — "—" when nothing is spent.
+function sharePct(mine: number, total: number): string {
+  return total > 0 ? `${Math.round((mine / total) * 100)}%` : "—";
+}
 
 function rangeToDateFrom(range: RangeKey): string | null {
   if (range === "all") return null;
@@ -82,10 +104,11 @@ function rangeToDateFrom(range: RangeKey): string | null {
 }
 
 export function Dashboard() {
-  const { authFetch } = useAuth();
+  const { authFetch, user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [total, setTotal] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [myShareAmount, setMyShareAmount] = useState(0);
   const [incomeAmount, setIncomeAmount] = useState(0);
   const [netAmount, setNetAmount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -119,6 +142,9 @@ export function Dashboard() {
   const [exporting, setExporting] = useState(false);
   const [base, setBase] = useState("INR");
   const [settled, setSettled] = useState<"false" | "true" | "all">("false");
+  // "Only mine" narrows the list to entries I carry a share of — group spend
+  // split among other members drops out of both the rows and the totals.
+  const [mine, setMine] = useState(false);
 
   // Monotonic sequence for list fetches: changing a filter while on page > 1
   // fires two overlapping requests (stale-page + page-reset). Only the latest
@@ -140,10 +166,12 @@ export function Dashboard() {
     if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
     params.set("settled", settled);
+    if (mine) params.set("mine", "true");
 
     // Summary is intentionally direction-agnostic so the Expense/Income/Net
     // cards always show the full picture regardless of the list's direction filter.
     const summaryParams = new URLSearchParams({ scope: view, settled });
+    if (mine) summaryParams.set("mine", "true");
     if (category) summaryParams.set("category", category);
     if (debouncedSearch) summaryParams.set("q", debouncedSearch);
     if (dateFrom) summaryParams.set("dateFrom", dateFrom);
@@ -161,6 +189,7 @@ export function Dashboard() {
       setExpenses(expData.expenses ?? []);
       setTotal(expData.total ?? 0);
       setTotalAmount(sumData.totalAmount ?? 0);
+      setMyShareAmount(sumData.myShare ?? 0);
       setIncomeAmount(sumData.incomeAmount ?? 0);
       setNetAmount(sumData.netAmount ?? 0);
     } catch {
@@ -168,7 +197,7 @@ export function Dashboard() {
     } finally {
       if (seq === fetchSeqRef.current) setLoading(false);
     }
-  }, [view, direction, category, debouncedSearch, range, settled, page, authFetch]);
+  }, [view, direction, category, debouncedSearch, range, settled, mine, page, authFetch]);
 
   const fetchBreakdown = useCallback(async () => {
     const [allRes, pRes, gRes, hRes] = await Promise.all([
@@ -190,6 +219,12 @@ export function Dashboard() {
       personalActiveCount: p.totalCount ?? 0,
       groupActive: g.totalAmount ?? 0,
       groupActiveCount: g.totalCount ?? 0,
+      personalActiveMine: p.myShare ?? 0,
+      groupActiveMine: g.myShare ?? 0,
+      // all-time myShare is personal-in-full + my group splits, so the group
+      // part is what is left after taking personalTotal out.
+      groupTotalMine: Math.max(0, (all.myShare ?? 0) - (all.personalTotal ?? 0)),
+      allTotalMine: all.myShare ?? 0,
       lastPersonalSettle: h.history?.[0]?.settledAt ?? null,
     });
   }, [authFetch]);
@@ -286,7 +321,7 @@ export function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [view, direction, category, debouncedSearch, range, settled]);
+  }, [view, direction, category, debouncedSearch, range, settled, mine]);
 
   const hasActiveFilters =
     view !== "all" ||
@@ -294,7 +329,8 @@ export function Dashboard() {
     category !== "" ||
     search !== "" ||
     range !== "all" ||
-    settled !== "false";
+    settled !== "false" ||
+    mine;
 
   async function handleSettlePersonal() {
     const count = breakdown?.personalActiveCount ?? 0;
@@ -360,6 +396,7 @@ export function Dashboard() {
     if (debouncedSearch) params.set("q", debouncedSearch);
     if (dateFrom) params.set("dateFrom", dateFrom);
     params.set("settled", settled);
+    if (mine) params.set("mine", "true");
     try {
       const res = await authFetch(
         `/api/projects/expense-tracker/expenses/export?${params}`
@@ -384,12 +421,20 @@ export function Dashboard() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const showPagination = total > PAGE_SIZE;
   // Headline card follows the active direction filter so it matches the listed rows.
+  // For spending, the headline is my share — personal entries in full plus only
+  // my split of each group entry — with the overall figure (every member's
+  // share of the same entries) kept beside it.
   const headline =
     direction === "income"
       ? { label: "Total Income", value: incomeAmount, accent: "from-emerald-500/40" }
       : direction === "all"
         ? { label: "Net (income − spend)", value: netAmount, accent: "from-brand-500/40" }
-        : { label: "Total Expenses", value: totalAmount, accent: "from-brand-500/40" };
+        : {
+            label: "My share",
+            value: myShareAmount,
+            accent: "from-emerald-500/40",
+            mine: true,
+          };
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(total, page * PAGE_SIZE);
 
@@ -399,8 +444,33 @@ export function Dashboard() {
         <StatCard
           label={headline.label}
           value={formatMoney(headline.value, base)}
+          valueClassName={"mine" in headline ? "text-emerald-300" : undefined}
           hint={`${total} ${total === 1 ? "entry" : "entries"}`}
           accent={headline.accent}
+          footer={
+            "mine" in headline ? (
+              <div className="mt-3 flex items-end justify-between gap-3 border-t border-zinc-800/80 pt-2">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                    Overall
+                  </div>
+                  <div className="text-base font-bold tabular-nums text-brand-300">
+                    {formatMoney(totalAmount, base)}
+                  </div>
+                  <div className="text-[10px] text-zinc-500">incl. all members</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                    Your share
+                  </div>
+                  <div className="text-base font-bold tabular-nums text-emerald-300">
+                    {sharePct(myShareAmount, totalAmount)}
+                  </div>
+                  <div className="text-[10px] text-zinc-500">of overall</div>
+                </div>
+              </div>
+            ) : undefined
+          }
         />
         <StatCard
           label="Net flow"
@@ -467,26 +537,41 @@ export function Dashboard() {
       )}
 
       {breakdown && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <BreakdownCard
-            title="Personal"
-            accent="from-emerald-500/40"
-            base={base}
-            activeAmount={breakdown.personalActive}
-            activeCount={breakdown.personalActiveCount}
-            totalAmount={breakdown.personalTotal}
-            since={breakdown.lastPersonalSettle}
-            onSettle={handleSettlePersonal}
-            settling={settling}
-          />
-          <BreakdownCard
-            title="Group"
-            accent="from-brand-500/40"
-            base={base}
-            activeAmount={breakdown.groupActive}
-            activeCount={breakdown.groupActiveCount}
-            totalAmount={breakdown.groupTotal}
-          />
+        <div className="flex flex-col gap-3">
+          <ShareLegend />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <BreakdownCard
+              title="Personal · all yours"
+              accent="from-emerald-500/40"
+              base={base}
+              activeAmount={breakdown.personalActive}
+              activeCount={breakdown.personalActiveCount}
+              totalAmount={breakdown.personalTotal}
+              since={breakdown.lastPersonalSettle}
+              onSettle={handleSettlePersonal}
+              settling={settling}
+            />
+            <BreakdownCard
+              title="Group"
+              accent="from-brand-500/40"
+              base={base}
+              activeAmount={breakdown.groupActive}
+              activeCount={breakdown.groupActiveCount}
+              activeMine={breakdown.groupActiveMine}
+              totalAmount={breakdown.groupTotal}
+              totalMine={breakdown.groupTotalMine}
+            />
+            <BreakdownCard
+              title="All"
+              accent="from-fuchsia-500/40"
+              base={base}
+              activeAmount={breakdown.personalActive + breakdown.groupActive}
+              activeCount={breakdown.personalActiveCount + breakdown.groupActiveCount}
+              activeMine={breakdown.personalActiveMine + breakdown.groupActiveMine}
+              totalAmount={breakdown.personalTotal + breakdown.groupTotal}
+              totalMine={breakdown.allTotalMine}
+            />
+          </div>
         </div>
       )}
 
@@ -581,6 +666,20 @@ export function Dashboard() {
 
           <div className="flex items-center gap-2">
             <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
+              Share
+            </span>
+            <div className="flex gap-1.5">
+              <FilterChip active={!mine} onClick={() => setMine(false)}>
+                Everyone
+              </FilterChip>
+              <FilterChip active={mine} onClick={() => setMine(true)}>
+                Only mine
+              </FilterChip>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[11px] uppercase tracking-wider text-zinc-500 sm:inline">
               When
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -635,6 +734,7 @@ export function Dashboard() {
                   setSearch("");
                   setRange("all");
                   setSettled("false");
+                  setMine(false);
                 }}
                 className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/40 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
               >
@@ -669,6 +769,7 @@ export function Dashboard() {
                 expense={e}
                 index={i}
                 base={base}
+                userId={user?.userId}
                 onEdit={() => setEditingExpense(e)}
                 onDelete={() => handleDelete(e._id)}
               />
@@ -685,6 +786,7 @@ export function Dashboard() {
                   "Category",
                   "Paid by",
                   "Amount",
+                  "My share",
                   "Split among",
                   "Type",
                   "",
@@ -693,7 +795,9 @@ export function Dashboard() {
                     key={i}
                     className={cn(
                       "px-4 py-3 font-semibold uppercase tracking-wider text-zinc-500",
-                      h === "Amount" ? "text-right" : "text-left"
+                      h === "Amount" || h === "My share"
+                        ? "text-right"
+                        : "text-left"
                     )}
                   >
                     {h}
@@ -739,6 +843,9 @@ export function Dashboard() {
                         {e.amount.toFixed(2)} {e.currency}
                       </div>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-xs tabular-nums">
+                    <MyShareCell share={rowMyShare(e, user?.userId)} base={base} />
                   </td>
                   <td className="px-4 py-3 text-xs text-zinc-500">
                     {e.splitAmong && e.splitAmong.length > 0
@@ -941,11 +1048,15 @@ function StatCard({
   value,
   hint,
   accent,
+  valueClassName,
+  footer,
 }: {
   label: string;
   value: string;
   hint?: string;
   accent?: string;
+  valueClassName?: string;
+  footer?: ReactNode;
 }) {
   return (
     <div className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5 backdrop-blur-sm">
@@ -958,10 +1069,16 @@ function StatCard({
       <div className="text-[11px] uppercase tracking-wider text-zinc-500">
         {label}
       </div>
-      <div className="mt-1 text-2xl font-bold tabular-nums text-zinc-100">
+      <div
+        className={cn(
+          "mt-1 text-2xl font-bold tabular-nums",
+          valueClassName ?? "text-zinc-100"
+        )}
+      >
         {value}
       </div>
       {hint && <div className="mt-0.5 text-xs text-zinc-500">{hint}</div>}
+      {footer}
     </div>
   );
 }
@@ -972,7 +1089,9 @@ function BreakdownCard({
   base,
   activeAmount,
   activeCount,
+  activeMine,
   totalAmount,
+  totalMine,
   since,
   onSettle,
   settling,
@@ -982,7 +1101,9 @@ function BreakdownCard({
   base: string;
   activeAmount: number;
   activeCount: number;
+  activeMine?: number;
   totalAmount: number;
+  totalMine?: number;
   since?: string | null;
   onSettle?: () => void;
   settling?: boolean;
@@ -1008,30 +1129,65 @@ function BreakdownCard({
         )}
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-            Active
-          </div>
-          <div className="mt-0.5 text-xl font-bold tabular-nums text-zinc-100">
-            {formatMoney(activeAmount, base)}
-          </div>
-          <div className="mt-0.5 text-[11px] text-zinc-500">
-            {activeCount} {activeCount === 1 ? "entry" : "entries"}
-            {since
+        <BreakdownFigure
+          label="Active"
+          overall={formatMoney(activeAmount, base)}
+          mine={activeMine === undefined ? undefined : formatMoney(activeMine, base)}
+          hint={`${activeCount} ${activeCount === 1 ? "entry" : "entries"}${
+            since
               ? ` · since ${new Date(since).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
-              : ""}
-          </div>
-        </div>
-        <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-            Total
-          </div>
-          <div className="mt-0.5 text-xl font-bold tabular-nums text-zinc-100">
-            {formatMoney(totalAmount, base)}
-          </div>
-          <div className="mt-0.5 text-[11px] text-zinc-500">all time</div>
-        </div>
+              : ""
+          }`}
+        />
+        <BreakdownFigure
+          label="Total"
+          overall={formatMoney(totalAmount, base)}
+          mine={totalMine === undefined ? undefined : formatMoney(totalMine, base)}
+          hint="all time"
+        />
       </div>
+    </div>
+  );
+}
+
+// Overall (brand/indigo) vs my share (emerald) — the same colour pairing the
+// Active vs total legend explains, so every figure reads the same way.
+function BreakdownFigure({
+  label,
+  overall,
+  mine,
+  hint,
+}: {
+  label: string;
+  overall: string;
+  mine?: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+      <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
+      <div className="mt-0.5 text-xl font-bold tabular-nums text-brand-300">{overall}</div>
+      {mine !== undefined && (
+        <div className="mt-1 flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          <span className="text-sm font-semibold tabular-nums text-emerald-300">{mine}</span>
+          <span className="text-[11px] text-zinc-500">mine</span>
+        </div>
+      )}
+      {hint && <div className="mt-0.5 text-[11px] text-zinc-500">{hint}</div>}
+    </div>
+  );
+}
+
+function ShareLegend() {
+  return (
+    <div className="flex items-center gap-4 px-1">
+      <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+        <span className="h-2 w-2 rounded-full bg-brand-400" /> Overall
+      </span>
+      <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+        <span className="h-2 w-2 rounded-full bg-emerald-400" /> My share
+      </span>
     </div>
   );
 }
@@ -1061,19 +1217,32 @@ function FilterChip({
   );
 }
 
+// Shared renderer for a row's my-share figure: emerald when I carry part of it,
+// muted when the split leaves me out entirely, blank for personal rows.
+function MyShareCell({ share, base }: { share: number | null; base: string }) {
+  if (share === null) return <span className="text-zinc-600">—</span>;
+  if (share === 0) return <span className="text-zinc-600">not yours</span>;
+  return (
+    <span className="font-semibold text-emerald-300">{formatMoney(share, base)}</span>
+  );
+}
+
 function ExpenseCard({
   expense: e,
   index,
   base,
+  userId,
   onEdit,
   onDelete,
 }: {
   expense: Expense;
   index: number;
   base: string;
+  userId?: string;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const myShare = rowMyShare(e, userId);
   const splitNames =
     e.splitAmong && e.splitAmong.length > 0
       ? e.splitAmong.map((m) => m.name).join(", ")
@@ -1107,6 +1276,12 @@ function ExpenseCard({
             <div className="text-[10px] text-zinc-500">
               {currencySymbol(e.currency)}
               {e.amount.toFixed(2)} {e.currency}
+            </div>
+          )}
+          {myShare !== null && (
+            <div className="mt-0.5 font-mono text-[11px] tabular-nums">
+              <MyShareCell share={myShare} base={base} />
+              {myShare > 0 && <span className="ml-1 text-zinc-500">mine</span>}
             </div>
           )}
           <span

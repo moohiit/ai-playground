@@ -3,7 +3,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import type { Summary } from "../lib/types";
 import { Donut } from "./Donut";
 import { BarChart, LineChart } from "./SvgCharts";
-import { categoryColor } from "../lib/colors";
+import { categoryColor, personalVsGroupSlices } from "../lib/colors";
 import { formatMoney } from "../lib/currency";
 
 const MONTHS = [
@@ -102,11 +102,10 @@ export function ReportBody({
       {/* ── Personal vs Group donut ── */}
       {!hasPayers && summary.personalTotal > 0 && summary.groupTotal > 0 && (
         <Panel title="Personal vs Group">
+          {/* The group slice is split into my share and what the other members
+              carry — personal spend is mine by definition. */}
           <DonutWithLegend
-            data={[
-              { label: "Personal", value: summary.personalTotal, color: "#34d399" },
-              { label: "Group", value: summary.groupTotal, color: "#818cf8" },
-            ]}
+            data={personalVsGroupSlices(summary)}
             fmt={fmt}
           />
         </Panel>

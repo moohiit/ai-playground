@@ -209,9 +209,36 @@ export async function createGroup(input: CreateGroupInput, auth: JWTPayload) {
 
 export async function listGroups(auth: JWTPayload) {
   await connectDB();
-  return Group.find({ "members.userId": auth.userId })
-    .sort({ createdAt: -1 })
-    .lean();
+  const groups = await Group.find({ "members.userId": auth.userId }).lean();
+  if (groups.length === 0) return [];
+
+  // Ordering follows activity, not age: the group someone just added an
+  // expense to belongs on top. `createdAt` (when the entry was recorded)
+  // rather than `date` — a backdated expense is not fresh activity.
+  const rows = await Expense.aggregate<{ _id: mongoose.Types.ObjectId; lastExpenseAt: Date }>([
+    { $match: { groupId: { $in: groups.map((g) => g._id) } } },
+    { $group: { _id: "$groupId", lastExpenseAt: { $max: "$createdAt" } } },
+  ]);
+  const lastById = new Map(
+    rows.map((r) => [r._id.toString(), r.lastExpenseAt?.getTime() ?? 0])
+  );
+
+  return groups
+    .map((g) => {
+      const last = lastById.get(g._id.toString()) ?? 0;
+      return {
+        ...g,
+        // null for a group with no expenses yet — clients show "no expenses yet".
+        lastExpenseAt: last ? new Date(last).toISOString() : null,
+      };
+    })
+    .sort((a, b) => {
+      // Groups with no expenses fall back to their own creation time, so a
+      // brand-new empty group still surfaces above long-dormant ones.
+      const at = a.lastExpenseAt ? Date.parse(a.lastExpenseAt) : new Date(a.createdAt).getTime();
+      const bt = b.lastExpenseAt ? Date.parse(b.lastExpenseAt) : new Date(b.createdAt).getTime();
+      return bt - at;
+    });
 }
 
 export async function getGroup(id: string, auth: JWTPayload) {
@@ -516,12 +543,24 @@ export async function createExpense(
   return expense.toObject();
 }
 
+// "Only mine": personal entries (always wholly mine) plus group entries I am
+// actually split into. A group entry split among other members only costs me
+// nothing, so it drops out.
+function mineClause(userId: string) {
+  return {
+    $or: [
+      { type: "personal", createdBy: userId },
+      { "splits.memberId": userId },
+    ],
+  };
+}
+
 // Shared query builder for the expense list + CSV export, so both apply identical
 // scoping/filtering. Verifies group access; does NOT page (callers add skip/limit).
 type ExpenseQueryFilter = Pick<
   ExpenseFilter,
   "groupId" | "type" | "direction" | "category" | "q" | "dateFrom" | "dateTo" | "settled"
->;
+> & { mine?: "true" | "false" };
 
 async function buildExpenseQuery(
   filter: ExpenseQueryFilter,
@@ -575,6 +614,13 @@ async function buildExpenseQuery(
     query.$and = [
       ...(Array.isArray(query.$and) ? query.$and : []),
       { $or: [{ direction: "expense" }, { direction: { $exists: false } }, { direction: null }] },
+    ];
+  }
+
+  if (filter.mine === "true") {
+    query.$and = [
+      ...(Array.isArray(query.$and) ? query.$and : []),
+      mineClause(auth.userId),
     ];
   }
 
@@ -859,6 +905,10 @@ export async function getSummary(
   // Settlement payments (member repaying member) are balance entries, not
   // spending — keep them out of every summary/report figure.
   match.isSettlement = { $ne: true };
+
+  if (filter.mine === "true") {
+    match.$and = [...((match.$and as unknown[]) ?? []), mineClause(auth.userId)];
+  }
 
   if (filter.category) match.category = filter.category;
   if (filter.q) {
@@ -2195,7 +2245,7 @@ export async function getInsights(auth: JWTPayload) {
 // we never hand raw transactions to the LLM.
 async function buildCoachContext(auth: JWTPayload): Promise<string> {
   const [all, budgets, forecast, insights, accounts] = await Promise.all([
-    getSummary({ scope: "all", settled: "all" }, auth),
+    getSummary({ scope: "all", settled: "all", mine: "false" }, auth),
     getBudgets(undefined, auth),
     getForecast(auth),
     getInsights(auth),
