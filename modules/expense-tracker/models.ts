@@ -173,6 +173,15 @@ const expenseSchema = new Schema<ExpenseDoc>(
 );
 
 expenseSchema.index({ date: -1, groupId: 1 });
+// The queries actually run. buildExpenseQuery and getSummary both scope by
+// owner or by group and then filter on settled/date; without these, every
+// dashboard summary was a collection scan.
+expenseSchema.index({ createdBy: 1, type: 1, settledAt: 1, date: -1 });
+expenseSchema.index({ groupId: 1, settledAt: 1, date: -1 });
+// The "only mine" filter matches a member inside the splits array.
+expenseSchema.index({ "splits.memberId": 1, date: -1 });
+// listGroups aggregates the newest expense per group.
+expenseSchema.index({ groupId: 1, createdAt: -1 });
 
 export const Expense: Model<ExpenseDoc> =
   (mongoose.models.Expense as Model<ExpenseDoc>) ||

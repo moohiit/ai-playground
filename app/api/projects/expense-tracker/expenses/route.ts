@@ -3,11 +3,6 @@ import { createExpense, listExpenses } from "@/modules/expense-tracker/service";
 import { createExpenseSchema, expenseFilterSchema } from "@/modules/expense-tracker/schemas";
 import { requireAuth } from "@/lib/auth";
 import { ApiError, handleRouteError } from "@/lib/apiError";
-import {
-  getUserPushConfig,
-  checkAndNotifyBudget,
-  checkAndNotifyAnomaly,
-} from "@/modules/expense-tracker/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,26 +30,8 @@ export async function POST(req: Request) {
     }
     const expense = await createExpense(parsed.data, auth);
 
-    // Best-effort push notifications for personal expenses
-    if (expense.type === "personal" && expense.direction === "expense") {
-      try {
-        const config = await getUserPushConfig(auth.userId);
-        if (config) {
-          await Promise.all([
-            checkAndNotifyBudget(auth.userId, config, expense.category),
-            checkAndNotifyAnomaly(
-              auth.userId,
-              config,
-              expense.category,
-              expense.amountBase ?? expense.amount,
-              expense.description
-            ),
-          ]);
-        }
-      } catch {
-        // never fail the expense save due to push errors
-      }
-    }
+    // Notifications now fire inside createExpense, so every write path gets
+    // them — expenses posted by the recurring cron never reached this hook.
 
     return NextResponse.json({ expense }, { status: 201 });
   } catch (err) {

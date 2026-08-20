@@ -24,6 +24,7 @@ import { AppBackground, Input } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
 import { exportExpensesCsv } from "../../lib/csv";
 import { formatMoney, currencySymbol } from "../../lib/currency";
+import { formatDay } from "../../lib/dates";
 import { getBaseCurrency } from "../../lib/prefs";
 
 type ViewMode = "all" | "personal" | "group";
@@ -582,7 +583,7 @@ function ExpenseCard({
             {e.description}
           </Text>
           <Text className="mt-0.5 text-xs text-zinc-500">
-            {new Date(e.date).toLocaleDateString()} · {e.paidBy.name}
+            {formatDay(e.date)} · {e.paidBy.name}
           </Text>
         </View>
         <View className="items-end">

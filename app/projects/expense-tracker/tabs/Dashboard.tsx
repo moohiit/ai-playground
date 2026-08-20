@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
-import { cn, localISODate } from "../../../../lib/utils";
+import { cn, formatDay, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
@@ -219,20 +219,15 @@ export function Dashboard() {
   }, [view, direction, category, debouncedSearch, range, settled, mine, page, authFetch]);
 
   const fetchBreakdown = useCallback(async () => {
-    const [allRes, pRes, gRes, hRes] = await Promise.all([
-      authFetch(`/api/projects/expense-tracker/reports/summary?scope=all&settled=all`),
-      authFetch(`/api/projects/expense-tracker/reports/summary?scope=personal&settled=false`),
-      authFetch(`/api/projects/expense-tracker/reports/summary?scope=group&settled=false`),
-      authFetch(`/api/projects/expense-tracker/personal/history`),
-    ]);
-    const [all, p, g, h] = await Promise.all([
-      allRes.json().catch(() => ({})),
-      pRes.json().catch(() => ({})),
-      gRes.json().catch(() => ({})),
-      hRes.json().catch(() => ({})),
-    ]);
+    // One request for every summary variant this card needs — it used to take
+    // four, and the dashboard as a whole six.
+    const res = await authFetch("/api/projects/expense-tracker/reports/dashboard");
+    const data = await res.json().catch(() => ({}));
+    const all = data.all ?? {};
+    const p = data.personalActive ?? {};
+    const g = data.groupActive ?? {};
     // Keep the last good breakdown rather than replacing it with zeros.
-    if (!allRes.ok || typeof all.totalAmount !== "number") {
+    if (!res.ok || typeof all.totalAmount !== "number") {
       setLoadError(true);
       return;
     }
@@ -250,7 +245,7 @@ export function Dashboard() {
       // part is what is left after taking personalTotal out.
       groupTotalMine: Math.max(0, (all.myShare ?? 0) - (all.personalTotal ?? 0)),
       allTotalMine: all.myShare ?? 0,
-      lastPersonalSettle: h.history?.[0]?.settledAt ?? null,
+      lastPersonalSettle: data.lastPersonalSettle ?? null,
     });
   }, [authFetch]);
 
@@ -865,7 +860,7 @@ export function Dashboard() {
                   style={{ animationDelay: `${i * 25}ms` }}
                 >
                   <td className="px-4 py-3 tabular-nums text-zinc-300">
-                    {new Date(e.date).toLocaleDateString()}
+                    {formatDay(e.date)}
                   </td>
                   <td className="px-4 py-3 text-zinc-100">{e.description}</td>
                   <td className="px-4 py-3">
@@ -1320,7 +1315,7 @@ function ExpenseCard({
             {e.description}
           </div>
           <div className="mt-0.5 text-xs text-zinc-500">
-            {new Date(e.date).toLocaleDateString()} · {e.paidBy.name}
+            {formatDay(e.date)} · {e.paidBy.name}
           </div>
         </div>
         <div className="shrink-0 text-right">

@@ -32,6 +32,7 @@ import { AppBackground, GradientButton, Input, KeyboardAwareScreen } from "../..
 import { GroupReportView } from "../../components/GroupReportView";
 import { WEB_BASE_URL } from "../../lib/api";
 import { formatMoney } from "../../lib/currency";
+import { formatDay } from "../../lib/dates";
 import { getBaseCurrency } from "../../lib/prefs";
 
 type Tab = "active" | "settled" | "report";
@@ -791,10 +792,14 @@ export default function GroupDetailScreen() {
                           </Text>
                         )}
                       </View>
+                      {/* A settle-up row's `date` is the instant it was
+                          recorded (recordSettlementPayment writes new Date()),
+                          so it renders in local time; a real expense's date is
+                          the UTC-midnight day the user picked. */}
                       <Text className="mt-0.5 text-xs text-zinc-500">
                         {e.isSettlement
                           ? `Recorded ${new Date(e.date).toLocaleDateString()}`
-                          : `Paid by ${e.paidBy.name} · ${new Date(e.date).toLocaleDateString()} · split ${e.splitAmong?.length ?? 0} ways`}
+                          : `Paid by ${e.paidBy.name} · ${formatDay(e.date)} · split ${e.splitAmong?.length ?? 0} ways`}
                       </Text>
                       {!e.isSettlement && e.splitAmong && e.splitAmong.length > 0 && (
                         <Text className="mt-0.5 text-[13px] text-zinc-600" numberOfLines={2}>
@@ -1126,7 +1131,7 @@ function SettlementCard({
                 {e.description}
               </Text>
               <Text className="mt-0.5 text-[12px] text-zinc-500" numberOfLines={1}>
-                Paid by {e.paidBy.name} · {new Date(e.date).toLocaleDateString()}
+                Paid by {e.paidBy.name} · {formatDay(e.date)}
                 {e.splitAmong && e.splitAmong.length > 0
                   ? ` · ${e.splitAmong.map((m) => m.name).join(", ")}`
                   : ""}

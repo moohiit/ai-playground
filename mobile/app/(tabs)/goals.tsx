@@ -20,22 +20,30 @@ import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney, parseAmount } from "../../lib/currency";
 import { localISODate } from "../../lib/dates";
 
+// The list route can return archived goals (?archived=true); the shared Goal
+// type predates the flag, so widen it here.
+type GoalRow = Goal & { archived: boolean };
+
 export default function GoalsScreen() {
   const { authFetch } = useAuth();
   const router = useRouter();
-  const [goals, setGoals] = useState<Goal[]>([]);
+  const [goals, setGoals] = useState<GoalRow[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [base, setBase] = useState("INR");
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   // Set while the sheet is editing an existing goal rather than adding one.
-  const [editing, setEditing] = useState<Goal | null>(null);
-  const [contributeTo, setContributeTo] = useState<Goal | null>(null);
+  const [editing, setEditing] = useState<GoalRow | null>(null);
+  const [contributeTo, setContributeTo] = useState<GoalRow | null>(null);
+  // The list route drops archived goals unless asked for them by name.
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [gRes, aRes, pRes] = await Promise.all([
-        authFetch("/api/projects/expense-tracker/goals"),
+        authFetch(
+          `/api/projects/expense-tracker/goals${showArchived ? "?archived=true" : ""}`
+        ),
         authFetch("/api/projects/expense-tracker/accounts"),
         authFetch("/api/projects/expense-tracker/prefs"),
       ]);
@@ -46,7 +54,7 @@ export default function GoalsScreen() {
     } catch {
       /* keep */
     }
-  }, [authFetch]);
+  }, [authFetch, showArchived]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -56,7 +64,7 @@ export default function GoalsScreen() {
     setRefreshing(false);
   }, [load]);
 
-  function confirmDelete(g: Goal) {
+  function confirmDelete(g: GoalRow) {
     Alert.alert("Delete goal", `Delete "${g.name}"?`, [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
@@ -88,6 +96,17 @@ export default function GoalsScreen() {
         contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 12 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
       >
+        <View className="flex-row items-center justify-between px-1">
+          <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+            {showArchived ? "All goals" : "Active goals"}
+          </Text>
+          <Pressable onPress={() => setShowArchived((v) => !v)} hitSlop={8}>
+            <Text className="text-[11px] font-semibold text-brand-400">
+              {showArchived ? "Hide archived" : "Show archived"}
+            </Text>
+          </Pressable>
+        </View>
+
         {goals.length === 0 ? (
           <View className="items-center rounded-2xl border border-white/10 bg-white/[0.03] py-12">
             <Text className="text-sm text-zinc-400">No goals yet.</Text>
@@ -103,11 +122,22 @@ export default function GoalsScreen() {
                   key={g._id}
                   onPress={() => { setEditing(g); setShowAdd(true); }}
                   onLongPress={() => confirmDelete(g)}
-                  className={`rounded-2xl border p-4 ${g.complete ? "border-emerald-500/40 bg-emerald-500/[0.05]" : "border-white/10 bg-white/[0.04]"}`}
+                  className={`rounded-2xl border p-4 ${
+                    g.archived
+                      ? "border-white/5 bg-zinc-950/30 opacity-70"
+                      : g.complete
+                        ? "border-emerald-500/40 bg-emerald-500/[0.05]"
+                        : "border-white/10 bg-white/[0.04]"
+                  }`}
                 >
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
                       <Text className="font-semibold text-zinc-100">{g.name}</Text>
+                      {g.archived && (
+                        <Text className="rounded-full border border-zinc-700 bg-zinc-900/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-zinc-400">
+                          archived
+                        </Text>
+                      )}
                       {g.complete && <Text className="rounded-full bg-emerald-500/15 px-1.5 text-[10px] text-emerald-400">reached 🎉</Text>}
                       {linked && <Text className="rounded-full bg-brand-500/15 px-1.5 text-[10px] text-brand-400">linked</Text>}
                     </View>
@@ -128,7 +158,7 @@ export default function GoalsScreen() {
                   )}
                   {/* Tapping the card now opens the edit sheet, so contributing
                       needs its own target inside the card. */}
-                  {!linked && !g.complete && (
+                  {!linked && !g.complete && !g.archived && (
                     <Pressable
                       onPress={() => setContributeTo(g)}
                       className="mt-3 self-start rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5"
@@ -140,7 +170,7 @@ export default function GoalsScreen() {
               );
             })}
             <Text className="px-1 text-center text-[11px] text-zinc-600">
-              Tap a goal to edit · long-press to delete
+              Tap a goal to edit or archive it · long-press to delete
             </Text>
           </>
         )}
@@ -164,7 +194,7 @@ export default function GoalsScreen() {
 }
 
 function ContributeSheet({ goal, base, onClose, onSaved }: {
-  goal: Goal | null; base: string; onClose: () => void; onSaved: () => void;
+  goal: GoalRow | null; base: string; onClose: () => void; onSaved: () => void;
 }) {
   const { authFetch } = useAuth();
   const [amount, setAmount] = useState("");
@@ -214,7 +244,7 @@ function ContributeSheet({ goal, base, onClose, onSaved }: {
 }
 
 function GoalSheet({ visible, editing, accounts, onClose, onSaved }: {
-  visible: boolean; editing: Goal | null; accounts: Account[]; onClose: () => void; onSaved: () => void;
+  visible: boolean; editing: GoalRow | null; accounts: Account[]; onClose: () => void; onSaved: () => void;
 }) {
   const { authFetch } = useAuth();
   const [name, setName] = useState("");
@@ -222,6 +252,7 @@ function GoalSheet({ visible, editing, accounts, onClose, onSaved }: {
   const [saved, setSaved] = useState("");
   const [deadline, setDeadline] = useState("");
   const [linkedAccountId, setLinkedAccountId] = useState("");
+  const [archived, setArchived] = useState(false);
   const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -235,8 +266,10 @@ function GoalSheet({ visible, editing, accounts, onClose, onSaved }: {
       setSaved(editing.linkedAccountId ? "" : String(editing.saved));
       setDeadline(editing.deadline ?? "");
       setLinkedAccountId(editing.linkedAccountId ?? "");
+      setArchived(editing.archived);
     } else {
       setName(""); setTarget(""); setSaved(""); setDeadline(""); setLinkedAccountId("");
+      setArchived(false);
     }
   }, [visible, editing]);
 
@@ -247,12 +280,15 @@ function GoalSheet({ visible, editing, accounts, onClose, onSaved }: {
     setBusy(true);
     try {
       // updateGoalSchema has no linkedAccountId — how a goal is funded is fixed
-      // once it exists, so an edit sends only the fields PATCH accepts.
+      // once it exists, so an edit sends only the fields PATCH accepts. Both
+      // payload schemas are strict, and only the update one knows about
+      // `archived` — a new goal is always active.
       const body = editing
         ? {
             name: name.trim(),
             target: t,
             deadline: deadline || null,
+            archived,
             ...(editing.linkedAccountId ? {} : { savedAmount: parseAmount(saved) || 0 }),
           }
         : {
@@ -344,6 +380,25 @@ function GoalSheet({ visible, editing, accounts, onClose, onSaved }: {
               <Input value={saved} onChangeText={setSaved} placeholder={editing ? "Saved so far" : "Already saved (optional)"}
                 keyboardType="decimal-pad" placeholderTextColor="#71717a"
                 className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
+            )}
+            {editing && (
+              <View className="gap-1.5">
+                <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Status</Text>
+                <View className="flex-row gap-2">
+                  {([[false, "Active"], [true, "Archived"]] as const).map(([value, label]) => (
+                    <Pressable
+                      key={label}
+                      onPress={() => setArchived(value)}
+                      className={`flex-1 items-center rounded-xl border py-2.5 ${archived === value ? "border-brand-500/60 bg-brand-500/15" : "border-white/10 bg-zinc-900/40"}`}
+                    >
+                      <Text className={`text-sm font-medium ${archived === value ? "text-brand-400" : "text-zinc-400"}`}>{label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text className="text-[11px] text-zinc-500">
+                  Archiving keeps the goal's progress but drops it out of the list.
+                </Text>
+              </View>
             )}
             <GradientButton label={editing ? "Save goal" : "Add goal"} onPress={submit} loading={busy} />
           </View>

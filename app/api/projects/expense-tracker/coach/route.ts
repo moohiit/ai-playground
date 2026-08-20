@@ -3,7 +3,7 @@ import { coachReply } from "@/modules/expense-tracker/service";
 import { coachSchema } from "@/modules/expense-tracker/schemas";
 import { requireAuth } from "@/lib/auth";
 import { ApiError, handleRouteError } from "@/lib/apiError";
-import { rateLimit, getClientKey } from "@/lib/rateLimit";
+import { rateLimit, getRateLimitKey } from "@/lib/rateLimit";
 import { logAiUsage, requireAiUsageSlot } from "@/lib/usageLimit";
 
 export const runtime = "nodejs";
@@ -18,11 +18,14 @@ const ACTION = "coach";
 // so it's rate-limited and metered exactly like /scan.
 export async function POST(req: Request) {
   const started = Date.now();
-  const clientKey = getClientKey(req);
+  // Keyed by account once auth resolves; the IP is only a fallback for
+  // callers that never authenticate.
+  let clientKey = getRateLimitKey(req);
   let userId: string | null = null;
 
   try {
     const auth = await requireAuth(req);
+    clientKey = getRateLimitKey(req, auth.userId);
     userId = auth.userId;
 
     const limit = rateLimit(

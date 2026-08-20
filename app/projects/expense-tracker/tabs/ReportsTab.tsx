@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { cn, localISODate } from "../../../../lib/utils";
+import { cn, formatDay, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { ExportPdfButton } from "../components/ExportPdf";
@@ -504,9 +504,7 @@ function InsightsRow({ summary }: { summary: Summary }) {
         value={summary.largest ? fmt(summary.largest.amount) : "—"}
         hint={
           summary.largest
-            ? `${summary.largest.description} · ${new Date(
-                summary.largest.date
-              ).toLocaleDateString()}`
+            ? `${summary.largest.description} · ${formatDay(summary.largest.date)}`
             : "No data"
         }
         icon={

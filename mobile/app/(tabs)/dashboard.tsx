@@ -17,7 +17,7 @@ import { Donut } from "../../components/Donut";
 import { AppBackground, GradientButton, GradientHero, Input, KeyboardAwareScreen } from "../../components/ui";
 import { categoryColor, personalVsGroupSlices } from "../../lib/colors";
 import { formatMoney } from "../../lib/currency";
-import { localISODate } from "../../lib/dates";
+import { formatDay, localISODate } from "../../lib/dates";
 import { getBaseCurrency } from "../../lib/prefs";
 
 const shortDate = (iso: string) =>
@@ -154,37 +154,29 @@ export default function Dashboard() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const [allRes, activeRes, settledRes, pActiveRes, gActiveRes, histRes] =
-        await Promise.all([
-          authFetch("/api/projects/expense-tracker/reports/summary?scope=all&settled=all"),
-          authFetch("/api/projects/expense-tracker/reports/summary?scope=all&settled=false"),
-          authFetch("/api/projects/expense-tracker/reports/summary?scope=all&settled=true"),
-          authFetch("/api/projects/expense-tracker/reports/summary?scope=personal&settled=false"),
-          authFetch("/api/projects/expense-tracker/reports/summary?scope=group&settled=false"),
-          authFetch("/api/projects/expense-tracker/personal/history"),
-        ]);
+      // One request for all five summary variants and the settle history —
+      // this screen used to open with six round trips.
+      const res = await authFetch("/api/projects/expense-tracker/reports/dashboard");
+      if (!res.ok) return; // keep the last good state
+      const data = await res.json().catch(() => null);
       // Only store payloads that look like a Summary — a 401/500 body parsed
       // here used to crash the render (`undefined.toFixed`). On failure we
       // keep the last good state instead.
-      const asSummary = async (r: Response): Promise<Summary | null> => {
-        if (!r.ok) return null;
-        const d = await r.json().catch(() => null);
-        return d && typeof d.totalAmount === "number" ? (d as Summary) : null;
-      };
-      const [all, act, set, pAct, gAct] = await Promise.all([
-        asSummary(allRes),
-        asSummary(activeRes),
-        asSummary(settledRes),
-        asSummary(pActiveRes),
-        asSummary(gActiveRes),
-      ]);
+      const asSummary = (d: unknown): Summary | null =>
+        d && typeof (d as Summary).totalAmount === "number"
+          ? (d as Summary)
+          : null;
+      const all = asSummary(data?.all);
+      const act = asSummary(data?.active);
+      const set = asSummary(data?.settled);
+      const pAct = asSummary(data?.personalActive);
+      const gAct = asSummary(data?.groupActive);
       if (all) setSummary(all);
       if (act) setActiveSummary(act);
       if (set) setSettledSummary(set);
       if (pAct) setPersonalActive(pAct);
       if (gAct) setGroupActive(gAct);
-      const hist = await histRes.json().catch(() => ({}));
-      setLastPersonalSettle(hist.history?.[0]?.settledAt ?? null);
+      setLastPersonalSettle(data?.lastPersonalSettle ?? null);
     } catch {
       // keep last good state
     }
@@ -571,7 +563,7 @@ export default function Dashboard() {
                 </View>
                 <Text className="mt-0.5 text-xs text-zinc-500">
                   {cur!.largest.category} ·{" "}
-                  {new Date(cur!.largest.date).toLocaleDateString()}
+                  {formatDay(cur!.largest.date)}
                 </Text>
               </Panel>
             )}

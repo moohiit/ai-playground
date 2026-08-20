@@ -17,6 +17,7 @@ type Goal = {
   complete: boolean;
   monthsLeft: number | null;
   monthlyNeeded: number | null;
+  archived: boolean;
 };
 type AccountLite = { _id: string; name: string };
 
@@ -29,10 +30,14 @@ export function GoalsTab() {
   const [showAdd, setShowAdd] = useState(false);
   // Set while the form is editing an existing goal rather than adding one.
   const [editing, setEditing] = useState<Goal | null>(null);
+  // The list route drops archived goals unless asked for them by name.
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await authFetch("/api/projects/expense-tracker/goals");
+      const res = await authFetch(
+        `/api/projects/expense-tracker/goals${showArchived ? "?archived=true" : ""}`
+      );
       const data = await res.json().catch(() => ({}));
       setGoals(data.goals ?? []);
     } catch {
@@ -40,7 +45,7 @@ export function GoalsTab() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch]);
+  }, [authFetch, showArchived]);
 
   useEffect(() => {
     load();
@@ -124,6 +129,18 @@ export function GoalsTab() {
         />
       )}
 
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500">
+          {showArchived ? "All goals" : "Active goals"}
+        </div>
+        <button
+          onClick={() => setShowArchived((v) => !v)}
+          className="text-xs text-zinc-500 transition-colors hover:text-zinc-200"
+        >
+          {showArchived ? "Hide archived" : "Show archived"}
+        </button>
+      </div>
+
       {loading ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {Array.from({ length: 2 }).map((_, i) => (
@@ -173,13 +190,22 @@ function GoalCard({
     <div
       className={cn(
         "group relative overflow-hidden rounded-xl border bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5",
-        g.complete ? "border-emerald-500/40" : "border-zinc-800/80"
+        g.archived
+          ? "border-zinc-800/50 opacity-60"
+          : g.complete
+            ? "border-emerald-500/40"
+            : "border-zinc-800/80"
       )}
     >
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
             <span className="font-semibold text-zinc-100">{g.name}</span>
+            {g.archived && (
+              <span className="rounded-full border border-zinc-700 bg-zinc-900/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                archived
+              </span>
+            )}
             {g.complete && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">reached 🎉</span>}
             {linked && <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-400">linked</span>}
           </div>
@@ -210,7 +236,7 @@ function GoalCard({
         <div className={cn("h-full rounded-full transition-all", g.complete ? "bg-emerald-500" : "bg-brand-500")} style={{ width: `${widthPct}%` }} />
       </div>
 
-      {!linked && !g.complete && (
+      {!linked && !g.complete && !g.archived && (
         <div className="mt-3 flex items-center gap-2">
           <input
             type="number"
@@ -257,6 +283,7 @@ function GoalForm({
   );
   const [deadline, setDeadline] = useState(editing?.deadline ?? "");
   const [linkedAccountId, setLinkedAccountId] = useState(editing?.linkedAccountId ?? "");
+  const [archived, setArchived] = useState(editing?.archived ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -268,12 +295,15 @@ function GoalForm({
     setError(null);
     try {
       // updateGoalSchema has no linkedAccountId — how a goal is funded is fixed
-      // once it exists, so an edit sends only the fields PATCH accepts.
+      // once it exists, so an edit sends only the fields PATCH accepts. Both
+      // payload schemas are strict, and only the update one takes `archived` —
+      // a freshly created goal is always active.
       const body = editing
         ? {
             name: name.trim(),
             target: t,
             deadline: deadline || null,
+            archived,
             ...(editing.linkedAccountId ? {} : { savedAmount: parseFloat(saved) || 0 }),
           }
         : {
@@ -345,6 +375,36 @@ function GoalForm({
             placeholder={editing ? "Saved so far" : "Already saved (optional)"}
             className={input}
           />
+        )}
+        {editing && (
+          <div>
+            <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">Status</label>
+            <div className="flex gap-2">
+              {(
+                [
+                  [false, "Active"],
+                  [true, "Archived"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setArchived(value)}
+                  className={cn(
+                    "flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
+                    archived === value
+                      ? "border-brand-500/60 bg-brand-500/15 text-brand-400"
+                      : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Archiving keeps the goal's progress but drops it out of the list.
+            </p>
+          </div>
         )}
         {error && <p className="text-xs text-red-400">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">

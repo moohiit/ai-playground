@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { scanReceipt } from "@/modules/expense-tracker/service";
 import { ApiError, handleRouteError } from "@/lib/apiError";
-import { rateLimit, getClientKey } from "@/lib/rateLimit";
+import { rateLimit, getRateLimitKey } from "@/lib/rateLimit";
 import { requireAuth } from "@/lib/auth";
 import { logAiUsage, requireAiUsageSlot } from "@/lib/usageLimit";
 
@@ -15,11 +15,14 @@ const MAX_BYTES = 5 * 1024 * 1024;
 
 export async function POST(req: Request) {
   const started = Date.now();
-  const clientKey = getClientKey(req);
+  // Keyed by account once auth resolves; the IP is only a fallback for
+  // callers that never authenticate.
+  let clientKey = getRateLimitKey(req);
   let userId: string | null = null;
 
   try {
     const auth = await requireAuth(req);
+    clientKey = getRateLimitKey(req, auth.userId);
     userId = auth.userId;
 
     const limit = rateLimit(

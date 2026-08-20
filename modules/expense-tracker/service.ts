@@ -21,7 +21,12 @@ import {
   type ExpenseDoc,
   type RecurringRuleDoc,
 } from "./models";
-import { notifyGroupInvite } from "./push";
+import {
+  notifyGroupInvite,
+  getUserPushConfig,
+  checkAndNotifyBudget,
+  checkAndNotifyAnomaly,
+} from "./push";
 import { evaluateBudget } from "./budget";
 import { advance, dueOccurrences, isDue } from "./recurring";
 import { goalProgress } from "./goal";
@@ -104,6 +109,19 @@ export async function propagateUserName(userId: string, rawName: string) {
       { "splitAmong.memberId": userId },
       { $set: { "splitAmong.$[m].name": name } },
       { arrayFilters: [{ "m.memberId": userId }] }
+    ),
+    // Settlement records keep their own copy of the payer/payee names, so a
+    // rename otherwise left the settled-history "settled via" rows showing the
+    // old name forever.
+    GroupSettlement.updateMany(
+      { "transfers.from.id": userId },
+      { $set: { "transfers.$[t].from.name": name } },
+      { arrayFilters: [{ "t.from.id": userId }] }
+    ),
+    GroupSettlement.updateMany(
+      { "transfers.to.id": userId },
+      { $set: { "transfers.$[t].to.name": name } },
+      { arrayFilters: [{ "t.to.id": userId }] }
     ),
     Expense.updateMany(
       { "splits.memberId": userId },
@@ -229,30 +247,47 @@ export async function createGroup(input: CreateGroupInput, auth: JWTPayload) {
 
   // Use the creator's live name (the JWT copy can be stale after a rename).
   const creator = await User.findById(auth.userId).lean();
-  const members = [
-    {
-      userId: auth.userId,
-      name: creator?.name ?? auth.name,
-      email: creator?.email ?? auth.email,
-      isActive: true,
-    },
-    ...users
-      .filter((u) => u._id.toString() !== auth.userId)
-      .map((u) => ({
-        userId: u._id.toString(),
-        name: u.name,
-        email: u.email,
-        isActive: true,
-      })),
-  ];
 
+  // Only the creator joins outright. Everyone else is INVITED, exactly as
+  // addMember does for an existing group — adding them directly meant anyone
+  // who knew your email address could put you in a group without asking, and
+  // createExpense then included you in splits by default.
   const group = await Group.create({
     name: input.name,
     description: input.description,
     createdBy: auth.userId,
-    members,
+    members: [
+      {
+        userId: auth.userId,
+        name: creator?.name ?? auth.name,
+        email: creator?.email ?? auth.email,
+        isActive: true,
+      },
+    ],
   });
-  return group.toObject();
+
+  const invitees = users.filter((u) => u._id.toString() !== auth.userId);
+  const inviterName = creator?.name ?? auth.name;
+  const invites = await GroupInvite.insertMany(
+    invitees.map((u) => ({
+      groupId: group._id,
+      groupName: group.name,
+      invitedUserId: u._id.toString(),
+      invitedEmail: u.email,
+      invitedBy: { id: auth.userId, name: inviterName },
+    }))
+  );
+
+  // Best-effort push — the invites work without it.
+  await Promise.all(
+    invitees.map((u) =>
+      notifyGroupInvite(u._id.toString(), group.name, inviterName).catch(
+        () => undefined
+      )
+    )
+  );
+
+  return { ...group.toObject(), invitedCount: invites.length };
 }
 
 export async function listGroups(auth: JWTPayload) {
@@ -310,8 +345,17 @@ export async function updateGroup(
   if (group.createdBy !== auth.userId) {
     throw new Error("Only the group creator can update it");
   }
+  const renamed = typeof data.name === "string" && data.name !== group.name;
   Object.assign(group, data);
   await group.save();
+
+  // Pending invites carry a copy of the name for the invitee's banner.
+  if (renamed) {
+    await GroupInvite.updateMany(
+      { groupId: group._id, status: "pending" },
+      { $set: { groupName: group.name } }
+    );
+  }
   return group.toObject();
 }
 
@@ -403,27 +447,39 @@ export async function respondToInvite(
 
   if (!accept) return { status: "rejected" as const };
 
-  const group = await Group.findById(invite.groupId);
-  if (!group) throw new Error("That group no longer exists");
+  // The invite is already claimed at this point. If joining fails — the group
+  // was deleted, or the write errors — hand the invite back, or the user is
+  // left with an error and no invite: it has dropped out of their pending list
+  // for good and only the creator can issue another.
+  try {
+    const group = await Group.findById(invite.groupId);
+    if (!group) throw new Error("That group no longer exists");
 
-  const user = await User.findById(auth.userId).select("name email").lean();
-  const existing = group.members.find((m) => m.userId === auth.userId);
-  if (existing) {
-    existing.isActive = true;
-    if (user) {
-      existing.name = user.name;
-      existing.email = user.email;
+    const user = await User.findById(auth.userId).select("name email").lean();
+    const existing = group.members.find((m) => m.userId === auth.userId);
+    if (existing) {
+      existing.isActive = true;
+      if (user) {
+        existing.name = user.name;
+        existing.email = user.email;
+      }
+    } else {
+      group.members.push({
+        userId: auth.userId,
+        name: user?.name ?? auth.name,
+        email: user?.email ?? auth.email,
+        isActive: true,
+      });
     }
-  } else {
-    group.members.push({
-      userId: auth.userId,
-      name: user?.name ?? auth.name,
-      email: user?.email ?? auth.email,
-      isActive: true,
-    });
+    await group.save();
+    return { status: "accepted" as const, group: group.toObject() };
+  } catch (err) {
+    await GroupInvite.updateOne(
+      { _id: invite._id, status: "accepted" },
+      { $set: { status: "pending", respondedAt: null } }
+    ).catch(() => undefined);
+    throw err;
   }
-  await group.save();
-  return { status: "accepted" as const, group: group.toObject() };
 }
 
 export async function addGuestMember(
@@ -440,17 +496,33 @@ export async function addGuestMember(
   if (!isActiveMember(group, auth.userId)) {
     throw new Error("You are not a member of this group");
   }
+  // Scoped to GUESTS. Matching on name alone meant that adding a guest called
+  // "Rahul" reactivated a removed member of the same name — handing a real
+  // account its group access back, silently, from an action that is supposed
+  // to create a placeholder.
   const sameName = group.members.find(
-    (m) => m.name.trim().toLowerCase() === trimmed.toLowerCase()
+    (m) => m.isGuest && m.name.trim().toLowerCase() === trimmed.toLowerCase()
   );
   if (sameName) {
     // A guest who "left" (kept for history) can rejoin under the same name.
     if (sameName.isActive) {
-      throw new Error("A member with that name is already in this group");
+      throw new Error("A guest with that name is already in this group");
     }
     sameName.isActive = true;
     await group.save();
     return group.toObject();
+  }
+
+  // A registered member with this name is a different person from a guest of
+  // the same name; say so rather than silently creating a confusing duplicate.
+  const realMember = group.members.find(
+    (m) => !m.isGuest && m.isActive !== false &&
+      m.name.trim().toLowerCase() === trimmed.toLowerCase()
+  );
+  if (realMember) {
+    throw new Error(
+      `${realMember.name} is already a member of this group — add the guest under a different name`
+    );
   }
 
   // Guests have no account: a synthetic userId keyed for splits/balances.
@@ -522,6 +594,46 @@ export async function deleteGroup(id: string, auth: JWTPayload) {
 
 // ── Expenses ────────────────────────────────────────
 
+/**
+ * Budget-threshold and anomaly notifications for a newly written expense.
+ *
+ * This used to live in the POST /expenses route, so expenses posted by the
+ * recurring cron — rent, EMIs, subscriptions, the largest and most
+ * budget-relevant entries there are — silently blew through budgets with no
+ * alert. Sitting in the service, every write path gets it.
+ *
+ * Always best effort: a push failure must never fail the save.
+ */
+export async function notifyForExpense(
+  userId: string,
+  expense: {
+    type: string;
+    direction?: string;
+    category: string;
+    amount: number;
+    amountBase?: number;
+    description: string;
+  }
+) {
+  if (expense.type !== "personal" || expense.direction !== "expense") return;
+  try {
+    const config = await getUserPushConfig(userId);
+    if (!config) return;
+    await Promise.all([
+      checkAndNotifyBudget(userId, config, expense.category),
+      checkAndNotifyAnomaly(
+        userId,
+        config,
+        expense.category,
+        expense.amountBase ?? expense.amount,
+        expense.description
+      ),
+    ]);
+  } catch {
+    /* notifications are optional */
+  }
+}
+
 export async function createExpense(
   input: CreateExpenseInput,
   auth: JWTPayload
@@ -589,7 +701,9 @@ export async function createExpense(
     items: input.items ?? [],
   });
 
-  return expense.toObject();
+  const created = expense.toObject();
+  await notifyForExpense(auth.userId, created);
+  return created;
 }
 
 // "Only mine": personal entries (always wholly mine) plus group entries I am
@@ -929,7 +1043,22 @@ export async function scanReceipt(
   if (!parsed.success) {
     throw new Error(`Failed to parse receipt: ${parsed.error.message}`);
   }
-  return parsed.data;
+
+  // Normalize against our enums, exactly as parseNaturalExpense does. The
+  // model answers with free text, so a near-miss like "Dining" or "Groceries"
+  // matched no option in the category picker: the web <select> fell back to
+  // its first entry and the mobile chips showed nothing selected, silently
+  // recategorising the expense. A date it cannot read did the same.
+  const r = parsed.data;
+  return {
+    ...r,
+    category: (CATEGORIES as readonly string[]).includes(r.category)
+      ? r.category
+      : "Other",
+    date: !isNaN(Date.parse(r.date))
+      ? r.date.slice(0, 10)
+      : new Date().toISOString().slice(0, 10),
+  };
 }
 
 // ── Reports ─────────────────────────────────────────
@@ -1006,6 +1135,7 @@ export async function getSummary(
 
   const expenses = await Expense.find(match).lean();
   const userId = auth.userId;
+  const { weekStart } = await getPrefs(auth);
   const round = (n: number) => Math.round(n * 100) / 100;
 
   let totalAmount = 0; // spending only (excludes income)
@@ -1216,7 +1346,14 @@ export async function getSummary(
     byMonth: Array.from(byMonthMap.values())
       .sort((a, b) => a.year - b.year || a.month - b.month)
       .map((m) => ({ ...m, total: round(m.total) })),
-    byDayOfWeek: byDayOfWeek.map((d) => ({ ...d, total: round(d.total) })),
+    // Ordered from the user's chosen first day. The preference was stored,
+    // validated and settable on both clients but read by nothing, so the
+    // Settings toggle moved and no chart ever changed. Rotating here fixes
+    // both clients at once; labels follow each entry's own `day` index.
+    byDayOfWeek: [
+      ...byDayOfWeek.slice(weekStart),
+      ...byDayOfWeek.slice(0, weekStart),
+    ].map((d) => ({ ...d, total: round(d.total) })),
     byGroup: Array.from(byGroupMap.values())
       .sort((a, b) => b.total - a.total)
       .map((g) => ({
@@ -1495,6 +1632,36 @@ export async function settleGroup(groupId: string, auth: JWTPayload) {
   }
 
   return closeActiveWindow(group, auth);
+}
+
+/**
+ * The five summary variants the dashboard renders, plus the personal settle
+ * history, resolved together.
+ *
+ * The clients fired these as six separate requests on every focus — six round
+ * trips before the first figure appeared. They still run as six queries here,
+ * but in parallel inside one request, so the client waits for the slowest
+ * rather than the sum.
+ */
+export async function getDashboardSummaries(auth: JWTPayload) {
+  const [all, active, settled, personalActive, groupActive, history] =
+    await Promise.all([
+      getSummary({ scope: "all", settled: "all", mine: "false" }, auth),
+      getSummary({ scope: "all", settled: "false", mine: "false" }, auth),
+      getSummary({ scope: "all", settled: "true", mine: "false" }, auth),
+      getSummary({ scope: "personal", settled: "false", mine: "false" }, auth),
+      getSummary({ scope: "group", settled: "false", mine: "false" }, auth),
+      getPersonalSettlementHistory(auth),
+    ]);
+
+  return {
+    all,
+    active,
+    settled,
+    personalActive,
+    groupActive,
+    lastPersonalSettle: history[0]?.settledAt ?? null,
+  };
 }
 
 export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
@@ -2114,7 +2281,7 @@ async function createExpenseFromRule(rule: RecurringRuleDoc, date: Date) {
   const amountBase = await convert(rule.template.amount, currency, base);
   const user = await User.findById(rule.userId).select("name").lean();
 
-  await Expense.create({
+  const expense = await Expense.create({
     type: "personal",
     direction: rule.template.direction,
     createdBy: rule.userId,
@@ -2131,6 +2298,8 @@ async function createExpenseFromRule(rule: RecurringRuleDoc, date: Date) {
     splits: [],
     items: [],
   });
+
+  await notifyForExpense(rule.userId, expense.toObject());
 }
 
 export async function createRecurring(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { cn } from "../../../../lib/utils";
+import { cn, formatDay } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "./AddExpenseModal";
@@ -972,7 +972,7 @@ function ExpenseRow({
               Paid by{" "}
               <span className="font-medium text-zinc-300">{e.paidBy.name}</span> ·
               Split {e.splitAmong.length} ways ·{" "}
-              {new Date(e.date).toLocaleDateString()}
+              {formatDay(e.date)}
             </>
           )}
         </span>
@@ -1238,7 +1238,7 @@ function SettlementSummary({
               <span className="text-zinc-200">{e.description}</span>
               <span className="truncate text-zinc-600">
                 Paid by {e.paidBy.name} ·{" "}
-                {new Date(e.date).toLocaleDateString()} ·{" "}
+                {formatDay(e.date)} ·{" "}
                 {e.splitAmong.map((m) => m.name).join(", ")}
               </span>
             </div>

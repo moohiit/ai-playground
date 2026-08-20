@@ -3,6 +3,8 @@
 // Rates are cached in-process for 12h; conversion freezes `amountBase` at write time
 // so reports stay stable even if rates later move.
 
+import { ApiError } from "@/lib/apiError";
+
 export { SUPPORTED_CURRENCIES, isSupportedCurrency, currencySymbol } from "./currencies";
 export type { CurrencyCode } from "./currencies";
 
@@ -33,7 +35,12 @@ export async function getRatesFrom(base: string): Promise<Record<string, number>
   } catch (err) {
     // A stale cached rate beats failing a save; only error if we have nothing.
     if (cached) return cached.rates;
-    throw err;
+    // Same reasoning as convert(): a provider outage is not the caller's fault
+    // and is not permanent, so it must not surface as "Internal server error".
+    throw new ApiError(
+      503,
+      `Exchange rates are temporarily unavailable — try again in a minute, or enter the amount in ${base}`
+    );
   }
 }
 
@@ -51,7 +58,14 @@ export async function convert(
   const rates = await getRatesFrom(from);
   const rate = rates[to];
   if (!rate || !isFinite(rate)) {
-    throw new Error(`No exchange rate available for ${from} → ${to}`);
+    // 503, not 500: the entry is fine, the rate provider is briefly not.
+    // Users were told "Internal server error" and had no idea their save
+    // would work a minute later, or that entering the amount in their base
+    // currency sidesteps it entirely.
+    throw new ApiError(
+      503,
+      `Exchange rates are temporarily unavailable — try again in a minute, or enter the amount in ${to}`
+    );
   }
   return Math.round(amount * rate * 100) / 100;
 }

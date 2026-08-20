@@ -1,6 +1,7 @@
 import { connectDB } from "@/lib/db";
 import { Budget, Expense, UserPrefs } from "./models";
 import { budgetStatus } from "./budget";
+import { convert } from "./rates";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
@@ -186,16 +187,26 @@ export async function checkAndNotifyAnomaly(
 
 export async function notifyBillsDue(
   config: PushConfig,
-  rules: Array<{ template: { description: string; amount: number } }>
+  rules: Array<{
+    template: { description: string; amount: number; currency?: string };
+  }>
 ) {
   if (rules.length === 0) return;
 
   if (rules.length === 1) {
     const r = rules[0];
+    // A rule keeps its own currency. Printing that amount with the user's base
+    // currency code turned a $40 subscription into "40 INR is due" — off by
+    // roughly 85x, and labelled wrongly.
+    const amount = await convert(
+      r.template.amount,
+      r.template.currency || config.baseCurrency,
+      config.baseCurrency
+    ).catch(() => r.template.amount);
     await sendExpoPush(
       config.token,
       "Bill Due 📋",
-      `${r.template.description} — ${fmt(r.template.amount, config.baseCurrency)} is due`,
+      `${r.template.description} — ${fmt(amount, config.baseCurrency)} is due`,
       { screen: "recurring" }
     );
   } else {

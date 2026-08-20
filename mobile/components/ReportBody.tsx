@@ -5,6 +5,7 @@ import { Donut } from "./Donut";
 import { BarChart, LineChart } from "./SvgCharts";
 import { categoryColor, personalVsGroupSlices } from "../lib/colors";
 import { formatMoney } from "../lib/currency";
+import { formatDay } from "../lib/dates";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -83,7 +84,7 @@ export function ReportBody({
           </View>
           <Text className="mt-0.5 text-xs text-zinc-500">
             {summary.largest.category} · {summary.largest.paidBy} ·{" "}
-            {new Date(summary.largest.date).toLocaleDateString()}
+            {formatDay(summary.largest.date)}
           </Text>
         </Panel>
       )}

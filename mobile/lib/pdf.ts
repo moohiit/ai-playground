@@ -32,7 +32,10 @@ let pdfCurrency = "INR";
 const rs = (n: number) => formatMoney(n, pdfCurrency);
 const esc = (s: string) =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const d = (s: string) => new Date(s).toLocaleDateString();
+// Expense dates are stored as UTC midnight of the day the user picked, so
+// format the UTC parts — the local rendering lands a day early west of UTC.
+const d = (s: string) =>
+  new Date(s).toLocaleDateString(undefined, { timeZone: "UTC" });
 
 function row(cells: (string | number)[], rightCols: number[] = []) {
   return `<tr>${cells

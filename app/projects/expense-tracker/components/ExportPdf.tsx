@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "../../../../lib/authContext";
-import { localISODate } from "../../../../lib/utils";
+import { formatDay, localISODate } from "../../../../lib/utils";
 import type { Summary } from "../types";
 
 
@@ -161,7 +161,7 @@ export function ExportPdfButton({ summary, groupId, groupName, base, filters }: 
       }
       if (summary.largest) {
         doc.text(
-          `Largest: ${summary.largest.description} - ${rs(summary.largest.amount)} (${new Date(summary.largest.date).toLocaleDateString()})`,
+          `Largest: ${summary.largest.description} - ${rs(summary.largest.amount)} (${formatDay(summary.largest.date)})`,
           14,
           y
         );
@@ -367,7 +367,7 @@ async function renderAllExpenses(
     startY: y,
     head: [["Date", "Description", "Category", "Paid By", "Split Among", "Amount ", "Type"]],
     body: expenses.map((e: any) => [
-      new Date(e.date).toLocaleDateString(),
+      formatDay(e.date),
       e.description,
       e.category,
       e.paidBy?.name ?? "-",
@@ -543,7 +543,7 @@ async function renderGroupSection(
       startY: y,
       head: [["Date", "Description", "Paid By", "Split Among", "Amount "]],
       body: groupExpenses.map((e: any) => [
-        new Date(e.date).toLocaleDateString(),
+        formatDay(e.date),
         e.description,
         e.paidBy?.name ?? "-",
         e.splitAmong?.map((m: any) => m.name).join(", ") ?? "-",

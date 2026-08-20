@@ -32,6 +32,15 @@ import {
 
 const todayISO = () => localISODate();
 
+// The picker works in local time, but new Date("YYYY-MM-DD") parses as UTC
+// midnight — west of UTC that opens the picker on the previous day, and
+// accepting it walks the expense a day backwards on every edit. Build the
+// value from the parts so the picker shows the day that is stored.
+const pickerDate = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
 export default function AddExpenseScreen() {
   const { user, authFetch } = useAuth();
   const router = useRouter();
@@ -518,7 +527,7 @@ export default function AddExpenseScreen() {
 
           {showDate && (
             <DateTimePicker
-              value={date ? new Date(date) : new Date()}
+              value={date ? pickerDate(date) : new Date()}
               mode="date"
               onChange={(_, d) => {
                 setShowDate(false);
