@@ -138,6 +138,9 @@ export type MonthStat = {
   year: number;
   month: number;
   total: number;
+  // The viewer's slice of that month — personal rows in full, group rows only
+  // for their split.
+  myShare: number;
   count: number;
 };
 export type DayStat = { day: number; total: number; count: number };

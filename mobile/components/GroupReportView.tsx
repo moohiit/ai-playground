@@ -119,9 +119,14 @@ export function GroupReportView({
         groupId,
         groupName,
         userName: user?.name,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
         baseCurrency,
+        filters: {
+          settled: show,
+          category,
+          mine,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+        },
       });
     } catch {
       // share cancelled / unavailable

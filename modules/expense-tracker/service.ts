@@ -963,7 +963,7 @@ export async function getSummary(
   >();
   const byMonthMap = new Map<
     string,
-    { year: number; month: number; total: number; count: number }
+    { year: number; month: number; total: number; myShare: number; count: number }
   >();
   const byDayOfWeek = Array.from({ length: 7 }, (_, i) => ({
     day: i,
@@ -1052,9 +1052,11 @@ export async function getSummary(
       year: d.getUTCFullYear(),
       month: d.getUTCMonth() + 1,
       total: 0,
+      myShare: 0,
       count: 0,
     };
     m.total += baseAmt;
+    m.myShare += mine;
     m.count += 1;
     byMonthMap.set(monthKey, m);
 

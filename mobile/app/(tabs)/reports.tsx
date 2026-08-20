@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,9 +12,9 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { localISODate } from "../../lib/dates";
-import type { Summary } from "../../lib/types";
+import { CATEGORIES, type Summary } from "../../lib/types";
 import { exportFullReportPdf } from "../../lib/pdf";
-import { AppBackground } from "../../components/ui";
+import { AppBackground, Input } from "../../components/ui";
 import { ReportBody } from "../../components/ReportBody";
 import {
   Chip,
@@ -24,6 +24,13 @@ import {
 } from "../../components/reportControls";
 
 type Scope = "all" | "personal" | "group";
+type Settled = "all" | "false" | "true";
+
+const SETTLED: { id: Settled; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "false", label: "Active" },
+  { id: "true", label: "Settled" },
+];
 
 const QUICK: { id: QuickRange; label: string }[] = [
   { id: "all", label: "All time" },
@@ -41,16 +48,33 @@ export default function ReportsTab() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [picker, setPicker] = useState<"from" | "to" | null>(null);
+  // Everything the summary endpoint can filter on, so the report (and the PDF
+  // built from it) can answer the same questions the Expenses tab can.
+  const [settled, setSettled] = useState<Settled>("all");
+  const [category, setCategory] = useState("");
+  const [mine, setMine] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState("INR");
 
-  const fetchSummary = useCallback(async () => {
-    const params = new URLSearchParams({ settled: "all", scope });
+  // One place builds the query so the on-screen report and the exported PDF
+  // can never drift apart.
+  const filterParams = useCallback(() => {
+    const params = new URLSearchParams({ settled, scope });
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
+    if (category) params.set("category", category);
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (mine) params.set("mine", "true");
+    return params;
+  }, [scope, settled, dateFrom, dateTo, category, debouncedSearch, mine]);
+
+  const fetchSummary = useCallback(async () => {
+    const params = filterParams();
     try {
       const res = await authFetch(
         `/api/projects/expense-tracker/reports/summary?${params}`
@@ -61,7 +85,7 @@ export default function ReportsTab() {
     } catch {
       // keep last good state
     }
-  }, [scope, dateFrom, dateTo, authFetch]);
+  }, [filterParams, authFetch]);
 
   // Fetch base currency once on mount
   const fetchPrefs = useCallback(async () => {
@@ -87,6 +111,33 @@ export default function ReportsTab() {
     await fetchSummary();
     setRefreshing(false);
   }, [fetchSummary]);
+
+  // Don't refetch the whole report on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const hasFilters =
+    scope !== "all" ||
+    settled !== "all" ||
+    category !== "" ||
+    search !== "" ||
+    mine ||
+    quickRange !== "all" ||
+    dateFrom !== "" ||
+    dateTo !== "";
+
+  function clearFilters() {
+    setScope("all");
+    setSettled("all");
+    setCategory("");
+    setSearch("");
+    setMine(false);
+    setQuickRange("all");
+    setDateFrom("");
+    setDateTo("");
+  }
 
   function applyQuick(r: QuickRange) {
     setQuickRange(r);
@@ -124,9 +175,16 @@ export default function ReportsTab() {
                   summary,
                   authFetch,
                   userName: user?.name,
-                  dateFrom: dateFrom || undefined,
-                  dateTo: dateTo || undefined,
                   baseCurrency,
+                  filters: {
+                    scope,
+                    settled,
+                    category,
+                    q: debouncedSearch,
+                    mine,
+                    dateFrom: dateFrom || undefined,
+                    dateTo: dateTo || undefined,
+                  },
                 });
               } catch {
                 // share cancelled / unavailable
@@ -150,11 +208,76 @@ export default function ReportsTab() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
         }
       >
+        <View className="flex-row items-center justify-between">
+          <Text className="text-[13px] uppercase tracking-wider text-zinc-500">
+            Filters
+          </Text>
+          {hasFilters && (
+            <Pressable onPress={clearFilters} hitSlop={8}>
+              <Text className="text-xs text-zinc-400">Clear</Text>
+            </Pressable>
+          )}
+        </View>
+
+        <View className="flex-row items-center gap-2 rounded-lg border border-white/10 bg-zinc-900/40 px-3">
+          <Input
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search description, items, category…"
+            placeholderTextColor="#52525b"
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            className="flex-1 py-2 text-sm text-zinc-200"
+          />
+          {search !== "" && (
+            <Pressable onPress={() => setSearch("")} hitSlop={8}>
+              <Text className="text-base text-zinc-500">✕</Text>
+            </Pressable>
+          )}
+        </View>
+
         <View className="flex-row gap-2">
           {(["all", "personal", "group"] as const).map((s) => (
             <Chip key={s} label={s} active={scope === s} onPress={() => setScope(s)} />
           ))}
         </View>
+
+        <View className="flex-row gap-2">
+          {SETTLED.map((st) => (
+            <Chip
+              key={st.id}
+              label={st.label}
+              active={settled === st.id}
+              onPress={() => setSettled(st.id)}
+            />
+          ))}
+        </View>
+
+        <View className="flex-row gap-2">
+          <Chip label="Everyone" active={!mine} onPress={() => setMine(false)} />
+          <Chip label="Only mine" active={mine} onPress={() => setMine(true)} />
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8 }}
+        >
+          <Chip
+            label="All categories"
+            active={category === ""}
+            onPress={() => setCategory("")}
+          />
+          {CATEGORIES.map((c) => (
+            <Chip
+              key={c}
+              label={c}
+              active={category === c}
+              onPress={() => setCategory(c)}
+            />
+          ))}
+        </ScrollView>
 
         <View className="flex-row flex-wrap gap-2">
           {QUICK.map((q) => (
@@ -187,7 +310,9 @@ export default function ReportsTab() {
           </View>
         ) : !summary || summary.totalCount === 0 ? (
           <View className="items-center rounded-2xl border border-white/10 bg-white/[0.03] py-12">
-            <Text className="text-sm text-zinc-400">No expenses for this range.</Text>
+            <Text className="text-sm text-zinc-400">
+              {hasFilters ? "No expenses match these filters." : "No expenses yet."}
+            </Text>
           </View>
         ) : (
           <ReportBody summary={summary} baseCurrency={baseCurrency} />

@@ -37,6 +37,7 @@ export function ReportBody({
   const monthData = (summary.byMonth ?? []).map((m) => ({
     label: `${MONTHS[m.month - 1]} '${String(m.year).slice(2)}`,
     value: m.total,
+    mine: m.myShare ?? 0,
     count: m.count,
     year: m.year,
     month: m.month,
@@ -165,10 +166,25 @@ export function ReportBody({
             <View className="mb-3">
               <LineChart
                 data={monthData}
+                compare={monthData.map((m) => ({ value: m.mine }))}
                 height={80}
                 color="#a78bfa"
+                compareColor="#34d399"
                 gradId="month_area"
               />
+              <View className="mt-2 flex-row justify-center gap-4">
+                {[
+                  { label: "Overall", color: "#a78bfa" },
+                  { label: "My share", color: "#34d399" },
+                ].map((l) => (
+                  <View key={l.label} className="flex-row items-center gap-1.5">
+                    <View
+                      style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: l.color }}
+                    />
+                    <Text className="text-[12px] text-zinc-400">{l.label}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           )}
           <View className="gap-2.5">
@@ -181,9 +197,15 @@ export function ReportBody({
                   <Text className="text-xs font-medium text-zinc-200">
                     {fmt(m.value)}{" "}
                     <Text className="text-zinc-600">({m.count})</Text>
+                    {m.mine > 0 && m.mine < m.value ? (
+                      <Text className="text-emerald-300"> · {fmt(m.mine)} mine</Text>
+                    ) : null}
                   </Text>
                 </View>
                 <HBar pct={(m.value / maxMonth) * 100} colorHex="#a78bfa" />
+                {m.mine > 0 && m.mine < m.value && (
+                  <HBar pct={(m.mine / maxMonth) * 100} colorHex="#34d399" />
+                )}
               </View>
             ))}
           </View>

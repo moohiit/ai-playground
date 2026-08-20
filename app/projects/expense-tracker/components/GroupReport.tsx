@@ -11,6 +11,9 @@ import {
   Cell,
   BarChart,
   Bar,
+  ComposedChart,
+  Line,
+  Legend,
   XAxis,
   YAxis,
   Tooltip,
@@ -25,7 +28,15 @@ type CategoryEntry = {
   myShare: number;
   count: number;
 };
-type MonthEntry = { year: number; month: number; total: number; count: number };
+type MonthEntry = {
+  year: number;
+  month: number;
+  total: number;
+  // The viewer's slice of that month — personal rows in full, group rows only
+  // for their split.
+  myShare: number;
+  count: number;
+};
 type DayEntry = { day: number; total: number; count: number };
 type PayerEntry = { id: string; name: string; total: number; count: number };
 type Largest = {
@@ -217,11 +228,17 @@ export function GroupReport({ groupId, groupName }: Props) {
           {summary && summary.totalCount > 0 && (
             <ExportPdfButton
               summary={summary}
-              dateFrom={dateFrom || undefined}
-              dateTo={dateTo || undefined}
               groupId={groupId}
               groupName={groupName}
               base={base}
+              filters={{
+                settled:
+                  scope === "unsettled" ? "false" : scope === "settled" ? "true" : "all",
+                category,
+                mine,
+                dateFrom: dateFrom || undefined,
+                dateTo: dateTo || undefined,
+              }}
             />
           )}
         </div>
@@ -605,10 +622,13 @@ export function GroupReport({ groupId, groupName }: Props) {
             <ChartPanel title="Monthly Trend" accent="from-fuchsia-500/40">
               {summary.byMonth.length > 0 ? (
                 <ResponsiveContainer width="100%" height={220}>
-                  <BarChart
+                  {/* Overall as bars with my share overlaid as a line — both on
+                      one axis, so the gap between them is readable at a glance. */}
+                  <ComposedChart
                     data={summary.byMonth.map((m) => ({
                       label: `${MONTH_NAMES[m.month - 1]} ${m.year}`,
                       total: m.total,
+                      myShare: m.myShare ?? 0,
                     }))}
                   >
                     <defs>
@@ -645,12 +665,23 @@ export function GroupReport({ groupId, groupName }: Props) {
                       }}
                       formatter={(val: number) => `₹${val.toFixed(2)}`}
                     />
+                    <Legend
+                      wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }}
+                      formatter={(v) => (v === "total" ? "Overall" : "My share")}
+                    />
                     <Bar
                       dataKey="total"
                       fill="url(#groupBarGradient)"
                       radius={[6, 6, 0, 0]}
                     />
-                  </BarChart>
+                    <Line
+                      type="monotone"
+                      dataKey="myShare"
+                      stroke="#34d399"
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: "#34d399" }}
+                    />
+                  </ComposedChart>
                 </ResponsiveContainer>
               ) : (
                 <p className="text-xs text-zinc-500">Not enough data</p>

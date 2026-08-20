@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
+import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { ExportPdfButton } from "../components/ExportPdf";
 import { categoryColor, personalVsGroupSlices } from "../colors";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
@@ -12,6 +13,9 @@ import {
   Cell,
   BarChart,
   Bar,
+  ComposedChart,
+  Line,
+  Legend,
   XAxis,
   YAxis,
   Tooltip,
@@ -26,7 +30,15 @@ type CategoryEntry = {
   myShare: number;
   count: number;
 };
-type MonthEntry = { year: number; month: number; total: number; count: number };
+type MonthEntry = {
+  year: number;
+  month: number;
+  total: number;
+  // The viewer's slice of that month — personal rows in full, group rows only
+  // for their split.
+  myShare: number;
+  count: number;
+};
 type DayEntry = { day: number; total: number; count: number };
 type GroupEntry = {
   groupId: string;
@@ -110,6 +122,13 @@ export function ReportsTab() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [scope, setScope] = useState<Scope>("all");
+  // Everything the summary endpoint can filter on, so the report (and the PDF
+  // built from it) can answer the same questions the Expenses tab can.
+  const [settled, setSettled] = useState<"all" | "false" | "true">("all");
+  const [category, setCategory] = useState("");
+  const [mine, setMine] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [base, setBase] = useState("INR");
@@ -138,9 +157,12 @@ export function ReportsTab() {
   const fetchSummary = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ settled: "all", scope });
+      const params = new URLSearchParams({ settled, scope });
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
+      if (category) params.set("category", category);
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (mine) params.set("mine", "true");
       const res = await authFetch(
         `/api/projects/expense-tracker/reports/summary?${params}`
       );
@@ -155,11 +177,17 @@ export function ReportsTab() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, scope]);
+  }, [dateFrom, dateTo, scope, settled, category, debouncedSearch, mine, authFetch]);
 
   useEffect(() => {
     fetchSummary();
   }, [fetchSummary]);
+
+  // Don't refetch the whole report on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const rangeLabel = useMemo(() => {
     if (quickRange !== "all") {
@@ -188,13 +216,28 @@ export function ReportsTab() {
         rangeLabel={rangeLabel}
         scope={scope}
         setScope={setScope}
+        settled={settled}
+        setSettled={setSettled}
+        category={category}
+        setCategory={setCategory}
+        mine={mine}
+        setMine={setMine}
+        search={search}
+        setSearch={setSearch}
         right={
           summary && summary.totalCount > 0 ? (
             <ExportPdfButton
               summary={summary}
-              dateFrom={dateFrom || undefined}
-              dateTo={dateTo || undefined}
               base={base}
+              filters={{
+                scope,
+                settled,
+                category,
+                q: debouncedSearch,
+                mine,
+                dateFrom: dateFrom || undefined,
+                dateTo: dateTo || undefined,
+              }}
             />
           ) : null
         }
@@ -245,6 +288,14 @@ function FilterBar({
   rangeLabel,
   scope,
   setScope,
+  settled,
+  setSettled,
+  category,
+  setCategory,
+  mine,
+  setMine,
+  search,
+  setSearch,
   right,
 }: {
   quickRange: QuickRange;
@@ -257,6 +308,14 @@ function FilterBar({
   rangeLabel: string;
   scope: Scope;
   setScope: (s: Scope) => void;
+  settled: "all" | "false" | "true";
+  setSettled: (v: "all" | "false" | "true") => void;
+  category: string;
+  setCategory: (v: string) => void;
+  mine: boolean;
+  setMine: (v: boolean) => void;
+  search: string;
+  setSearch: (v: string) => void;
   right?: React.ReactNode;
 }) {
   return (
@@ -288,6 +347,68 @@ function FilterBar({
           </button>
         ))}
       </div>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search description, items, category…"
+          className="min-w-[220px] flex-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-brand-500/60 focus:outline-none"
+        />
+        <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-950/40 p-1">
+          {([
+            ["all", "All"],
+            ["false", "Active"],
+            ["true", "Settled"],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setSettled(val)}
+              className={cn(
+                "rounded-md px-3 py-1 text-xs font-medium transition",
+                settled === val
+                  ? "bg-fuchsia-500/15 text-fuchsia-300 ring-1 ring-fuchsia-500/30"
+                  : "text-zinc-400 hover:text-zinc-200"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-950/40 p-1">
+          {([
+            [false, "Everyone"],
+            [true, "Only mine"],
+          ] as const).map(([val, label]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setMine(val)}
+              className={cn(
+                "rounded-md px-3 py-1 text-xs font-medium transition",
+                mine === val
+                  ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
+                  : "text-zinc-400 hover:text-zinc-200"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-medium text-zinc-200 outline-none transition-colors hover:border-zinc-600 focus:border-brand-500/60"
+        >
+          <option value="">All categories</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="mb-3 flex flex-wrap gap-2">
         {QUICK_RANGES.map((q) => (
           <button
@@ -690,10 +811,13 @@ function MonthlyTrendCard({ summary }: { summary: Summary }) {
     <ChartPanel title="Monthly Trend" accent="from-fuchsia-500/40">
       {summary.byMonth.length > 0 ? (
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart
+          {/* Overall as bars with my share overlaid as a line — both on one
+              axis, so the gap between them is readable at a glance. */}
+          <ComposedChart
             data={summary.byMonth.map((m) => ({
               label: `${MONTH_NAMES[m.month - 1]} ${m.year}`,
               total: m.total,
+              myShare: m.myShare ?? 0,
             }))}
           >
             <defs>
@@ -724,8 +848,19 @@ function MonthlyTrendCard({ summary }: { summary: Summary }) {
               }}
               formatter={(val: number) => fmt(val)}
             />
+            <Legend
+              wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }}
+              formatter={(v) => (v === "total" ? "Overall" : "My share")}
+            />
             <Bar dataKey="total" fill="url(#barGradient)" radius={[6, 6, 0, 0]} />
-          </BarChart>
+            <Line
+              type="monotone"
+              dataKey="myShare"
+              stroke="#34d399"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "#34d399" }}
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       ) : (
         <p className="text-xs text-zinc-500">No data</p>

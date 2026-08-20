@@ -149,25 +149,61 @@ async function renderGroupSection(
  * breakdown, monthly trend, the full All-Expenses table, and a per-group
  * section (member summary + settlement plan + expense details) for each group.
  */
+/** The report screen's filter set, carried into the PDF so the document
+ *  describes exactly the same slice of data the screen showed. */
+export type ReportFilters = {
+  scope?: "all" | "personal" | "group";
+  settled?: "all" | "true" | "false";
+  category?: string;
+  q?: string;
+  mine?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+/** Expense-list query matching a filter set — the PDF's detail table has to
+ *  agree with the summary figures above it. */
+function filterQuery(f: ReportFilters, limit: number): URLSearchParams {
+  const p = new URLSearchParams({ limit: String(limit), settled: f.settled ?? "all" });
+  if (f.scope && f.scope !== "all") p.set("type", f.scope);
+  if (f.dateFrom) p.set("dateFrom", f.dateFrom);
+  if (f.dateTo) p.set("dateTo", f.dateTo);
+  if (f.category) p.set("category", f.category);
+  if (f.q) p.set("q", f.q);
+  if (f.mine) p.set("mine", "true");
+  return p;
+}
+
+/** Human-readable line describing the active filters, for the PDF header. */
+function filterLine(f: ReportFilters): string {
+  const parts: string[] = [];
+  if (f.scope && f.scope !== "all") parts.push(f.scope === "personal" ? "Personal only" : "Group only");
+  if (f.settled === "false") parts.push("Active only");
+  else if (f.settled === "true") parts.push("Settled only");
+  if (f.category) parts.push(`Category: ${f.category}`);
+  if (f.q) parts.push(`Search: "${f.q}"`);
+  if (f.mine) parts.push("Only entries including me");
+  return parts.length > 0 ? parts.join(" · ") : "No filters — everything";
+}
+
 export async function exportFullReportPdf(opts: {
   summary: Summary;
   authFetch: Fetcher;
   userName?: string;
-  dateFrom?: string;
-  dateTo?: string;
   baseCurrency?: string;
+  filters?: ReportFilters;
 }) {
-  const { summary, authFetch, userName, dateFrom, dateTo } = opts;
+  const { summary, authFetch, userName } = opts;
+  const filters = opts.filters ?? {};
+  const { dateFrom, dateTo } = filters;
   pdfCurrency = opts.baseCurrency ?? "INR";
   const period =
     dateFrom || dateTo
       ? `${dateFrom || "Start"} to ${dateTo || "Present"}`
       : "All time";
 
-  // Fetch all expenses (date-filtered) + every group, in parallel.
-  const expParams = new URLSearchParams({ limit: "500", settled: "all" });
-  if (dateFrom) expParams.set("dateFrom", dateFrom);
-  if (dateTo) expParams.set("dateTo", dateTo);
+  // Fetch the expenses the filters actually select + every group, in parallel.
+  const expParams = filterQuery(filters, 500);
 
   const [allExp, groupsData] = await Promise.all([
     getJson(authFetch, `/api/projects/expense-tracker/expenses?${expParams}`),
@@ -176,9 +212,15 @@ export async function exportFullReportPdf(opts: {
   const allExpenses: Expense[] = allExp?.expenses ?? [];
   const groups: Group[] = groupsData?.groups ?? [];
 
-  const groupSections = (
-    await Promise.all(groups.map((g) => renderGroupSection(authFetch, g)))
-  ).join("");
+  // Per-group sections carry each group's own balances and settlement plan,
+  // which are computed across the whole group — they can't honour a category,
+  // search or only-mine filter, so they're left out rather than contradicting
+  // the filtered figures above.
+  const groupsFiltered =
+    filters.scope === "personal" || !!filters.category || !!filters.q || !!filters.mine;
+  const groupSections = groupsFiltered
+    ? `<h2>Group Breakdowns</h2><p class="sub">Omitted — per-group balances cover every member and every category, so they would not match the filters applied to this report.</p>`
+    : (await Promise.all(groups.map((g) => renderGroupSection(authFetch, g)))).join("");
 
   const topGroups =
     summary.byGroup.length > 0
@@ -195,7 +237,7 @@ export async function exportFullReportPdf(opts: {
     summary.byCategory.length > 0
       ? `<h2>Category Breakdown</h2>` +
         table(
-          ["Category", "Count", "Total", "% of Total"],
+          ["Category", "Count", "Total", "My Share", "% of Total"],
           summary.byCategory
             .map((c) =>
               row(
@@ -203,9 +245,10 @@ export async function exportFullReportPdf(opts: {
                   esc(c.category),
                   c.count,
                   rs(c.total),
+                  rs(c.myShare ?? 0),
                   `${((c.total / summary.totalAmount) * 100).toFixed(1)}%`,
                 ],
-                [1, 2, 3]
+                [1, 2, 3, 4]
               )
             )
             .join("")
@@ -216,16 +259,21 @@ export async function exportFullReportPdf(opts: {
     summary.byMonth.length > 0
       ? `<h2>Monthly Trend</h2>` +
         table(
-          ["Month", "Count", "Total"],
+          ["Month", "Count", "Total", "My Share"],
           summary.byMonth
-            .map((m) => row([`${MONTHS[m.month - 1]} ${m.year}`, m.count, rs(m.total)], [1, 2]))
+            .map((m) =>
+              row(
+                [`${MONTHS[m.month - 1]} ${m.year}`, m.count, rs(m.total), rs(m.myShare ?? 0)],
+                [1, 2, 3]
+              )
+            )
             .join("")
         )
       : "";
 
   const allExpensesTable =
     allExpenses.length > 0
-      ? `<h2>All Expenses (${allExpenses.length})</h2>` +
+      ? `<h2>Expenses (${allExpenses.length})</h2>` +
         table(
           ["Date", "Description", "Category", "Paid By", "Split Among", "Amount", "Type"],
           allExpenses
@@ -257,6 +305,7 @@ export async function exportFullReportPdf(opts: {
   <body>
     <h1>Expense Report</h1>
     <div class="sub">Period: ${esc(period)}</div>
+    <div class="sub">Filters: ${esc(filterLine(filters))}</div>
     <div class="sub">Generated by ${esc(userName ?? "User")} on ${new Date().toLocaleDateString()}</div>
     <div class="stats">
       <h2>Summary</h2>
@@ -283,18 +332,27 @@ export async function exportGroupReportPdf(opts: {
   groupId: string;
   groupName: string;
   userName?: string;
-  dateFrom?: string;
-  dateTo?: string;
   baseCurrency?: string;
+  filters?: ReportFilters;
 }) {
-  const { summary, authFetch, groupId, groupName, userName, dateFrom, dateTo } = opts;
+  const { summary, authFetch, groupId, groupName, userName } = opts;
+  const filters = opts.filters ?? {};
+  const { dateFrom, dateTo } = filters;
   pdfCurrency = opts.baseCurrency ?? "INR";
   const period =
     dateFrom || dateTo ? `${dateFrom || "Start"} to ${dateTo || "Present"}` : "All time";
 
   const gData = await getJson(authFetch, `/api/projects/expense-tracker/groups/${groupId}`);
   const group: Group | undefined = gData?.group;
-  const groupSection = group ? await renderGroupSection(authFetch, group) : "";
+  // Balances and the settlement plan cover the whole group, so a category or
+  // only-mine filter can't apply to them — leave the section out instead of
+  // printing figures that disagree with the summary above.
+  const groupFiltered = !!filters.category || !!filters.q || !!filters.mine;
+  const groupSection = groupFiltered
+    ? `<h2>Member Breakdown</h2><p class="sub">Omitted — member balances and the settlement plan cover every member and category, so they would not match the filters applied to this report.</p>`
+    : group
+      ? await renderGroupSection(authFetch, group)
+      : "";
 
   const topPayers =
     (summary.topPayers?.length ?? 0) > 0
@@ -321,12 +379,18 @@ export async function exportGroupReportPdf(opts: {
     summary.byCategory.length > 0
       ? `<h2>Category Breakdown</h2>` +
         table(
-          ["Category", "Count", "Total", "% of Total"],
+          ["Category", "Count", "Total", "My Share", "% of Total"],
           summary.byCategory
             .map((c) =>
               row(
-                [esc(c.category), c.count, rs(c.total), `${((c.total / (summary.totalAmount || 1)) * 100).toFixed(1)}%`],
-                [1, 2, 3]
+                [
+                  esc(c.category),
+                  c.count,
+                  rs(c.total),
+                  rs(c.myShare ?? 0),
+                  `${((c.total / (summary.totalAmount || 1)) * 100).toFixed(1)}%`,
+                ],
+                [1, 2, 3, 4]
               )
             )
             .join("")
@@ -337,9 +401,14 @@ export async function exportGroupReportPdf(opts: {
     summary.byMonth.length > 0
       ? `<h2>Monthly Trend</h2>` +
         table(
-          ["Month", "Count", "Total"],
+          ["Month", "Count", "Total", "My Share"],
           summary.byMonth
-            .map((m) => row([`${MONTHS[m.month - 1]} ${m.year}`, m.count, rs(m.total)], [1, 2]))
+            .map((m) =>
+              row(
+                [`${MONTHS[m.month - 1]} ${m.year}`, m.count, rs(m.total), rs(m.myShare ?? 0)],
+                [1, 2, 3]
+              )
+            )
             .join("")
         )
       : "";
@@ -348,6 +417,7 @@ export async function exportGroupReportPdf(opts: {
   <body>
     <h1>Group Report: ${esc(groupName)}</h1>
     <div class="sub">Period: ${esc(period)}</div>
+    <div class="sub">Filters: ${esc(filterLine({ ...filters, scope: "all" }))}</div>
     <div class="sub">Generated by ${esc(userName ?? "User")} on ${new Date().toLocaleDateString()}</div>
     <div class="stats">
       <h2>Summary</h2>

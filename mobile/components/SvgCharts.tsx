@@ -119,14 +119,20 @@ export function BarChart({
  */
 export function LineChart({
   data,
+  compare,
   height = 80,
   color = "#a78bfa",
+  compareColor = "#34d399",
   gradId = "lc_area",
   padding = 64,
 }: {
   data: { value: number }[];
+  // Optional second series drawn over the first, on the same scale — used to
+  // put "my share" alongside the overall trend.
+  compare?: { value: number }[];
   height?: number;
   color?: string;
+  compareColor?: string;
   gradId?: string;
   padding?: number;
 }) {
@@ -141,11 +147,27 @@ export function LineChart({
   const n = data.length;
   if (n < 2) return null;
 
-  const max = Math.max(...data.map((d) => d.value), 1);
-  const pts = data.map((d, i) => ({
-    x: padL + (i / (n - 1)) * chartW,
-    y: padT + (1 - d.value / max) * chartH,
-  }));
+  // Both series share one scale — a separately-scaled second line would make
+  // a small share look as tall as the total.
+  const max = Math.max(
+    ...data.map((d) => d.value),
+    ...(compare ?? []).map((d) => d.value),
+    1
+  );
+  const project = (values: { value: number }[]) =>
+    values.map((d, i) => ({
+      x: padL + (i / (n - 1)) * chartW,
+      y: padT + (1 - d.value / max) * chartH,
+    }));
+  const pts = project(data);
+  // Only draw the comparison when it lines up point-for-point with the first.
+  const comparePts =
+    compare && compare.length === n ? project(compare) : null;
+  const comparePath = comparePts
+    ? comparePts
+        .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+        .join(" ")
+    : null;
 
   const linePath = pts
     .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
@@ -176,6 +198,19 @@ export function LineChart({
       />
       {pts.map((p, i) => (
         <Circle key={i} cx={p.x} cy={p.y} r={3} fill={color} />
+      ))}
+      {comparePath && (
+        <Path
+          d={comparePath}
+          stroke={compareColor}
+          strokeWidth={2}
+          fill="none"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      )}
+      {comparePts?.map((p, i) => (
+        <Circle key={`c${i}`} cx={p.x} cy={p.y} r={3} fill={compareColor} />
       ))}
     </Svg>
   );
