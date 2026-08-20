@@ -194,11 +194,15 @@ export default function Dashboard() {
   }, [authFetch]);
 
   function handleSettlePersonal() {
-    const count = personalActive?.totalCount ?? 0;
+    // settlePersonal sweeps every active personal row, income included, while
+    // summary.totalCount counts spending only — the confirmation used to
+    // promise fewer entries than it settled.
+    const count =
+      (personalActive?.totalCount ?? 0) + (personalActive?.incomeCount ?? 0);
     if (count === 0) return;
     Alert.alert(
       "Settle personal expenses",
-      `Mark all ${count} active personal ${count === 1 ? "expense" : "expenses"} as settled? They move to settled history.`,
+      `Mark all ${count} active personal ${count === 1 ? "entry" : "entries"} as settled? Income entries are included. They move to settled history.`,
       [
         { text: "Cancel", style: "cancel" },
         {

@@ -587,7 +587,7 @@ function mineClause(userId: string) {
 type ExpenseQueryFilter = Pick<
   ExpenseFilter,
   "groupId" | "type" | "direction" | "category" | "q" | "dateFrom" | "dateTo" | "settled"
-> & { mine?: "true" | "false" };
+> & { mine?: "true" | "false"; includeSettlements?: "true" | "false" };
 
 async function buildExpenseQuery(
   filter: ExpenseQueryFilter,
@@ -601,6 +601,15 @@ async function buildExpenseQuery(
   }
 
   const query: Record<string, unknown> = {};
+
+  // Settlement payments are balance entries, not spending. getSummary drops
+  // them (`match.isSettlement = { $ne: true }`), so the list, its count and
+  // the CSV export must drop them as well — otherwise the header total and
+  // the rows underneath describe different sets of entries, and a repayment
+  // received shows up as if the recipient had spent it.
+  if (filter.includeSettlements !== "true") {
+    query.isSettlement = { $ne: true };
+  }
 
   if (filter.groupId) {
     query.groupId = filter.groupId;
@@ -1262,23 +1271,28 @@ export async function getSharedGroup(shareId: string) {
     $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
   }).lean();
 
+  // Balances need the settle-up payments (that is how the nets offset), but
+  // the headline total and count must not: a repayment is money moving
+  // between members, not group spending. Counting it made the public link
+  // disagree with what members see inside the app.
   const balances = calculateBalances(expenses as ExpenseDoc[]);
   const settlements = calculateSettlements(balances);
+  const spend = expenses.filter((e) => !e.isSettlement);
 
   // Dominant currency among the group's expenses (groups are single-currency in v1).
   const counts = new Map<string, number>();
-  for (const e of expenses) {
+  for (const e of spend) {
     const c = e.currency ?? "INR";
     counts.set(c, (counts.get(c) ?? 0) + 1);
   }
   const currency =
     [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "INR";
-  const total = expenses.reduce((s, e) => s + e.amount, 0);
+  const total = spend.reduce((s, e) => s + e.amount, 0);
 
   return {
     groupName: group.name,
     currency,
-    expenseCount: expenses.length,
+    expenseCount: spend.length,
     total: Math.round(total * 100) / 100,
     members: balances.map((b) => ({
       name: b.name,
@@ -1384,18 +1398,32 @@ async function closeActiveWindow(
   const settlementId = `settle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const now = new Date();
 
-  const active = await Expense.find({
-    groupId: oid,
-    type: "group",
-    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
-  }).lean();
+  // Claim the window atomically before reading it. Two members pressing
+  // Settle at the same moment (or a settle racing the auto-close that fires
+  // on the last settle-up payment) would otherwise both read the same rows
+  // and write two settlement records for one batch.
+  const claim = await Expense.updateMany(
+    {
+      groupId: oid,
+      type: "group",
+      isSettlement: { $ne: true },
+      $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+    },
+    { $set: { settledAt: now, settlementId } }
+  );
 
-  const payments = active.filter((e) => e.isSettlement);
-  const spend = active.filter((e) => !e.isSettlement);
-
-  if (spend.length === 0) {
+  if (claim.modifiedCount === 0) {
     throw new Error("No unsettled expenses in this group");
   }
+
+  const spend = await Expense.find({ settlementId }).lean();
+  // Payments are claimed separately: whoever won the spend rows takes them.
+  const payments = await Expense.find({
+    groupId: oid,
+    type: "group",
+    isSettlement: true,
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  }).lean();
 
   const transfers = payments.map((p) => ({
     from: { id: p.paidBy.id, name: p.paidBy.name },
@@ -1407,11 +1435,9 @@ async function closeActiveWindow(
     paidAt: p.date,
   }));
 
-  // Order matters: record the batch, THEN mark the spend, THEN drop the
-  // payment rows. Each step is recoverable from the one before it — a failure
-  // after step 1 leaves an empty settlement record (harmless, the history view
-  // groups by the expenses that carry the id), whereas marking first and
-  // failing before the record was written lost the payment history outright.
+  // The spend rows are already stamped (that was the claim). Record the batch
+  // before dropping the payment rows, so a failure between the two leaves the
+  // transfers recorded rather than lost.
   await GroupSettlement.create({
     groupId: oid,
     settlementId,
@@ -1419,11 +1445,6 @@ async function closeActiveWindow(
     settledBy: auth.userId,
     transfers,
   });
-
-  await Expense.updateMany(
-    { _id: { $in: spend.map((e) => e._id) } },
-    { $set: { settledAt: now, settlementId } }
-  );
 
   if (payments.length > 0) {
     await Expense.deleteMany({ _id: { $in: payments.map((p) => p._id) } });

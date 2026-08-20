@@ -83,6 +83,9 @@ type Props = {
  *  agree with the summary figures above it. */
 function filterQuery(f: ReportFilters, limit: number): URLSearchParams {
   const p = new URLSearchParams({ limit: String(limit), settled: f.settled ?? "all" });
+  // The summary counts spending only, so the detail table must too — without
+  // this the table listed income rows the totals above had excluded.
+  p.set("direction", "expense");
   if (f.scope && f.scope !== "all") p.set("type", f.scope);
   if (f.dateFrom) p.set("dateFrom", f.dateFrom);
   if (f.dateTo) p.set("dateTo", f.dateTo);
@@ -443,7 +446,9 @@ async function renderGroupSection(
   try {
     const fetches: Promise<Response>[] = [
       authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
-      authFetch(`/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=200&settled=all`),
+            // Settlement rows are excluded by default now, so the member summary
+      // below reflects real spending rather than repayments cancelling out.
+      authFetch(`/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=500&settled=all&direction=expense`),
     ];
     if (!group) {
       fetches.push(authFetch(`/api/projects/expense-tracker/groups/${groupId}`));

@@ -164,7 +164,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
         authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
         authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
         authFetch(
-          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=${PAGE_SIZE}&page=${page}&settled=false${
+          // includeSettlements: this screen shows settle-up payments as their
+          // own badged rows with an Undo action, unlike the global list.
+          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=${PAGE_SIZE}&page=${page}&settled=false&includeSettlements=true${
             onlyMine ? "&mine=true" : ""
           }`
         ),
@@ -306,18 +308,34 @@ export function GroupDetail({ groupId, onBack }: Props) {
 
   async function handleDeleteExpense(id: string) {
     if (!confirm("Delete this expense?")) return;
-    await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
+    const res = await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
       method: "DELETE",
     });
-    fetchAll();
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? "Couldn't delete that expense");
+      return;
+    }
+    // Removing the last row on a page leaves the user stranded on an empty
+    // page whose pagination control is itself hidden. Step back first; the
+    // page change refetches, so don't also call fetchAll.
+    if (expenses.length === 1 && page > 1) setPage((p) => p - 1);
+    else fetchAll();
   }
 
   async function handleDeleteGroup() {
     if (!confirm("Delete this group and all its expenses? This cannot be undone."))
       return;
-    await authFetch(`/api/projects/expense-tracker/groups/${groupId}`, {
+    const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}`, {
       method: "DELETE",
     });
+    // Only the creator may delete a group. Navigating back regardless made a
+    // refused delete look like it had worked, until the group reappeared.
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? "Couldn't delete this group");
+      return;
+    }
     onBack();
   }
 
@@ -577,6 +595,17 @@ export function GroupDetail({ groupId, onBack }: Props) {
                   </span>
                 </h3>
                 <div className="flex items-center gap-3">
+                  {/* Settling is otherwise only reachable from the Settle Up
+                      panel, which is hidden once every balance is square. */}
+                  {settlements.length === 0 && expenses.length > 0 && (
+                    <button
+                      onClick={handleSettle}
+                      disabled={settling}
+                      className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                    >
+                      {settling ? "Settling…" : "Mark all settled"}
+                    </button>
+                  )}
                   <button
                     onClick={() => setOnlyMine((v) => !v)}
                     className={cn(

@@ -57,6 +57,8 @@ type Breakdown = {
   groupTotal: number;
   personalActive: number;
   personalActiveCount: number;
+  // Income rows are settled alongside spending, so the confirmation counts both.
+  personalActiveIncome: number;
   groupActive: number;
   groupActiveCount: number;
   // My-share twins of the figures above: personal entries count in full, group
@@ -238,6 +240,7 @@ export function Dashboard() {
       groupTotal: all.groupTotal ?? 0,
       personalActive: p.totalAmount ?? 0,
       personalActiveCount: p.totalCount ?? 0,
+      personalActiveIncome: p.incomeCount ?? 0,
       groupActive: g.totalAmount ?? 0,
       groupActiveCount: g.totalCount ?? 0,
       personalActiveMine: p.myShare ?? 0,
@@ -365,11 +368,15 @@ export function Dashboard() {
     mine;
 
   async function handleSettlePersonal() {
-    const count = breakdown?.personalActiveCount ?? 0;
+    // settlePersonal sweeps every active personal row, income included, while
+    // summary.totalCount counts spending only — the confirmation used to
+    // promise fewer entries than it settled.
+    const count =
+      (breakdown?.personalActiveCount ?? 0) + (breakdown?.personalActiveIncome ?? 0);
     if (count === 0) return;
     if (
       !confirm(
-        `Settle all ${count} active personal ${count === 1 ? "expense" : "expenses"}? They move to settled history.`
+        `Settle all ${count} active personal ${count === 1 ? "entry" : "entries"}? Income entries are included. They move to settled history.`
       )
     )
       return;

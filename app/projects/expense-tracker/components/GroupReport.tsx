@@ -131,7 +131,9 @@ type Props = {
 
 export function GroupReport({ groupId, groupName }: Props) {
   const { authFetch } = useAuth();
-  const [scope, setScope] = useState<Scope>("unsettled");
+  // "all" matches mobile's GroupReportView and reportFilterSchema's own
+  // default — the two clients used to open the same tab on different data.
+  const [scope, setScope] = useState<Scope>("all");
   const [quickRange, setQuickRange] = useState<QuickRange>("all");
   // Same two filters the Expenses tab offers: narrow to entries I carry a
   // share of, and to a single category.
@@ -150,7 +152,6 @@ export function GroupReport({ groupId, groupName }: Props) {
       .catch(() => {});
   }, [authFetch]);
 
-  const settledDisabled = scope === "unsettled";
 
   function applyQuickRange(r: QuickRange) {
     setQuickRange(r);
@@ -183,17 +184,18 @@ export function GroupReport({ groupId, groupName }: Props) {
     );
     if (mine) params.set("mine", "true");
     if (category) params.set("category", category);
-    if (!settledDisabled) {
-      if (dateFrom) params.set("dateFrom", dateFrom);
-      if (dateTo) params.set("dateTo", dateTo);
-    }
+    // getSummary combines `settled` and the date range without conflict, and
+    // mobile has always sent both. Suppressing the range in the unsettled
+    // scope meant the PDF header claimed a range the figures never honoured.
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
     const res = await authFetch(
       `/api/projects/expense-tracker/reports/summary?${params}`
     );
     const data = await res.json();
     setSummary(data);
     setLoading(false);
-  }, [groupId, scope, dateFrom, dateTo, mine, category, settledDisabled]);
+  }, [groupId, scope, dateFrom, dateTo, mine, category]);
 
   useEffect(() => {
     fetchSummary();
@@ -205,13 +207,12 @@ export function GroupReport({ groupId, groupName }: Props) {
   );
 
   const dateRangeLabel = useMemo(() => {
-    if (settledDisabled) return "Active expenses · no date filter";
     if (quickRange !== "all") {
       return QUICK_RANGES.find((q) => q.id === quickRange)?.label ?? "Custom";
     }
     if (dateFrom || dateTo) return `${dateFrom || "…"} → ${dateTo || "…"}`;
     return "All time";
-  }, [settledDisabled, quickRange, dateFrom, dateTo]);
+  }, [quickRange, dateFrom, dateTo]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -324,17 +325,12 @@ export function GroupReport({ groupId, groupName }: Props) {
           </div>
         </div>
 
-        <div
-          className={cn(
-            "transition-opacity",
-            settledDisabled && "pointer-events-none opacity-40"
-          )}
-        >
+        <div>
           <div className="mb-2 flex items-center justify-between">
             <div className="text-[11px] uppercase tracking-wider text-zinc-500">
               Time range
             </div>
-            {(dateFrom || dateTo) && !settledDisabled && (
+            {(dateFrom || dateTo) && (
               <button
                 onClick={clearDates}
                 className="text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
@@ -349,10 +345,9 @@ export function GroupReport({ groupId, groupName }: Props) {
                 key={q.id}
                 type="button"
                 onClick={() => applyQuickRange(q.id)}
-                disabled={settledDisabled}
                 className={cn(
                   "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
-                  quickRange === q.id && !settledDisabled
+                  quickRange === q.id
                     ? "border-fuchsia-500/60 bg-fuchsia-500/15 text-fuchsia-300 shadow-[0_0_15px_-5px_rgba(232,121,249,0.5)]"
                     : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:-translate-y-0.5 hover:border-zinc-600 hover:text-zinc-200"
                 )}
@@ -370,7 +365,6 @@ export function GroupReport({ groupId, groupName }: Props) {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => onCustomFrom(e.target.value)}
-                disabled={settledDisabled}
                 className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
               />
             </div>
@@ -382,7 +376,6 @@ export function GroupReport({ groupId, groupName }: Props) {
                 type="date"
                 value={dateTo}
                 onChange={(e) => onCustomTo(e.target.value)}
-                disabled={settledDisabled}
                 className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
               />
             </div>

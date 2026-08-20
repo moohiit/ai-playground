@@ -158,6 +158,11 @@ export const expenseFilterSchema = z.object({
   // group entries I am split into. Group spend split only among other members
   // is filtered out.
   mine: z.enum(["true", "false"]).optional().default("false"),
+  // Settle-up payments (member repaying member) are balance entries, not
+  // spending. getSummary has always excluded them, so the list excludes them
+  // too — otherwise the rows and the totals describe different sets. The
+  // group detail screen opts back in: there they are meaningful and undoable.
+  includeSettlements: z.enum(["true", "false"]).optional().default("false"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(500).default(20),
 });

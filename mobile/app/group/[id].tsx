@@ -151,13 +151,19 @@ export default function GroupDetailScreen() {
     ]);
   }
 
+  // Settle-up rows are listed here but are not spending — the Total beside
+  // this count excludes them, so the count must too.
+  const spendCount = expenses.filter((e) => !e.isSettlement).length;
+
   const fetchAll = useCallback(async () => {
     try {
       const [gRes, bRes, eRes, sRes, hRes] = await Promise.all([
         authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
         authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
         authFetch(
-          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=100&settled=false${
+          // includeSettlements: this screen shows settle-up payments as their
+          // own badged rows with an Undo action, unlike the global list.
+          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=100&settled=false&includeSettlements=true${
             onlyMine ? "&mine=true" : ""
           }`
         ),
@@ -684,9 +690,28 @@ export default function GroupDetailScreen() {
             {/* Active expenses */}
             <View className="flex-row items-start justify-between">
               <View className="flex-1 gap-2">
-                <Text className="text-sm font-semibold text-zinc-100">
-                  Active Expenses ({expenses.length})
-                </Text>
+                <View className="flex-row items-center gap-2">
+                  <Text className="text-sm font-semibold text-zinc-100">
+                    Active Expenses ({spendCount})
+                  </Text>
+                  {/* Settling was only reachable from the Settle Up panel,
+                      which is hidden once every balance is square — leaving a
+                      group that had already paid each other back with no way
+                      to close the window. */}
+                  {settlements.length === 0 && spendCount > 0 && (
+                    <Pressable
+                      onPress={handleSettle}
+                      disabled={settling}
+                      className={`rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 ${
+                        settling ? "opacity-60" : ""
+                      }`}
+                    >
+                      <Text className="text-[12px] font-semibold text-amber-300">
+                        {settling ? "Settling…" : "Mark all settled"}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
                 <Pressable
                   onPress={() => setOnlyMine((v) => !v)}
                   hitSlop={6}
