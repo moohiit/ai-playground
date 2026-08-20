@@ -16,6 +16,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "token required" }, { status: 400 });
     }
     await connectDB();
+    // A device token identifies a device, not an account. If someone else was
+    // signed in on this device before, detach it from them first — otherwise
+    // one physical phone stays subscribed to two accounts and both users get
+    // each other's notifications.
+    await UserPrefs.updateMany(
+      { expoPushToken: token, userId: { $ne: auth.userId } },
+      { $set: { expoPushToken: null } }
+    );
     await UserPrefs.findOneAndUpdate(
       { userId: auth.userId },
       { $set: { expoPushToken: token } },

@@ -644,13 +644,23 @@ function ExpenseCard({
         )}
       </View>
 
-      <View className="mt-3 flex-row justify-end gap-4 border-t border-white/5 pt-3">
-        <Pressable onPress={onEdit} hitSlop={8}>
-          <Text className="text-xs font-medium text-zinc-400">Edit</Text>
-        </Pressable>
-        <Pressable onPress={onDelete} hitSlop={8}>
-          <Text className="text-xs font-medium text-red-400">Delete</Text>
-        </Pressable>
+      {/* Settled rows are part of a recorded settlement — the API refuses to
+          edit or delete them, so don't offer actions that can only fail. */}
+      <View className="mt-3 flex-row items-center justify-end gap-4 border-t border-white/5 pt-3">
+        {e.settledAt ? (
+          <Text className="text-[12px] text-zinc-600">
+            Settled {new Date(e.settledAt).toLocaleDateString()} · locked
+          </Text>
+        ) : (
+          <>
+            <Pressable onPress={onEdit} hitSlop={8}>
+              <Text className="text-xs font-medium text-zinc-400">Edit</Text>
+            </Pressable>
+            <Pressable onPress={onDelete} hitSlop={8}>
+              <Text className="text-xs font-medium text-red-400">Delete</Text>
+            </Pressable>
+          </>
+        )}
       </View>
     </View>
   );

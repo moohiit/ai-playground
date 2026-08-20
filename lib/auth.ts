@@ -52,16 +52,18 @@ export async function getAuthUser(
   // accounts' tokens kept working for 7 days) and the token's version must
   // match — a password change/reset bumps tokenVersion, instantly revoking
   // every previously issued session.
-  try {
-    await connectDB();
-    const user = await User.findById(payload.userId)
-      .select("tokenVersion")
-      .lean();
-    if (!user) return null;
-    if ((payload.tv ?? 0) !== (user.tokenVersion ?? 0)) return null;
-  } catch {
-    return null;
-  }
+  //
+  // Infrastructure failures are NOT rejected credentials and must not be
+  // reported as 401: the mobile client treats a 401 as a revoked session and
+  // deletes the stored token, so a momentary database blip used to log people
+  // out for good. Let the error propagate to handleRouteError as a 500 —
+  // the client then retries instead of discarding the session.
+  await connectDB();
+  const user = await User.findById(payload.userId)
+    .select("tokenVersion")
+    .lean();
+  if (!user) return null;
+  if ((payload.tv ?? 0) !== (user.tokenVersion ?? 0)) return null;
   return payload;
 }
 

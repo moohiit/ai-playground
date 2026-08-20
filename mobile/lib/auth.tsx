@@ -149,10 +149,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Unregister the device first, or push notifications keep arriving for
+    // the account that just logged out — on a shared device they would reach
+    // whoever logs in next. Best effort: never block sign-out on it.
+    if (token) {
+      try {
+        await fetch(apiUrl("/api/push/register"), {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // offline or server down — the token is cleared on the next register
+      }
+    }
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     setToken(null);
     setUser(null);
-  }, []);
+  }, [token]);
 
   const authFetch = useCallback(
     async (path: string, opts: RequestInit = {}) => {

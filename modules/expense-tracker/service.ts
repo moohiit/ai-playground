@@ -26,6 +26,31 @@ import { evaluateBudget } from "./budget";
 import { advance, dueOccurrences, isDue } from "./recurring";
 import { goalProgress } from "./goal";
 
+/**
+ * Group membership, for authorization.
+ *
+ * removeMember DEACTIVATES a member who appears in the group's expenses rather
+ * than deleting them, so their name survives in old splits — which means a
+ * plain `members.some(m => m.userId === id)` still matches someone who was
+ * removed. Every access check must ask whether they are *active*.
+ *
+ * `isActive !== false` rather than `=== true`: member subdocuments written
+ * before the field existed have it undefined, and those people are still in
+ * the group.
+ */
+function isActiveMember(
+  group: { members: { userId: string; isActive?: boolean }[] },
+  userId: string
+): boolean {
+  return group.members.some((m) => m.userId === userId && m.isActive !== false);
+}
+
+/** Mongo filter for the groups a user is still an active member of. Someone
+ *  removed from a group must stop seeing its expenses, not just its detail page. */
+function activeMemberFilter(userId: string) {
+  return { members: { $elemMatch: { userId, isActive: { $ne: false } } } };
+}
+
 function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   if (!mongoose.isValidObjectId(id)) {
     throw new Error(`Invalid ${label}: ${id}`);
@@ -210,7 +235,7 @@ export async function createGroup(input: CreateGroupInput, auth: JWTPayload) {
 
 export async function listGroups(auth: JWTPayload) {
   await connectDB();
-  const groups = await Group.find({ "members.userId": auth.userId }).lean();
+  const groups = await Group.find(activeMemberFilter(auth.userId)).lean();
   if (groups.length === 0) return [];
 
   // Ordering follows activity, not age: the group someone just added an
@@ -246,7 +271,7 @@ export async function getGroup(id: string, auth: JWTPayload) {
   await connectDB();
   const group = await Group.findById(id).lean();
   if (!group) throw new Error("Group not found");
-  if (!group.members.some((m) => m.userId === auth.userId)) {
+  if (!isActiveMember(group, auth.userId)) {
     throw new Error("You are not a member of this group");
   }
   return group;
@@ -279,7 +304,7 @@ export async function addMember(
   await connectDB();
   const group = await Group.findById(groupId);
   if (!group) throw new Error("Group not found");
-  if (!group.members.some((m) => m.userId === auth.userId)) {
+  if (!isActiveMember(group, auth.userId)) {
     throw new Error("You are not a member of this group");
   }
 
@@ -390,7 +415,7 @@ export async function addGuestMember(
 
   const group = await Group.findById(groupId);
   if (!group) throw new Error("Group not found");
-  if (!group.members.some((m) => m.userId === auth.userId)) {
+  if (!isActiveMember(group, auth.userId)) {
     throw new Error("You are not a member of this group");
   }
   const sameName = group.members.find(
@@ -490,7 +515,7 @@ export async function createExpense(
     }
     const group = await Group.findById(input.groupId).lean();
     if (!group) throw new Error("Group not found");
-    if (!group.members.some((m) => m.userId === auth.userId)) {
+    if (!isActiveMember(group, auth.userId)) {
       throw new Error("You are not a member of this group");
     }
 
@@ -570,7 +595,7 @@ async function buildExpenseQuery(
 ): Promise<Record<string, unknown>> {
   if (filter.groupId) {
     const group = await Group.findById(filter.groupId).lean();
-    if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+    if (!group || !isActiveMember(group, auth.userId)) {
       throw new Error("Group not found or access denied");
     }
   }
@@ -584,13 +609,13 @@ async function buildExpenseQuery(
     query.type = "personal";
   } else if (filter.type === "group") {
     const userGroups = await Group.find(
-      { "members.userId": auth.userId },
+      activeMemberFilter(auth.userId),
       { _id: 1 }
     ).lean();
     query.groupId = { $in: userGroups.map((g) => g._id) };
   } else {
     const userGroups = await Group.find(
-      { "members.userId": auth.userId },
+      activeMemberFilter(auth.userId),
       { _id: 1 }
     ).lean();
     query.$or = [
@@ -703,7 +728,7 @@ export async function updateExpense(
   // 1. Authorize access to the expense as it currently exists.
   if (expense.type === "group" && expense.groupId) {
     const group = await Group.findById(expense.groupId).lean();
-    if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+    if (!group || !isActiveMember(group, auth.userId)) {
       throw new Error("Access denied");
     }
   } else if (expense.createdBy !== auth.userId) {
@@ -739,7 +764,7 @@ export async function updateExpense(
     if (!newGroupId) throw new Error("A group is required for a group expense");
     // 3. Re-authorize against the TARGET group + validate payer/split members.
     const target = await Group.findById(newGroupId).lean();
-    if (!target || !target.members.some((m) => m.userId === auth.userId)) {
+    if (!target || !isActiveMember(target, auth.userId)) {
       throw new Error("Access denied");
     }
     const memberIds = new Set(target.members.map((m) => m.userId));
@@ -829,11 +854,21 @@ export async function deleteExpense(id: string, auth: JWTPayload) {
 
   if (expense.type === "group" && expense.groupId) {
     const group = await Group.findById(expense.groupId).lean();
-    if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+    if (!group || !isActiveMember(group, auth.userId)) {
       throw new Error("Access denied");
     }
   } else if (expense.createdBy !== auth.userId) {
     throw new Error("Access denied");
+  }
+
+  // Settled rows belong to a recorded settlement batch. Editing one is already
+  // refused (updateExpense); deleting one silently rewrote the same history,
+  // because getSettlementHistory re-reads the live rows to rebuild each batch's
+  // Paid/Share table.
+  if (expense.settledAt) {
+    throw new Error(
+      "This expense is already settled — settled records can't be deleted"
+    );
   }
 
   await Expense.findByIdAndDelete(id);
@@ -879,14 +914,14 @@ export async function getSummary(
 
   if (filter.groupId) {
     const group = await Group.findById(filter.groupId).lean();
-    if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+    if (!group || !isActiveMember(group, auth.userId)) {
       throw new Error("Group not found or access denied");
     }
     match.groupId = group._id;
     groupNameById.set(group._id.toString(), group.name);
   } else {
     const userGroups = await Group.find(
-      { "members.userId": auth.userId },
+      activeMemberFilter(auth.userId),
       { _id: 1, name: 1 }
     ).lean();
     for (const g of userGroups) groupNameById.set(g._id.toString(), g.name);
@@ -1170,7 +1205,7 @@ export async function getGroupBalances(
   await connectDB();
 
   const group = await Group.findById(groupId).lean();
-  if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+  if (!group || !isActiveMember(group, auth.userId)) {
     throw new Error("Group not found or access denied");
   }
 
@@ -1275,7 +1310,7 @@ export async function recordSettlementPayment(
   await connectDB();
   const group = await Group.findById(groupId).lean();
   if (!group) throw new Error("Group not found");
-  if (!group.members.some((m) => m.userId === auth.userId)) {
+  if (!isActiveMember(group, auth.userId)) {
     throw new Error("You are not a member of this group");
   }
   const from = group.members.find((m) => m.userId === input.fromMemberId);
@@ -1362,13 +1397,6 @@ async function closeActiveWindow(
     throw new Error("No unsettled expenses in this group");
   }
 
-  await Expense.updateMany(
-    { _id: { $in: spend.map((e) => e._id) } },
-    { $set: { settledAt: now, settlementId } }
-  );
-
-  // Recorded first, then the rows are dropped — losing the payment history to
-  // a failure between the two would be worse than a duplicate record.
   const transfers = payments.map((p) => ({
     from: { id: p.paidBy.id, name: p.paidBy.name },
     to: {
@@ -1379,6 +1407,11 @@ async function closeActiveWindow(
     paidAt: p.date,
   }));
 
+  // Order matters: record the batch, THEN mark the spend, THEN drop the
+  // payment rows. Each step is recoverable from the one before it — a failure
+  // after step 1 leaves an empty settlement record (harmless, the history view
+  // groups by the expenses that carry the id), whereas marking first and
+  // failing before the record was written lost the payment history outright.
   await GroupSettlement.create({
     groupId: oid,
     settlementId,
@@ -1386,6 +1419,11 @@ async function closeActiveWindow(
     settledBy: auth.userId,
     transfers,
   });
+
+  await Expense.updateMany(
+    { _id: { $in: spend.map((e) => e._id) } },
+    { $set: { settledAt: now, settlementId } }
+  );
 
   if (payments.length > 0) {
     await Expense.deleteMany({ _id: { $in: payments.map((p) => p._id) } });
@@ -1408,7 +1446,7 @@ export async function settleGroup(groupId: string, auth: JWTPayload) {
   await connectDB();
 
   const group = await Group.findById(groupId).lean();
-  if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+  if (!group || !isActiveMember(group, auth.userId)) {
     throw new Error("Group not found or access denied");
   }
 
@@ -1419,7 +1457,7 @@ export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
   await connectDB();
 
   const group = await Group.findById(groupId).lean();
-  if (!group || !group.members.some((m) => m.userId === auth.userId)) {
+  if (!group || !isActiveMember(group, auth.userId)) {
     throw new Error("Group not found or access denied");
   }
 
@@ -1503,11 +1541,15 @@ export async function deleteAccount(auth: JWTPayload) {
   });
   await UserPrefs.deleteMany({ userId });
 
-  // Remove the user from groups owned by others (their past group expenses
-  // stay for those groups' balance accuracy, per the privacy policy).
+  // Deactivate the user in groups owned by others. Their past group expenses
+  // stay for those groups' balance accuracy (per the privacy policy), and
+  // those expenses still name them in splits — hard-pulling the member left
+  // those rows referencing someone the group no longer knows, which breaks
+  // editing them and erases the name from every balance table.
   await Group.updateMany(
     { "members.userId": userId },
-    { $pull: { members: { userId } } } as never
+    { $set: { "members.$[m].isActive": false } },
+    { arrayFilters: [{ "m.userId": userId }] }
   );
 
   // Finally, delete the account itself.

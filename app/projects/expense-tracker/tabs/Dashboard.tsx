@@ -22,6 +22,9 @@ type Expense = {
   date: string;
   splitAmong?: { memberId: string; name: string }[];
   splits: { memberId: string; name: string; amount: number }[];
+  // Set once the row has been swept into a settlement batch. Settled rows are
+  // history: the API refuses to edit or delete them.
+  settledAt?: string | null;
 };
 
 type ViewMode = "all" | "personal" | "group";
@@ -142,6 +145,9 @@ export function Dashboard() {
   const [exporting, setExporting] = useState(false);
   const [base, setBase] = useState("INR");
   const [settled, setSettled] = useState<"false" | "true" | "all">("false");
+  // True when the last analytics fetch failed — the figures on screen are
+  // stale rather than real, and the banner says so.
+  const [loadError, setLoadError] = useState(false);
   // "Only mine" narrows the list to entries I carry a share of — group spend
   // split among other members drops out of both the rows and the totals.
   const [mine, setMine] = useState(false);
@@ -186,12 +192,22 @@ export function Dashboard() {
         sumRes.json().catch(() => ({})),
       ]);
       if (seq !== fetchSeqRef.current) return; // superseded by a newer fetch
-      setExpenses(expData.expenses ?? []);
-      setTotal(expData.total ?? 0);
-      setTotalAmount(sumData.totalAmount ?? 0);
-      setMyShareAmount(sumData.myShare ?? 0);
-      setIncomeAmount(sumData.incomeAmount ?? 0);
-      setNetAmount(sumData.netAmount ?? 0);
+      if (expRes.ok) {
+        setExpenses(expData.expenses ?? []);
+        setTotal(expData.total ?? 0);
+      }
+      // Only a real summary may overwrite the figures. Writing `?? 0` from an
+      // error body showed a confident 0.00 across the dashboard — visually
+      // identical to an account with no spending — and hid the Settle button.
+      if (sumRes.ok && typeof sumData.totalAmount === "number") {
+        setTotalAmount(sumData.totalAmount);
+        setMyShareAmount(sumData.myShare ?? 0);
+        setIncomeAmount(sumData.incomeAmount ?? 0);
+        setNetAmount(sumData.netAmount ?? 0);
+        setLoadError(false);
+      } else {
+        setLoadError(true);
+      }
     } catch {
       // leave the last good state in place
     } finally {
@@ -212,6 +228,11 @@ export function Dashboard() {
       gRes.json().catch(() => ({})),
       hRes.json().catch(() => ({})),
     ]);
+    // Keep the last good breakdown rather than replacing it with zeros.
+    if (!allRes.ok || typeof all.totalAmount !== "number") {
+      setLoadError(true);
+      return;
+    }
     setBreakdown({
       personalTotal: all.personalTotal ?? 0,
       groupTotal: all.groupTotal ?? 0,
@@ -246,8 +267,12 @@ export function Dashboard() {
 
   const fetchForecast = useCallback(() => {
     authFetch("/api/projects/expense-tracker/forecast")
-      .then((r) => r.json())
-      .then((d) => setForecast(d))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        // An { error } body is truthy, so the card rendered and formatted
+        // undefined amounts as "NaN".
+        if (d && typeof d.projectedTotal === "number") setForecast(d);
+      })
       .catch(() => {});
   }, [authFetch]);
 
@@ -257,8 +282,15 @@ export function Dashboard() {
 
   const fetchInsights = useCallback(() => {
     authFetch("/api/projects/expense-tracker/insights")
-      .then((r) => r.json())
-      .then((d) => setInsights(d))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        // Never store an error payload — the render below assumes these
+        // arrays exist, so an { error } body used to throw and take the whole
+        // page down. Mobile has always guarded this; web had not.
+        if (d && Array.isArray(d.subscriptions) && Array.isArray(d.anomalies)) {
+          setInsights(d);
+        }
+      })
       .catch(() => {});
   }, [authFetch]);
 
@@ -440,6 +472,12 @@ export function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
+      {loadError && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          Couldn&rsquo;t refresh your analytics. The figures below are the last
+          ones that loaded, not current.
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label={headline.label}
@@ -865,19 +903,28 @@ export function Dashboard() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
+                    {/* Settled rows are part of a recorded settlement — the API
+                        refuses to edit or delete them, so don't offer actions
+                        that can only fail. */}
                     <div className="flex justify-end gap-3">
-                      <button
-                        onClick={() => setEditingExpense(e)}
-                        className="text-xs text-zinc-500 transition-colors hover:text-brand-400"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(e._id)}
-                        className="text-xs text-zinc-500 transition-colors hover:text-red-400"
-                      >
-                        Delete
-                      </button>
+                      {e.settledAt ? (
+                        <span className="text-[11px] text-zinc-600">locked</span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setEditingExpense(e)}
+                            className="text-xs text-zinc-500 transition-colors hover:text-brand-400"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(e._id)}
+                            className="text-xs text-zinc-500 transition-colors hover:text-red-400"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1310,19 +1357,28 @@ function ExpenseCard({
         )}
       </div>
 
-      <div className="mt-3 flex justify-end gap-4 border-t border-zinc-800/60 pt-3">
-        <button
-          onClick={onEdit}
-          className="text-xs font-medium text-zinc-400 transition-colors hover:text-brand-400"
-        >
-          Edit
-        </button>
-        <button
-          onClick={onDelete}
-          className="text-xs font-medium text-zinc-400 transition-colors hover:text-red-400"
-        >
-          Delete
-        </button>
+      {/* Settled rows are locked — the API refuses to edit or delete them. */}
+      <div className="mt-3 flex items-center justify-end gap-4 border-t border-zinc-800/60 pt-3">
+        {e.settledAt ? (
+          <span className="text-[11px] text-zinc-600">
+            Settled {new Date(e.settledAt).toLocaleDateString()} · locked
+          </span>
+        ) : (
+          <>
+            <button
+              onClick={onEdit}
+              className="text-xs font-medium text-zinc-400 transition-colors hover:text-brand-400"
+            >
+              Edit
+            </button>
+            <button
+              onClick={onDelete}
+              className="text-xs font-medium text-zinc-400 transition-colors hover:text-red-400"
+            >
+              Delete
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

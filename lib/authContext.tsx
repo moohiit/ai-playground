@@ -155,10 +155,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const authFetch = useCallback(
-    (url: string, opts: RequestInit = {}) => {
+    async (url: string, opts: RequestInit = {}) => {
       const headers = new Headers(opts.headers);
       if (token) headers.set("Authorization", `Bearer ${token}`);
-      return fetch(url, { ...opts, headers });
+      const res = await fetch(url, { ...opts, headers });
+      // Session expired or revoked — drop the credentials so the auth gate
+      // redirects to login. Mobile has always done this; on web a revoked
+      // session used to linger, with every screen rendering 401 error bodies
+      // as if they were data. A 401 now only ever means "not authenticated":
+      // infrastructure failures surface as 500 (see lib/auth.ts).
+      if (res.status === 401 && token) {
+        localStorage.removeItem("auth_token");
+        setToken(null);
+        setUser(null);
+      }
+      return res;
     },
     [token]
   );

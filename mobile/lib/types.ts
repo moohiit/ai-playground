@@ -65,6 +65,9 @@ export type Expense = {
   splitAmong?: { memberId: string; name: string }[];
   splits: { memberId: string; name: string; amount: number }[];
   isSettlement?: boolean;
+  // Set once the row has been swept into a settlement batch. Settled rows are
+  // history: the API refuses to edit or delete them.
+  settledAt?: string | null;
 };
 
 export type ExpenseListResponse = {

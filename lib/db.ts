@@ -26,9 +26,17 @@ export async function connectDB(): Promise<typeof mongoose> {
   if (cache.conn) return cache.conn;
 
   if (!cache.promise) {
-    cache.promise = mongoose.connect(MONGODB_URI!, {
-      bufferCommands: false,
-    });
+    // Drop the cached promise if the connection fails, so the next request
+    // retries. Without this a single failed connect (cold start, brief
+    // network blip) poisoned the cache for the lifetime of the instance:
+    // every later request awaited the same rejected promise and, because
+    // getAuthUser used to swallow that error, answered 401 forever.
+    cache.promise = mongoose
+      .connect(MONGODB_URI!, { bufferCommands: false })
+      .catch((err) => {
+        cache.promise = null;
+        throw err;
+      });
   }
 
   cache.conn = await cache.promise;
