@@ -120,6 +120,11 @@ export function BudgetsTab() {
 
       {showAdd && (
         <BudgetForm
+          // The form seeds its state in useState initialisers, which do not
+          // re-run on prop change — without a key, clicking Edit on a second
+          // budget while the form is already open kept the first one's amount
+          // and PATCHed it onto the second.
+          key={editing?._id ?? "new"}
           editing={editing}
           hasOverall={!!overall}
           usedCategories={usedCategories}

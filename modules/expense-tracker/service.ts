@@ -2533,11 +2533,18 @@ export async function coachReply(input: CoachInput, auth: JWTPayload) {
 
 // ── Savings goals (Phase 4) ─────────────────────────
 
-export async function listGoals(auth: JWTPayload) {
+export async function listGoals(
+  auth: JWTPayload,
+  opts: { includeArchived?: boolean } = {}
+) {
   await connectDB();
-  const goals = await Goal.find({ userId: auth.userId, archived: false })
-    .sort({ createdAt: 1 })
-    .lean();
+  // Mirrors listAccounts. Without a way to read archived goals back, archiving
+  // one would hide it permanently — which is why neither client offered the
+  // action even though updateGoalSchema accepts the flag.
+  const filter: Record<string, unknown> = { userId: auth.userId };
+  if (!opts.includeArchived) filter.archived = false;
+
+  const goals = await Goal.find(filter).sort({ createdAt: 1 }).lean();
 
   // Account-linked goals track that account's live balance. Include archived
   // accounts — archiving an account shouldn't zero a linked goal's progress

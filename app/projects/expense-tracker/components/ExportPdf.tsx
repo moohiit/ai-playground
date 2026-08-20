@@ -3,64 +3,9 @@
 import { useState } from "react";
 import { useAuth } from "../../../../lib/authContext";
 import { localISODate } from "../../../../lib/utils";
+import type { Summary } from "../types";
 
-type CategoryEntry = {
-  category: string;
-  total: number;
-  // The viewer's slice of that category — personal rows in full, group rows
-  // only for their split.
-  myShare: number;
-  count: number;
-};
-type MonthEntry = {
-  year: number;
-  month: number;
-  total: number;
-  // The viewer's slice of that month — personal rows in full, group rows only
-  // for their split.
-  myShare: number;
-  count: number;
-};
-type GroupEntry = {
-  groupId: string;
-  groupName: string;
-  total: number;
-  myShare: number;
-  count: number;
-};
-type PayerEntry = { id: string; name: string; total: number; count: number };
 
-type Summary = {
-  totalAmount: number;
-  totalCount: number;
-  myShare?: number;
-  // Entries the viewer is part of — the denominator for myAveragePerTransaction.
-  myCount?: number;
-  paidByMe?: number;
-  paidByOthers?: number;
-  personalTotal?: number;
-  groupTotal?: number;
-  incomeAmount?: number;
-  incomeCount?: number;
-  netAmount?: number;
-  averagePerDay?: number;
-  // The same averages restricted to the viewer's own share.
-  myAveragePerDay?: number;
-  myAveragePerTransaction?: number;
-  averagePerTransaction?: number;
-  daysCovered?: number;
-  largest?: {
-    description: string;
-    amount: number;
-    date: string;
-    paidBy: string;
-    category: string;
-  } | null;
-  byCategory: CategoryEntry[];
-  byMonth: MonthEntry[];
-  byGroup?: GroupEntry[];
-  topPayers?: PayerEntry[];
-};
 
 /** The report screen's filter set, carried into the PDF so the document
  *  describes exactly the same slice of data the screen showed. */

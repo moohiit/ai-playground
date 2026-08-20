@@ -8,6 +8,7 @@ import { ExportPdfButton } from "../components/ExportPdf";
 import { categoryColor, personalVsGroupSlices } from "../colors";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 import { getBaseCurrency } from "../prefs";
+import type { Summary } from "../types";
 import {
   PieChart,
   Pie,
@@ -23,64 +24,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-type CategoryEntry = {
-  category: string;
-  total: number;
-  // The viewer's slice of that category — personal rows in full, group rows
-  // only for their split.
-  myShare: number;
-  count: number;
-};
-type MonthEntry = {
-  year: number;
-  month: number;
-  total: number;
-  // The viewer's slice of that month — personal rows in full, group rows only
-  // for their split.
-  myShare: number;
-  count: number;
-};
-type DayEntry = { day: number; total: number; count: number };
-type GroupEntry = {
-  groupId: string;
-  groupName: string;
-  total: number;
-  myShare: number;
-  count: number;
-};
-type Largest = {
-  description: string;
-  amount: number;
-  date: string;
-  paidBy: string;
-  category: string;
-} | null;
 
-type Summary = {
-  totalAmount: number;
-  totalCount: number;
-  incomeAmount: number;
-  incomeCount: number;
-  netAmount: number;
-  myShare: number;
-  // Entries the viewer is part of — the denominator for myAveragePerTransaction.
-  myCount: number;
-  paidByMe: number;
-  paidByOthers: number;
-  personalTotal: number;
-  groupTotal: number;
-  averagePerDay: number;
-  averagePerTransaction: number;
-  // The same averages restricted to the viewer's own share.
-  myAveragePerDay: number;
-  myAveragePerTransaction: number;
-  daysCovered: number;
-  largest: Largest;
-  byCategory: CategoryEntry[];
-  byMonth: MonthEntry[];
-  byDayOfWeek: DayEntry[];
-  byGroup: GroupEntry[];
-};
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -502,20 +446,20 @@ function HeroStats({ summary }: { summary: Summary }) {
       />
       {/* getSummary has always returned these; only mobile showed them, so the
           web report described spending as if nothing came in. */}
-      {(summary.incomeAmount ?? 0) > 0 && (
+      {summary.incomeAmount > 0 && (
         <>
           <StatCard
             label="Income"
             value={fmt(summary.incomeAmount)}
-            hint={`${summary.incomeCount ?? 0} entries`}
+            hint={`${summary.incomeCount} entries`}
             accent="from-emerald-500/40"
           />
           <StatCard
             label="Net Flow"
-            value={fmt(summary.netAmount ?? 0)}
+            value={fmt(summary.netAmount)}
             hint="Income − spend"
             accent={
-              (summary.netAmount ?? 0) < 0
+              summary.netAmount < 0
                 ? "from-red-500/40"
                 : "from-emerald-500/40"
             }
@@ -532,7 +476,7 @@ function InsightsRow({ summary }: { summary: Summary }) {
       <MiniStat
         label="Avg / Day"
         value={fmt(summary.averagePerDay)}
-        mine={fmt(summary.myAveragePerDay ?? 0)}
+        mine={fmt(summary.myAveragePerDay)}
         hint={`${summary.daysCovered} days covered`}
         icon={
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -546,8 +490,8 @@ function InsightsRow({ summary }: { summary: Summary }) {
       <MiniStat
         label="Avg / Transaction"
         value={fmt(summary.averagePerTransaction)}
-        mine={fmt(summary.myAveragePerTransaction ?? 0)}
-        hint={`${summary.totalCount} entries · ${summary.myCount ?? 0} include me`}
+        mine={fmt(summary.myAveragePerTransaction)}
+        hint={`${summary.totalCount} entries · ${summary.myCount} include me`}
         icon={
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="1" x2="12" y2="23" />
@@ -847,7 +791,7 @@ function MonthlyTrendCard({ summary }: { summary: Summary }) {
             data={summary.byMonth.map((m) => ({
               label: `${MONTH_NAMES[m.month - 1]} ${m.year}`,
               total: m.total,
-              myShare: m.myShare ?? 0,
+              myShare: m.myShare,
             }))}
           >
             <defs>
@@ -931,7 +875,7 @@ function CategoryBreakdownCard({ summary }: { summary: Summary }) {
                     {fmt(c.total)}
                   </td>
                   <td className="py-2.5 text-right font-mono tabular-nums text-emerald-300">
-                    {fmt(c.myShare ?? 0)}
+                    {fmt(c.myShare)}
                   </td>
                   <td className="py-2.5 text-right tabular-nums text-zinc-400">
                     {pct.toFixed(1)}%

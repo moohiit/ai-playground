@@ -254,9 +254,14 @@ export default function AccountsScreen() {
           Tap an account to edit or archive it · long-press to delete.
         </Text>
 
-        <Text className="mt-2 px-1 text-[11px] uppercase tracking-wider text-zinc-500">
-          Transfer history
-        </Text>
+        <View className="mt-2 flex-row items-baseline justify-between px-1">
+          <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+            Transfer history
+          </Text>
+          {transfers.length > 0 && (
+            <Text className="text-[11px] text-zinc-600">long-press to undo</Text>
+          )}
+        </View>
         {transfers.length === 0 ? (
           <View className="items-center rounded-2xl border border-white/10 bg-white/[0.03] py-8">
             <Text className="text-sm text-zinc-400">No transfers yet.</Text>
@@ -264,7 +269,11 @@ export default function AccountsScreen() {
           </View>
         ) : (
           transfers.map((t) => (
-            <View key={t._id} className="flex-row items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <Pressable
+              key={t._id}
+              onLongPress={() => confirmDeleteTransfer(t)}
+              className="flex-row items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+            >
               <View className="flex-1">
                 <Text className="text-sm font-semibold text-zinc-100">
                   {t.fromName} → {t.toName}
@@ -275,10 +284,7 @@ export default function AccountsScreen() {
                 </Text>
               </View>
               <Text className="text-sm font-semibold text-zinc-200">{formatMoney(t.amount, base)}</Text>
-              <Pressable onPress={() => confirmDeleteTransfer(t)} hitSlop={8}>
-                <Text className="text-xs text-zinc-600">✕</Text>
-              </Pressable>
-            </View>
+            </Pressable>
           ))
         )}
       </ScrollView>

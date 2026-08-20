@@ -7,6 +7,7 @@ import { useAuth } from "../../../../lib/authContext";
 import { ExportPdfButton } from "./ExportPdf";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 import { getBaseCurrency } from "../prefs";
+import type { Summary } from "../types";
 import {
   PieChart,
   Pie,
@@ -22,55 +23,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-type CategoryEntry = {
-  category: string;
-  total: number;
-  // The viewer's slice of that category — personal rows in full, group rows
-  // only for their split.
-  myShare: number;
-  count: number;
-};
-type MonthEntry = {
-  year: number;
-  month: number;
-  total: number;
-  // The viewer's slice of that month — personal rows in full, group rows only
-  // for their split.
-  myShare: number;
-  count: number;
-};
-type DayEntry = { day: number; total: number; count: number };
-type PayerEntry = { id: string; name: string; total: number; count: number };
-type Largest = {
-  description: string;
-  amount: number;
-  date: string;
-  paidBy: string;
-  category: string;
-} | null;
 
-type Summary = {
-  totalAmount: number;
-  totalCount: number;
-  myShare: number;
-  // Entries the viewer is part of — the denominator for myAveragePerTransaction.
-  myCount: number;
-  paidByMe: number;
-  paidByOthers: number;
-  personalTotal: number;
-  groupTotal: number;
-  averagePerDay: number;
-  averagePerTransaction: number;
-  // The same averages restricted to the viewer's own share.
-  myAveragePerDay: number;
-  myAveragePerTransaction: number;
-  daysCovered: number;
-  largest: Largest;
-  byCategory: CategoryEntry[];
-  byMonth: MonthEntry[];
-  byDayOfWeek: DayEntry[];
-  topPayers: PayerEntry[];
-};
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -434,14 +387,14 @@ export function GroupReport({ groupId, groupName }: Props) {
             <MiniStat
               label="Avg / Day"
               value={fmt(summary.averagePerDay)}
-              mine={fmt(summary.myAveragePerDay ?? 0)}
+              mine={fmt(summary.myAveragePerDay)}
               hint={`${summary.daysCovered} days covered`}
             />
             <MiniStat
               label="Avg / Transaction"
               value={fmt(summary.averagePerTransaction)}
-              mine={fmt(summary.myAveragePerTransaction ?? 0)}
-              hint={`${summary.totalCount} entries · ${summary.myCount ?? 0} include me`}
+              mine={fmt(summary.myAveragePerTransaction)}
+              hint={`${summary.totalCount} entries · ${summary.myCount} include me`}
             />
             <MiniStat
               label="Largest Single Expense"
@@ -631,7 +584,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                     data={summary.byMonth.map((m) => ({
                       label: `${MONTH_NAMES[m.month - 1]} ${m.year}`,
                       total: m.total,
-                      myShare: m.myShare ?? 0,
+                      myShare: m.myShare,
                     }))}
                   >
                     <defs>
@@ -722,7 +675,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                           {fmt(c.total)}
                         </td>
                         <td className="py-2.5 text-right font-mono tabular-nums text-emerald-300">
-                          {fmt(c.myShare ?? 0)}
+                          {fmt(c.myShare)}
                         </td>
                         <td className="py-2.5 text-right tabular-nums text-zinc-400">
                           {pct.toFixed(1)}%

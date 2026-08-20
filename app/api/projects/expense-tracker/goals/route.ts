@@ -11,7 +11,9 @@ export const maxDuration = 15;
 export async function GET(req: Request) {
   try {
     const auth = await requireAuth(req);
-    const goals = await listGoals(auth);
+    const includeArchived =
+      new URL(req.url).searchParams.get("archived") === "true";
+    const goals = await listGoals(auth, { includeArchived });
     return NextResponse.json({ goals });
   } catch (err) {
     return handleRouteError(err);

@@ -102,9 +102,14 @@ export function AccountsTab() {
       )
     )
       return;
-    await authFetch(`/api/projects/expense-tracker/accounts/${id}`, {
+    const res = await authFetch(`/api/projects/expense-tracker/accounts/${id}`, {
       method: "DELETE",
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? "Couldn't delete that account");
+      return;
+    }
     load();
   }
 
@@ -115,9 +120,17 @@ export function AccountsTab() {
       )
     )
       return;
-    await authFetch(`/api/projects/expense-tracker/transfers/${t._id}`, {
+    // Without the check a refusal fell through to load() and the row simply
+    // reappeared — mobile alerts, so the two clients disagreed on the same
+    // destructive action.
+    const res = await authFetch(`/api/projects/expense-tracker/transfers/${t._id}`, {
       method: "DELETE",
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error ?? "Couldn't undo that transfer");
+      return;
+    }
     load();
   }
 
