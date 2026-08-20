@@ -51,6 +51,28 @@ function activeMemberFilter(userId: string) {
   return { members: { $elemMatch: { userId, isActive: { $ne: false } } } };
 }
 
+/**
+ * Date-range filter bounds.
+ *
+ * An expense's `date` is stored as UTC midnight of the day it happened, while
+ * the clients build dateFrom/dateTo from LOCAL midnight and send an instant.
+ * West of UTC that instant lands *after* the stored midnight, so the first day
+ * of every range silently dropped out (and east of UTC the previous evening
+ * crept in). Snap both ends to whole UTC days so the range means the days the
+ * user picked, wherever they are.
+ */
+function dayStart(iso: string): Date {
+  const d = new Date(iso);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function dayEnd(iso: string): Date {
+  const d = new Date(iso);
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999)
+  );
+}
+
 function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
   if (!mongoose.isValidObjectId(id)) {
     throw new Error(`Invalid ${label}: ${id}`);
@@ -673,9 +695,9 @@ async function buildExpenseQuery(
   if (filter.dateFrom || filter.dateTo) {
     query.date = {};
     if (filter.dateFrom)
-      (query.date as Record<string, unknown>).$gte = new Date(filter.dateFrom);
+      (query.date as Record<string, unknown>).$gte = dayStart(filter.dateFrom);
     if (filter.dateTo)
-      (query.date as Record<string, unknown>).$lte = new Date(filter.dateTo);
+      (query.date as Record<string, unknown>).$lte = dayEnd(filter.dateTo);
   }
 
   return query;
@@ -968,9 +990,9 @@ export async function getSummary(
   if (filter.dateFrom || filter.dateTo) {
     match.date = {};
     if (filter.dateFrom)
-      (match.date as Record<string, unknown>).$gte = new Date(filter.dateFrom);
+      (match.date as Record<string, unknown>).$gte = dayStart(filter.dateFrom);
     if (filter.dateTo)
-      (match.date as Record<string, unknown>).$lte = new Date(filter.dateTo);
+      (match.date as Record<string, unknown>).$lte = dayEnd(filter.dateTo);
   }
 
   if (filter.settled === "true") {
@@ -1145,11 +1167,12 @@ export async function getSummary(
 
   let days = 1;
   if (filter.dateFrom && filter.dateTo) {
+    // Same whole-day snapping the filter itself uses, or a range built from
+    // local midnight counted a fractional day and skewed averagePerDay.
     days = Math.max(
       1,
       Math.round(
-        (new Date(filter.dateTo).getTime() -
-          new Date(filter.dateFrom).getTime()) /
+        (dayStart(filter.dateTo).getTime() - dayStart(filter.dateFrom).getTime()) /
           86400000
       ) + 1
     );
@@ -2304,9 +2327,17 @@ export async function parseNaturalExpense(text: string, auth: JWTPayload) {
 
 // Month-end spend projection: run-rate from month-to-date personal spending, plus the
 // known upcoming recurring bills and overall-budget comparison.
-export async function getForecast(auth: JWTPayload) {
+/**
+ * @param today The caller's local date as "YYYY-MM-DD". The server runs in UTC
+ * and cannot know the user's timezone, so on the 1st of a month an IST user
+ * (before 05:30) was shown last month's projection, and a user west of UTC saw
+ * next month's empty one late on the last day. The clients send their own date;
+ * anything missing or malformed falls back to the server's.
+ */
+export async function getForecast(auth: JWTPayload, today?: string) {
   await connectDB();
-  const now = new Date();
+  const local = today && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : null;
+  const now = local ? new Date(`${local}T00:00:00.000Z`) : new Date();
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth();
   const start = new Date(Date.UTC(y, m, 1));
@@ -2597,7 +2628,13 @@ export async function listMoneyNotes(auth: JWTPayload) {
   return [...open, ...settled].map((n) => ({
     ...n,
     _id: n._id.toString(),
-    overdue: !n.settledAt && !!n.dueBy && new Date(n.dueBy).getTime() < now,
+    // A note is overdue only AFTER its due date, not on it. dueBy is stored at
+    // UTC midnight, so comparing it to "now" flagged the note as overdue from
+    // the first moment of the day it was actually due.
+    overdue:
+      !n.settledAt &&
+      !!n.dueBy &&
+      new Date(n.dueBy).getTime() + 86_400_000 <= now,
   }));
 }
 

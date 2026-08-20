@@ -269,7 +269,7 @@ export function Dashboard() {
   }, [authFetch]);
 
   const fetchForecast = useCallback(() => {
-    authFetch("/api/projects/expense-tracker/forecast")
+    authFetch(`/api/projects/expense-tracker/forecast?today=${localISODate()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         // An { error } body is truthy, so the card rendered and formatted

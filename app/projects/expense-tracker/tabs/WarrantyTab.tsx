@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
+import { formatDay } from "../../../../lib/utils";
 
 type WarrantyEntry = {
   _id: string;
@@ -192,7 +193,7 @@ export function WarrantyTab() {
                     {r.description}
                   </p>
                   <p className="text-xs text-zinc-500">
-                    {new Date(r.date).toLocaleDateString()} ·{" "}
+                    {formatDay(r.date)} ·{" "}
                     {r.itemNames.join(", ")}
                   </p>
                 </div>
@@ -356,7 +357,7 @@ function WarrantyCard({
         <div className="flex-1 min-w-0">
           <p className="font-medium text-zinc-100">{w.label}</p>
           <p className="text-xs text-zinc-500">
-            Purchased {new Date(w.purchaseDate).toLocaleDateString()}
+            Purchased {formatDay(w.purchaseDate)}
             {w.notes ? ` · ${w.notes}` : ""}
           </p>
         </div>
@@ -429,7 +430,7 @@ function Badge({
         colors
       )}
     >
-      {label}: {new Date(date).toLocaleDateString()}{countdown}
+      {label}: {formatDay(date)}{countdown}
     </span>
   );
 }

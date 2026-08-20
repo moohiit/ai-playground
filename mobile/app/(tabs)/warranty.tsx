@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
+import { formatDay } from "../../lib/dates";
 import { localISODate } from "../../lib/dates";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney } from "../../lib/currency";
@@ -309,7 +310,7 @@ export default function WarrantyScreen() {
                     {r.description}
                   </Text>
                   <Text className="mt-0.5 text-xs text-zinc-500">
-                    {new Date(r.date).toLocaleDateString()} ·{" "}
+                    {formatDay(r.date)} ·{" "}
                     {r.itemCount} item{r.itemCount !== 1 ? "s" : ""}:{" "}
                     {r.itemNames.slice(0, 3).join(", ")}
                     {r.itemNames.length > 3 ? "…" : ""}
@@ -343,7 +344,7 @@ function WarrantyCard({
         <View className="flex-1">
           <Text className="font-semibold text-zinc-100">{w.label}</Text>
           <Text className="mt-0.5 text-xs text-zinc-500">
-            Bought {new Date(w.purchaseDate).toLocaleDateString()}
+            Bought {formatDay(w.purchaseDate)}
             {w.notes ? ` · ${w.notes}` : ""}
           </Text>
         </View>
@@ -425,7 +426,7 @@ function CountdownBadge({
       className={`rounded-full border ${borderColor} ${bgColor} px-3 py-1`}
     >
       <Text className={`text-xs font-medium ${textColor}`}>
-        {label}: {new Date(date).toLocaleDateString()}{countdown}
+        {label}: {formatDay(date)}{countdown}
       </Text>
     </View>
   );

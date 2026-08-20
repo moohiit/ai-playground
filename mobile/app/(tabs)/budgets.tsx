@@ -37,8 +37,11 @@ const BAR: Record<BudgetItem["status"], string> = {
 };
 
 function thisMonth() {
+  // LOCAL month — with getUTC* an IST user opening this on the 1st before
+  // 05:30 landed on the previous month (and "next" was disabled for the
+  // actual current month). Ported from the web fix.
   const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 function shiftMonth(m: string, delta: number) {
   const [y, mo] = m.split("-").map(Number);

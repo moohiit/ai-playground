@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import { localISODate } from "../../lib/dates";
+import { formatDay, localISODate } from "../../lib/dates";
 import { formatMoney, parseAmount } from "../../lib/currency";
 import {
   AppBackground,
@@ -43,8 +43,7 @@ type TodoItem = {
   dueDate: string | null;
 };
 
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+const shortDate = (iso: string) => formatDay(iso, { day: "numeric", month: "short" });
 
 export default function NotesScreen() {
   const { authFetch } = useAuth();

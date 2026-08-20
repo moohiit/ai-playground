@@ -17,6 +17,7 @@ import { Donut } from "../../components/Donut";
 import { AppBackground, GradientButton, GradientHero, Input, KeyboardAwareScreen } from "../../components/ui";
 import { categoryColor, personalVsGroupSlices } from "../../lib/colors";
 import { formatMoney } from "../../lib/currency";
+import { localISODate } from "../../lib/dates";
 
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
@@ -88,7 +89,7 @@ export default function Dashboard() {
   }, [authFetch]);
 
   const fetchForecast = useCallback(() => {
-    authFetch("/api/projects/expense-tracker/forecast")
+    authFetch(`/api/projects/expense-tracker/forecast?today=${localISODate()}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d && typeof d.projectedTotal === "number") setForecast(d);

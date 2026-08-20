@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
-import { cn } from "../../../../lib/utils";
+import { cn, formatDay } from "../../../../lib/utils";
 
 type MoneyNote = {
   _id: string;
@@ -30,8 +30,7 @@ const todayLocal = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+const shortDate = (iso: string) => formatDay(iso, { day: "numeric", month: "short" });
 
 export function NotesTab() {
   const { authFetch } = useAuth();

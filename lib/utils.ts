@@ -29,3 +29,16 @@ export function relativeTime(iso: string): string {
   if (days < 30) return `${days}d ago`;
   return new Date(then).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
+
+// Stored *days* (an expense's date, a note's dueBy, a warranty's expiry) are
+// written as UTC midnight of the day the user picked. Rendering that instant
+// in local time shows the previous day for anyone west of UTC, so format the
+// UTC parts instead of the local ones.
+export function formatDay(
+  iso: string,
+  opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }
+): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { ...opts, timeZone: "UTC" });
+}
