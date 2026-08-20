@@ -381,7 +381,9 @@ async function renderAllExpenses(
   filters: ReportFilters,
   authFetch: (url: string, opts?: RequestInit) => Promise<Response>
 ): Promise<number> {
-  const params = filterQuery(filters, 200);
+  // 500 to match the mobile exporter — the two used to disagree, so the same
+  // filters produced different documents depending on which client exported.
+  const params = filterQuery(filters, 500);
   const res = await authFetch(`/api/projects/expense-tracker/expenses?${params}`);
   const data = await res.json();
   const expenses = data.expenses ?? [];
@@ -394,6 +396,15 @@ async function renderAllExpenses(
   doc.setFont("helvetica", "bold");
   doc.text("Expenses", 14, y);
   y += 4;
+  // A silent cut looks like the report simply had fewer entries.
+  if (expenses.length >= 500) {
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(120);
+    doc.text("Showing the 500 most recent entries.", 14, y + 3);
+    doc.setTextColor(0);
+    y += 7;
+  }
 
   (doc as any).autoTable({
     startY: y,

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
-import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
+import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "../components/AddExpenseModal";
 import { categoryColor } from "../colors";
@@ -750,7 +750,16 @@ export function Dashboard() {
               className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-medium text-zinc-200 outline-none transition-colors hover:border-zinc-600 focus:border-brand-500/60"
             >
               <option value="">All categories</option>
-              {CATEGORIES.map((c) => (
+              {/* Income rows carry their own categories (Salary, Refund…),
+                  which were absent from this picker — so filtering income by
+                  category was impossible. Offer whichever set the active flow
+                  filter can actually produce. */}
+              {(direction === "income"
+                ? INCOME_CATEGORIES
+                : direction === "all"
+                  ? [...CATEGORIES, ...INCOME_CATEGORIES]
+                  : CATEGORIES
+              ).map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>

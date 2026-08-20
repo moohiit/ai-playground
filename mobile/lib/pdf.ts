@@ -279,6 +279,9 @@ export async function exportFullReportPdf(opts: {
   const allExpensesTable =
     allExpenses.length > 0
       ? `<h2>Expenses (${allExpenses.length})</h2>` +
+        (allExpenses.length >= 500
+          ? `<p class="sub" style="text-align:left">Showing the 500 most recent entries.</p>`
+          : "") +
         table(
           ["Date", "Description", "Category", "Paid By", "Split Among", "Amount", "Type"],
           allExpenses

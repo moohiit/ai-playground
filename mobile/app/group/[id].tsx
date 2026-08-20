@@ -59,6 +59,7 @@ export default function GroupDetailScreen() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [activeTotal, setActiveTotal] = useState(0);
   const [activeMine, setActiveMine] = useState(0);
+  const [expenseTotal, setExpenseTotal] = useState(0);
   // Quick toggle on the Active tab: only rows I carry a share of.
   const [onlyMine, setOnlyMine] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState("INR");
@@ -161,6 +162,9 @@ export default function GroupDetailScreen() {
   // Settle-up rows are listed here but are not spending — the Total beside
   // this count excludes them, so the count must too.
   const spendCount = expenses.filter((e) => !e.isSettlement).length;
+  // The list is fetched with limit=100. In a busier group the count would
+  // otherwise read "100" forever while the total beside it covered everything.
+  const listTruncated = expenseTotal > expenses.length;
 
   const fetchAll = useCallback(async () => {
     try {
@@ -189,6 +193,7 @@ export default function GroupDetailScreen() {
       setBalances(b.balances ?? []);
       setSettlements(b.settlements ?? []);
       setExpenses(e.expenses ?? []);
+      setExpenseTotal(e.total ?? 0);
       setActiveTotal(s.totalAmount ?? 0);
       setActiveMine(s.myShare ?? 0);
       const prefsRes = await authFetch("/api/projects/expense-tracker/prefs");
@@ -702,7 +707,8 @@ export default function GroupDetailScreen() {
               <View className="flex-1 gap-2">
                 <View className="flex-row items-center gap-2">
                   <Text className="text-sm font-semibold text-zinc-100">
-                    Active Expenses ({spendCount})
+                    Active Expenses ({spendCount}
+                    {listTruncated ? ` of ${expenseTotal}` : ""})
                   </Text>
                   {/* Settling was only reachable from the Settle Up panel,
                       which is hidden once every balance is square — leaving a
@@ -838,6 +844,13 @@ export default function GroupDetailScreen() {
                   </View>
                 </View>
               ))
+            )}
+
+            {listTruncated && (
+              <Text className="px-1 text-center text-[12px] text-zinc-500">
+                Showing the {expenses.length} most recent of {expenseTotal}.
+                Open Reports for the full picture.
+              </Text>
             )}
 
             <Pressable

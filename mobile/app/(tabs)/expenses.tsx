@@ -15,6 +15,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import {
   CATEGORIES,
+  INCOME_CATEGORIES,
   type Expense,
   type ExpenseListResponse,
   type Summary,
@@ -427,7 +428,16 @@ export default function ExpensesScreen() {
                   active={category === ""}
                   onPress={() => setCategory("")}
                 />
-                {CATEGORIES.map((c) => (
+                {/* Income rows carry their own categories (Salary, Refund…),
+                    which were absent from this picker — so filtering income by
+                    category was impossible. Offer whichever set the active
+                    flow filter can actually produce. */}
+                {(direction === "income"
+                  ? INCOME_CATEGORIES
+                  : direction === "all"
+                    ? [...CATEGORIES, ...INCOME_CATEGORIES]
+                    : CATEGORIES
+                ).map((c) => (
                   <Chip
                     key={c}
                     label={c}

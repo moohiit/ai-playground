@@ -80,11 +80,25 @@ export async function checkAndNotifyBudget(
       $match: {
         createdBy: userId,
         type: "personal",
-        direction: "expense",
+        // Pre-1A rows have no `direction`; buildExpenseQuery treats those as
+        // expenses, and so must this or they vanish from the budget total.
+        $or: [
+          { direction: "expense" },
+          { direction: { $exists: false } },
+          { direction: null },
+        ],
         date: { $gte: start, $lt: end },
       },
     },
-    { $group: { _id: "$category", total: { $sum: "$amountBase" } } },
+    // $ifNull, matching every other aggregation in the codebase: rows written
+    // before multi-currency have no amountBase, and $sum treats a missing
+    // field as nothing — so those entries counted as zero towards the budget.
+    {
+      $group: {
+        _id: "$category",
+        total: { $sum: { $ifNull: ["$amountBase", "$amount"] } },
+      },
+    },
   ]);
 
   let overallTotal = 0;
@@ -136,7 +150,13 @@ export async function checkAndNotifyAnomaly(
   const recent = await Expense.find({
     createdBy: userId,
     category,
-    direction: "expense",
+    // Same legacy-row treatment as above — excluding them shrank the sample
+    // and suppressed the anomaly alert entirely for users with older data.
+    $or: [
+      { direction: "expense" },
+      { direction: { $exists: false } },
+      { direction: null },
+    ],
     date: { $gte: since },
   })
     .select("amountBase amount")
