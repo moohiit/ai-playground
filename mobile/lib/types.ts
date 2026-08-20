@@ -160,12 +160,17 @@ export type Summary = {
   incomeCount: number;
   netAmount: number;
   myShare: number;
+  // Entries the viewer is part of — the denominator for myAveragePerTransaction.
+  myCount: number;
   paidByMe: number;
   paidByOthers: number;
   personalTotal: number;
   groupTotal: number;
   averagePerDay: number;
   averagePerTransaction: number;
+  // The same averages restricted to the viewer's own share.
+  myAveragePerDay: number;
+  myAveragePerTransaction: number;
   daysCovered: number;
   largest: {
     description: string;

@@ -946,6 +946,7 @@ export async function getSummary(
   let incomeAmount = 0;
   let incomeCount = 0;
   let myShare = 0;
+  let myCount = 0;
   let paidByMe = 0;
   let personalTotal = 0;
   let groupTotal = 0;
@@ -1020,6 +1021,10 @@ export async function getSummary(
       if (myPart) mine = myPart.amount * ratio;
     }
     myShare += mine;
+    // Entries the viewer is actually part of — the denominator for their own
+    // per-transaction average. A group entry split only among other members
+    // costs them nothing and must not dilute it.
+    if (mine > 0) myCount += 1;
 
     if (!largest || baseAmt > largest.amount) {
       largest = {
@@ -1112,6 +1117,11 @@ export async function getSummary(
   const paidByOthers = totalAmount - paidByMe;
   const averagePerTransaction = totalCount > 0 ? totalAmount / totalCount : 0;
   const averagePerDay = days > 0 ? totalAmount / days : 0;
+  // The same two averages restricted to the viewer's own share. Per-day spans
+  // the same window as the overall figure so the two are directly comparable;
+  // per-transaction divides by the entries that include them, not by all of them.
+  const myAveragePerTransaction = myCount > 0 ? myShare / myCount : 0;
+  const myAveragePerDay = days > 0 ? myShare / days : 0;
 
   return {
     totalAmount: round(totalAmount),
@@ -1120,12 +1130,15 @@ export async function getSummary(
     incomeCount,
     netAmount: round(incomeAmount - totalAmount),
     myShare: round(myShare),
+    myCount,
     paidByMe: round(paidByMe),
     paidByOthers: round(paidByOthers),
     personalTotal: round(personalTotal),
     groupTotal: round(groupTotal),
     averagePerDay: round(averagePerDay),
     averagePerTransaction: round(averagePerTransaction),
+    myAveragePerDay: round(myAveragePerDay),
+    myAveragePerTransaction: round(myAveragePerTransaction),
     daysCovered: days,
     largest: largest
       ? { ...largest, amount: round(largest.amount) }

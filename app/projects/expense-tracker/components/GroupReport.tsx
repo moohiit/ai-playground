@@ -51,12 +51,17 @@ type Summary = {
   totalAmount: number;
   totalCount: number;
   myShare: number;
+  // Entries the viewer is part of — the denominator for myAveragePerTransaction.
+  myCount: number;
   paidByMe: number;
   paidByOthers: number;
   personalTotal: number;
   groupTotal: number;
   averagePerDay: number;
   averagePerTransaction: number;
+  // The same averages restricted to the viewer's own share.
+  myAveragePerDay: number;
+  myAveragePerTransaction: number;
   daysCovered: number;
   largest: Largest;
   byCategory: CategoryEntry[];
@@ -433,12 +438,14 @@ export function GroupReport({ groupId, groupName }: Props) {
             <MiniStat
               label="Avg / Day"
               value={fmt(summary.averagePerDay)}
+              mine={fmt(summary.myAveragePerDay ?? 0)}
               hint={`${summary.daysCovered} days covered`}
             />
             <MiniStat
               label="Avg / Transaction"
               value={fmt(summary.averagePerTransaction)}
-              hint="Across all entries"
+              mine={fmt(summary.myAveragePerTransaction ?? 0)}
+              hint={`${summary.totalCount} entries · ${summary.myCount ?? 0} include me`}
             />
             <MiniStat
               label="Largest Single Expense"
@@ -818,10 +825,13 @@ function HeroStat({
 function MiniStat({
   label,
   value,
+  mine,
   hint,
 }: {
   label: string;
   value: string;
+  // The same figure restricted to the viewer's own share, shown beneath.
+  mine?: string;
   hint?: string;
 }) {
   return (
@@ -832,6 +842,15 @@ function MiniStat({
       <div className="mt-1 font-mono text-base font-semibold tabular-nums text-zinc-100">
         {value}
       </div>
+      {mine && (
+        <div className="mt-1 flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">
+            {mine}
+          </span>
+          <span className="text-[11px] text-zinc-500">mine</span>
+        </div>
+      )}
       {hint && (
         <div className="mt-1 line-clamp-1 text-[11px] text-zinc-500">{hint}</div>
       )}

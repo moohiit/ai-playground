@@ -311,7 +311,7 @@ export async function exportFullReportPdf(opts: {
       <h2>Summary</h2>
       <p><b>Total Expenses:</b> ${rs(summary.totalAmount)} &nbsp;·&nbsp; <b>Entries:</b> ${summary.totalCount}</p>
       <p><b>My Share:</b> ${rs(summary.myShare)} &nbsp;·&nbsp; <b>Paid by Me:</b> ${rs(summary.paidByMe)} &nbsp;·&nbsp; <b>Paid by Others:</b> ${rs(summary.paidByOthers)}</p>
-      <p><b>Avg/Day:</b> ${rs(summary.averagePerDay)} &nbsp;·&nbsp; <b>Avg/Txn:</b> ${rs(summary.averagePerTransaction)} &nbsp;·&nbsp; <b>Days:</b> ${summary.daysCovered}</p>
+      <p><b>Avg/Day:</b> ${rs(summary.averagePerDay)} (mine ${rs(summary.myAveragePerDay ?? 0)}) &nbsp;·&nbsp; <b>Avg/Txn:</b> ${rs(summary.averagePerTransaction)} (mine ${rs(summary.myAveragePerTransaction ?? 0)}) &nbsp;·&nbsp; <b>Days:</b> ${summary.daysCovered}</p>
       ${largest}
     </div>
     ${topGroups}
@@ -423,7 +423,7 @@ export async function exportGroupReportPdf(opts: {
       <h2>Summary</h2>
       <p><b>Total Expenses:</b> ${rs(summary.totalAmount)} &nbsp;·&nbsp; <b>Entries:</b> ${summary.totalCount}</p>
       <p><b>My Share:</b> ${rs(summary.myShare)} &nbsp;·&nbsp; <b>Paid by Me:</b> ${rs(summary.paidByMe)} &nbsp;·&nbsp; <b>Paid by Others:</b> ${rs(summary.paidByOthers)}</p>
-      <p><b>Avg/Day:</b> ${rs(summary.averagePerDay)} &nbsp;·&nbsp; <b>Avg/Txn:</b> ${rs(summary.averagePerTransaction)} &nbsp;·&nbsp; <b>Days:</b> ${summary.daysCovered}</p>
+      <p><b>Avg/Day:</b> ${rs(summary.averagePerDay)} (mine ${rs(summary.myAveragePerDay ?? 0)}) &nbsp;·&nbsp; <b>Avg/Txn:</b> ${rs(summary.averagePerTransaction)} (mine ${rs(summary.myAveragePerTransaction ?? 0)}) &nbsp;·&nbsp; <b>Days:</b> ${summary.daysCovered}</p>
     </div>
     ${topPayers}
     ${categories}

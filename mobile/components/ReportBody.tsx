@@ -52,8 +52,18 @@ export function ReportBody({
         <Stat label="My share" value={fmt(summary.myShare)} />
         <Stat label="Paid by me" value={fmt(summary.paidByMe)} />
         <Stat label="Paid by others" value={fmt(summary.paidByOthers)} />
-        <Stat label="Avg / day" value={fmt(summary.averagePerDay)} hint={`${summary.daysCovered} days`} />
-        <Stat label="Avg / txn" value={fmt(summary.averagePerTransaction)} />
+        <Stat
+          label="Avg / day"
+          value={fmt(summary.averagePerDay)}
+          mine={fmt(summary.myAveragePerDay ?? 0)}
+          hint={`${summary.daysCovered} days`}
+        />
+        <Stat
+          label="Avg / txn"
+          value={fmt(summary.averagePerTransaction)}
+          mine={fmt(summary.myAveragePerTransaction ?? 0)}
+          hint={`${summary.myCount ?? 0} of ${summary.totalCount} include me`}
+        />
         {(summary.incomeAmount ?? 0) > 0 && (
           <>
             <Stat label="Income" value={fmt(summary.incomeAmount)} hint={`${summary.incomeCount ?? 0} entries`} accent="emerald" />
@@ -288,11 +298,14 @@ function HBar({ pct, colorHex }: { pct: number; colorHex?: string }) {
 function Stat({
   label,
   value,
+  mine,
   hint,
   accent,
 }: {
   label: string;
   value: string;
+  // The same figure restricted to the viewer's own share, shown beneath.
+  mine?: string;
   hint?: string;
   accent?: "emerald";
 }) {
@@ -309,6 +322,13 @@ function Stat({
       <Text className={`mt-1 text-xl font-bold ${accent === "emerald" ? "text-emerald-400" : "text-zinc-50"}`}>
         {value}
       </Text>
+      {mine !== undefined && (
+        <View className="mt-1 flex-row items-center gap-1.5">
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#34d399" }} />
+          <Text className="text-[13px] font-semibold text-emerald-300">{mine}</Text>
+          <Text className="text-[11px] text-zinc-500">mine</Text>
+        </View>
+      )}
       {hint && <Text className="mt-0.5 text-[12px] text-zinc-500">{hint}</Text>}
     </View>
   );

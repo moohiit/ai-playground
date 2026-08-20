@@ -34,11 +34,16 @@ type Summary = {
   totalAmount: number;
   totalCount: number;
   myShare?: number;
+  // Entries the viewer is part of — the denominator for myAveragePerTransaction.
+  myCount?: number;
   paidByMe?: number;
   paidByOthers?: number;
   personalTotal?: number;
   groupTotal?: number;
   averagePerDay?: number;
+  // The same averages restricted to the viewer's own share.
+  myAveragePerDay?: number;
+  myAveragePerTransaction?: number;
   averagePerTransaction?: number;
   daysCovered?: number;
   largest?: {
@@ -188,7 +193,7 @@ export function ExportPdfButton({ summary, groupId, groupName, base, filters }: 
       }
       if (typeof summary.averagePerDay === "number") {
         doc.text(
-          `Avg/Day: ${rs(summary.averagePerDay)}  ·  Avg/Txn: ${rs((summary.averagePerTransaction ?? 0))}  ·  Days: ${summary.daysCovered ?? 0}`,
+          `Avg/Day: ${rs(summary.averagePerDay)} (mine ${rs(summary.myAveragePerDay ?? 0)})  ·  Avg/Txn: ${rs(summary.averagePerTransaction ?? 0)} (mine ${rs(summary.myAveragePerTransaction ?? 0)})  ·  Days: ${summary.daysCovered ?? 0}`,
           14,
           y
         );

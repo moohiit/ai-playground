@@ -475,7 +475,11 @@ export default function Dashboard() {
               />
               <Stat label="This month" value={fmt(thisMonth)} />
               <Stat label="Paid by me" value={fmt(cur!.paidByMe)} />
-              <Stat label="Avg / day" value={fmt(cur!.averagePerDay)} />
+              <Stat
+                label="Avg / day"
+                value={fmt(cur!.averagePerDay)}
+                mine={fmt(cur!.myAveragePerDay ?? 0)}
+              />
             </Animated.View>
 
             {/* Active vs Total breakdown */}
@@ -632,7 +636,16 @@ export default function Dashboard() {
 
 const STAT_ACCENTS = ["#818cf8", "#34d399", "#fbbf24", "#f472b6"];
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  mine,
+}: {
+  label: string;
+  value: string;
+  // The same figure restricted to the viewer's own share, shown beneath.
+  mine?: string;
+}) {
   // Deterministic accent per label so tiles get varied color without randomness.
   const accent =
     STAT_ACCENTS[
@@ -646,6 +659,15 @@ function Stat({ label, value }: { label: string; value: string }) {
         {label}
       </Text>
       <Text className="mt-1 text-lg font-bold text-zinc-50">{value}</Text>
+      {mine !== undefined && (
+        <View className="mt-1 flex-row items-center gap-1.5">
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: MINE_COLOR }} />
+          <Text className="text-[13px] font-semibold" style={{ color: MINE_COLOR }}>
+            {mine}
+          </Text>
+          <Text className="text-[11px] text-zinc-500">mine</Text>
+        </View>
+      )}
     </View>
   );
 }
