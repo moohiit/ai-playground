@@ -30,11 +30,17 @@ export function AccountsTab() {
   const [base, setBase] = useState("INR");
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  // Set while the form is editing an existing account rather than adding one.
+  const [editing, setEditing] = useState<Account | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
+  // The list route drops archived accounts unless asked for them by name.
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await authFetch("/api/projects/expense-tracker/accounts");
+      const res = await authFetch(
+        `/api/projects/expense-tracker/accounts${showArchived ? "?archived=true" : ""}`
+      );
       const data = await res.json().catch(() => ({}));
       setAccounts(data.accounts ?? []);
     } catch {
@@ -42,7 +48,7 @@ export function AccountsTab() {
     } finally {
       setLoading(false);
     }
-  }, [authFetch]);
+  }, [authFetch, showArchived]);
 
   useEffect(() => {
     load();
@@ -55,7 +61,20 @@ export function AccountsTab() {
       .catch(() => {});
   }, [authFetch]);
 
-  const netWorth = accounts.reduce((s, a) => s + a.balance, 0);
+  // Archived accounts are ones the user stopped using: they stay out of net
+  // worth and out of transfers even while the list is showing them.
+  const active = accounts.filter((a) => !a.archived);
+  const netWorth = active.reduce((s, a) => s + a.balance, 0);
+
+  function closeForm() {
+    setShowAdd(false);
+    setEditing(null);
+  }
+
+  function openEdit(a: Account) {
+    setEditing(a);
+    setShowAdd(true);
+  }
 
   async function handleDelete(id: string, name: string) {
     if (
@@ -76,11 +95,19 @@ export function AccountsTab() {
         <StatCard
           label="Net worth"
           value={formatMoney(netWorth, base)}
-          hint={`${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`}
+          hint={`${active.length} active ${active.length === 1 ? "account" : "accounts"}`}
           accent={netWorth < 0 ? "from-red-500/40" : "from-emerald-500/40"}
         />
         <button
-          onClick={() => setShowAdd((v) => !v)}
+          onClick={() => {
+            // Always open a blank form — reusing a half-finished edit here
+            // would silently PATCH the wrong account.
+            if (showAdd) closeForm();
+            else {
+              setEditing(null);
+              setShowAdd(true);
+            }
+          }}
           className="flex items-center justify-between rounded-xl border border-brand-500/40 bg-gradient-to-br from-brand-600/30 to-fuchsia-500/20 p-5 text-left transition-all hover:-translate-y-0.5 hover:border-brand-500"
         >
           <div>
@@ -90,7 +117,7 @@ export function AccountsTab() {
         </button>
         <button
           onClick={() => setShowTransfer((v) => !v)}
-          disabled={accounts.length < 2}
+          disabled={active.length < 2}
           className="flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-900/40 p-5 text-left transition-all hover:-translate-y-0.5 hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <div>
@@ -101,18 +128,23 @@ export function AccountsTab() {
       </div>
 
       {showAdd && (
-        <AddAccountForm
-          onClose={() => setShowAdd(false)}
+        // Remount on a different record so the fields re-initialise — clicking
+        // Edit on a second account while the form is open would otherwise keep
+        // the first one's values and save them onto the second.
+        <AccountForm
+          key={editing?._id ?? "new"}
+          editing={editing}
+          onClose={closeForm}
           onSaved={() => {
-            setShowAdd(false);
+            closeForm();
             load();
           }}
         />
       )}
 
-      {showTransfer && accounts.length >= 2 && (
+      {showTransfer && active.length >= 2 && (
         <TransferForm
-          accounts={accounts}
+          accounts={active}
           base={base}
           onClose={() => setShowTransfer(false)}
           onSaved={() => {
@@ -121,6 +153,18 @@ export function AccountsTab() {
           }}
         />
       )}
+
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500">
+          {showArchived ? "All accounts" : "Active accounts"}
+        </div>
+        <button
+          onClick={() => setShowArchived((v) => !v)}
+          className="text-xs text-zinc-500 transition-colors hover:text-zinc-200"
+        >
+          {showArchived ? "Hide archived" : "Show archived"}
+        </button>
+      </div>
 
       {loading ? (
         <div className="grid gap-2">
@@ -139,24 +183,42 @@ export function AccountsTab() {
             return (
               <div
                 key={a._id}
-                className="group relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5"
+                className={cn(
+                  "group relative overflow-hidden rounded-xl border bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5",
+                  a.archived ? "border-zinc-800/50 opacity-60" : "border-zinc-800/80"
+                )}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">{meta.icon}</span>
                     <div>
-                      <div className="font-semibold text-zinc-100">{a.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-zinc-100">{a.name}</span>
+                        {a.archived && (
+                          <span className="rounded-full border border-zinc-700 bg-zinc-900/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                            archived
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[11px] uppercase tracking-wider text-zinc-500">
                         {meta.label}
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(a._id, a.name)}
-                    className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => openEdit(a)}
+                      className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-brand-400 group-hover:opacity-100"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(a._id, a.name)}
+                      className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
                 <div
                   className={cn(
@@ -178,17 +240,20 @@ export function AccountsTab() {
   );
 }
 
-function AddAccountForm({
+function AccountForm({
+  editing,
   onClose,
   onSaved,
 }: {
+  editing: Account | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { authFetch } = useAuth();
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<Account["kind"]>("bank");
-  const [opening, setOpening] = useState("0");
+  const [name, setName] = useState(editing?.name ?? "");
+  const [kind, setKind] = useState<Account["kind"]>(editing?.kind ?? "bank");
+  const [opening, setOpening] = useState(editing ? String(editing.openingBalance) : "0");
+  const [archived, setArchived] = useState(editing?.archived ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,28 +262,36 @@ function AddAccountForm({
     setSaving(true);
     setError(null);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          kind,
-          openingBalance: parseFloat(opening) || 0,
-        }),
-      });
+      const openingBalance = parseFloat(opening) || 0;
+      const res = await authFetch(
+        editing
+          ? `/api/projects/expense-tracker/accounts/${editing._id}`
+          : "/api/projects/expense-tracker/accounts",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            // Both payload schemas are strict, and only the update one takes
+            // `archived` — a freshly created account is always active.
+            editing
+              ? { name: name.trim(), kind, openingBalance, archived }
+              : { name: name.trim(), kind, openingBalance }
+          ),
+        }
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        throw new Error(d.error ?? "Failed to add account");
+        throw new Error(d.error ?? "Failed to save account");
       }
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add account");
+      setError(e instanceof Error ? e.message : "Failed to save account");
       setSaving(false);
     }
   }
 
   return (
-    <FormCard title="Add account" onClose={onClose}>
+    <FormCard title={editing ? `Edit ${editing.name}` : "Add account"} onClose={onClose}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Labeled label="Name">
           <input
@@ -236,6 +309,9 @@ function AddAccountForm({
             onChange={(e) => setOpening(e.target.value)}
             className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 focus:border-brand-500 focus:outline-none"
           />
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Use a minus sign for money owed, e.g. -4500 on a credit card.
+          </p>
         </Labeled>
       </div>
       <Labeled label="Type">
@@ -257,8 +333,51 @@ function AddAccountForm({
           ))}
         </div>
       </Labeled>
+      {editing && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Labeled label="Status">
+            <div className="flex gap-2">
+              {(
+                [
+                  [false, "Active"],
+                  [true, "Archived"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setArchived(value)}
+                  className={cn(
+                    "flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
+                    archived === value
+                      ? "border-brand-500/60 bg-brand-500/15 text-brand-400"
+                      : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Archiving keeps the account's history but drops it out of net worth and transfers.
+            </p>
+          </Labeled>
+          {/* Currency is fixed once the account exists — the update endpoint
+              won't take it — but it decides how the balances read. */}
+          <Labeled label="Currency">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-400">
+              {editing.currency}
+            </div>
+          </Labeled>
+        </div>
+      )}
       {error && <p className="text-xs text-red-400">{error}</p>}
-      <FormActions saving={saving} onClose={onClose} onSubmit={submit} label="Add account" />
+      <FormActions
+        saving={saving}
+        onClose={onClose}
+        onSubmit={submit}
+        label={editing ? "Save account" : "Add account"}
+      />
     </FormCard>
   );
 }

@@ -27,6 +27,8 @@ export function GoalsTab() {
   const [base, setBase] = useState("INR");
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  // Set while the form is editing an existing goal rather than adding one.
+  const [editing, setEditing] = useState<Goal | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -103,7 +105,7 @@ export function GoalsTab() {
           <p className="mt-0.5 text-sm text-zinc-500">Set a target, track progress, and see what to save each month.</p>
         </div>
         <button
-          onClick={() => setShowAdd((v) => !v)}
+          onClick={() => { setEditing(null); setShowAdd((v) => !v); }}
           className="rounded-lg border border-brand-500/40 bg-brand-500/15 px-4 py-2 text-sm font-semibold text-brand-300 hover:bg-brand-500/25"
         >
           + New goal
@@ -111,7 +113,15 @@ export function GoalsTab() {
       </div>
 
       {showAdd && (
-        <AddGoalForm accounts={accounts} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+        // Keyed so picking Edit while the form is already open reloads the
+        // prefill instead of keeping the previous goal's values.
+        <GoalForm
+          key={editing?._id ?? "new"}
+          editing={editing}
+          accounts={accounts}
+          onClose={() => { setShowAdd(false); setEditing(null); }}
+          onSaved={() => { setShowAdd(false); setEditing(null); load(); }}
+        />
       )}
 
       {loading ? (
@@ -127,7 +137,14 @@ export function GoalsTab() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {goals.map((g) => (
-            <GoalCard key={g._id} goal={g} base={base} onContribute={contribute} onDelete={() => remove(g._id)} />
+            <GoalCard
+              key={g._id}
+              goal={g}
+              base={base}
+              onContribute={contribute}
+              onEdit={() => { setEditing(g); setShowAdd(true); }}
+              onDelete={() => remove(g._id)}
+            />
           ))}
         </div>
       )}
@@ -139,11 +156,13 @@ function GoalCard({
   goal: g,
   base,
   onContribute,
+  onEdit,
   onDelete,
 }: {
   goal: Goal;
   base: string;
   onContribute: (g: Goal, amount: number) => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const [amount, setAmount] = useState("");
@@ -173,9 +192,14 @@ function GoalCard({
             </div>
           )}
         </div>
-        <button onClick={onDelete} className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100">
-          Delete
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={onEdit} className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-brand-400 group-hover:opacity-100">
+            Edit
+          </button>
+          <button onClick={onDelete} className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100">
+            Delete
+          </button>
+        </div>
       </div>
 
       <div className="mt-3 font-mono text-lg font-bold tabular-nums text-zinc-100">
@@ -213,21 +237,26 @@ function GoalCard({
   );
 }
 
-function AddGoalForm({
+function GoalForm({
+  editing,
   accounts,
   onClose,
   onSaved,
 }: {
+  editing: Goal | null;
   accounts: AccountLite[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { authFetch } = useAuth();
-  const [name, setName] = useState("");
-  const [target, setTarget] = useState("");
-  const [saved, setSaved] = useState("0");
-  const [deadline, setDeadline] = useState("");
-  const [linkedAccountId, setLinkedAccountId] = useState("");
+  const [name, setName] = useState(editing?.name ?? "");
+  const [target, setTarget] = useState(editing ? String(editing.target) : "");
+  // A linked goal's progress is its account balance, never a typed number.
+  const [saved, setSaved] = useState(
+    editing ? (editing.linkedAccountId ? "" : String(editing.saved)) : "0"
+  );
+  const [deadline, setDeadline] = useState(editing?.deadline ?? "");
+  const [linkedAccountId, setLinkedAccountId] = useState(editing?.linkedAccountId ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -238,35 +267,51 @@ function AddGoalForm({
     setSaving(true);
     setError(null);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/goals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          target: t,
-          savedAmount: linkedAccountId ? 0 : parseFloat(saved) || 0,
-          deadline: deadline || undefined,
-          linkedAccountId: linkedAccountId || undefined,
-        }),
-      });
+      // updateGoalSchema has no linkedAccountId — how a goal is funded is fixed
+      // once it exists, so an edit sends only the fields PATCH accepts.
+      const body = editing
+        ? {
+            name: name.trim(),
+            target: t,
+            deadline: deadline || null,
+            ...(editing.linkedAccountId ? {} : { savedAmount: parseFloat(saved) || 0 }),
+          }
+        : {
+            name: name.trim(),
+            target: t,
+            savedAmount: linkedAccountId ? 0 : parseFloat(saved) || 0,
+            deadline: deadline || undefined,
+            linkedAccountId: linkedAccountId || undefined,
+          };
+      const res = await authFetch(
+        editing
+          ? `/api/projects/expense-tracker/goals/${editing._id}`
+          : "/api/projects/expense-tracker/goals",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        throw new Error(d.error ?? "Failed to add goal");
+        throw new Error(d.error ?? "Failed to save goal");
       }
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add goal");
+      setError(e instanceof Error ? e.message : "Failed to save goal");
       setSaving(false);
     }
   }
 
   const input = "w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-brand-500 focus:outline-none";
+  const linkedName = accounts.find((a) => a._id === linkedAccountId)?.name;
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/40 to-transparent" />
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-zinc-100">New savings goal</h3>
+        <h3 className="text-sm font-semibold text-zinc-100">{editing ? "Edit goal" : "New savings goal"}</h3>
         <button onClick={onClose} className="text-xs text-zinc-500 hover:text-zinc-200">Close</button>
       </div>
       <div className="flex flex-col gap-3">
@@ -275,23 +320,37 @@ function AddGoalForm({
           <input type="number" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="Target amount" className={input} />
           <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={input} />
         </div>
-        <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">Track via account (optional)</label>
-          <select value={linkedAccountId} onChange={(e) => setLinkedAccountId(e.target.value)} className={input}>
-            <option value="">Manual (I'll add contributions)</option>
-            {accounts.map((a) => (
-              <option key={a._id} value={a._id}>{a.name}</option>
-            ))}
-          </select>
-        </div>
+        {editing ? (
+          linkedAccountId ? (
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400">
+              Tracks <span className="text-zinc-200">{linkedName ?? "a linked account"}</span> — fixed after creation.
+            </div>
+          ) : null
+        ) : (
+          <div>
+            <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">Track via account (optional)</label>
+            <select value={linkedAccountId} onChange={(e) => setLinkedAccountId(e.target.value)} className={input}>
+              <option value="">Manual (I'll add contributions)</option>
+              {accounts.map((a) => (
+                <option key={a._id} value={a._id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {!linkedAccountId && (
-          <input type="number" value={saved} onChange={(e) => setSaved(e.target.value)} placeholder="Already saved (optional)" className={input} />
+          <input
+            type="number"
+            value={saved}
+            onChange={(e) => setSaved(e.target.value)}
+            placeholder={editing ? "Saved so far" : "Already saved (optional)"}
+            className={input}
+          />
         )}
         {error && <p className="text-xs text-red-400">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="rounded-lg border border-zinc-800 px-4 py-2 text-sm text-zinc-400 hover:border-zinc-700">Cancel</button>
           <button onClick={submit} disabled={saving} className="rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            {saving ? "Saving…" : "Add goal"}
+            {saving ? "Saving…" : editing ? "Save goal" : "Add goal"}
           </button>
         </div>
       </div>

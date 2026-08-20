@@ -20,11 +20,19 @@ import { localISODate } from "../../lib/dates";
 import {
   CATEGORIES,
   INCOME_CATEGORIES,
+  type Account,
   type Direction,
   type RecurringRule,
 } from "../../lib/types";
 import { SUPPORTED_CURRENCIES, formatMoney, parseAmount } from "../../lib/currency";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
+
+// The shared RecurringRule type has no template.accountId, but the API returns
+// one and every posted occurrence moves that account's balance — edit mode has
+// to be able to name it.
+type Rule = RecurringRule & {
+  template: RecurringRule["template"] & { accountId: string | null };
+};
 
 const fmtDate = (s: string) =>
   new Date(s).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
@@ -32,18 +40,26 @@ const fmtDate = (s: string) =>
 export default function RecurringScreen() {
   const { authFetch } = useAuth();
   const router = useRouter();
-  const [rules, setRules] = useState<RecurringRule[]>([]);
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  // Set while the sheet is editing an existing rule rather than adding one.
+  const [editing, setEditing] = useState<Rule | null>(null);
   // Rule id with an in-flight post/toggle — blocks double-taps that would
   // post the same occurrence twice.
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await authFetch("/api/projects/expense-tracker/recurring");
-      const data = await res.json().catch(() => ({}));
-      setRules(data.recurring ?? []);
+      const [rRes, aRes] = await Promise.all([
+        authFetch("/api/projects/expense-tracker/recurring"),
+        authFetch("/api/projects/expense-tracker/accounts"),
+      ]);
+      const rData = await rRes.json().catch(() => ({}));
+      const aData = await aRes.json().catch(() => ({}));
+      setRules(rData.recurring ?? []);
+      setAccounts(aData.accounts ?? []);
     } catch {
       /* keep */
     }
@@ -73,7 +89,7 @@ export default function RecurringScreen() {
       setBusyId(null);
     }
   }
-  async function toggle(r: RecurringRule) {
+  async function toggle(r: Rule) {
     if (busyId) return;
     setBusyId(r._id);
     try {
@@ -93,7 +109,7 @@ export default function RecurringScreen() {
       setBusyId(null);
     }
   }
-  function confirmDelete(r: RecurringRule) {
+  function confirmDelete(r: Rule) {
     Alert.alert("Delete rule", "Already-posted transactions stay.", [
       { text: "Cancel", style: "cancel" },
       {
@@ -119,7 +135,7 @@ export default function RecurringScreen() {
           <Pressable onPress={() => router.back()} hitSlop={8}><Text className="text-2xl text-zinc-400">‹</Text></Pressable>
           <Text className="text-xl font-bold text-zinc-50">Recurring</Text>
         </View>
-        <Pressable onPress={() => setShowAdd(true)} className="rounded-lg bg-brand-600 px-3 py-1.5">
+        <Pressable onPress={() => { setEditing(null); setShowAdd(true); }} className="rounded-lg bg-brand-600 px-3 py-1.5">
           <Text className="text-xs font-semibold text-white">+ Add</Text>
         </Pressable>
       </View>
@@ -137,6 +153,7 @@ export default function RecurringScreen() {
           rules.map((r) => (
             <Pressable
               key={r._id}
+              onPress={() => { setEditing(r); setShowAdd(true); }}
               onLongPress={() => confirmDelete(r)}
               className={`rounded-2xl border p-4 ${!r.active ? "border-white/5 opacity-60" : r.due ? "border-amber-500/40 bg-amber-500/[0.05]" : "border-white/10 bg-white/[0.04]"}`}
             >
@@ -150,6 +167,7 @@ export default function RecurringScreen() {
                   <Text className="mt-0.5 text-xs text-zinc-500">
                     {r.template.category} · {r.cadence} · {r.active ? `next ${fmtDate(r.nextRunAt)}` : "paused"}
                     {r.due && r.active ? " · due" : ""}
+                    {r.endDate ? ` · ends ${fmtDate(r.endDate)}` : ""}
                   </Text>
                 </View>
                 <Text className={`text-base font-semibold ${r.template.direction === "income" ? "text-emerald-400" : "text-zinc-100"}`}>
@@ -170,15 +188,24 @@ export default function RecurringScreen() {
             </Pressable>
           ))
         )}
-        {rules.length > 0 && <Text className="px-1 text-center text-[11px] text-zinc-600">Long-press a rule to delete it.</Text>}
+        {rules.length > 0 && <Text className="px-1 text-center text-[11px] text-zinc-600">Tap a rule to edit it · long-press to delete.</Text>}
       </ScrollView>
 
-      <AddRuleSheet visible={showAdd} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+      <RuleSheet
+        visible={showAdd}
+        editing={editing}
+        accounts={accounts}
+        onClose={() => { setShowAdd(false); setEditing(null); }}
+        onSaved={() => { setShowAdd(false); setEditing(null); load(); }}
+      />
     </SafeAreaView>
   );
 }
 
-function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose: () => void; onSaved: () => void }) {
+function RuleSheet({ visible, editing, accounts, onClose, onSaved }: {
+  visible: boolean; editing: Rule | null; accounts: Account[];
+  onClose: () => void; onSaved: () => void;
+}) {
   const { authFetch } = useAuth();
   const [direction, setDirection] = useState<Direction>("expense");
   const [amount, setAmount] = useState("");
@@ -187,21 +214,50 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
   const [description, setDescription] = useState("");
   const [cadence, setCadence] = useState<"weekly" | "monthly" | "yearly">("monthly");
   const [startDate, setStartDate] = useState(localISODate());
-  const [showDate, setShowDate] = useState(false);
+  const [endDate, setEndDate] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [picking, setPicking] = useState<"start" | "end" | null>(null);
   const [autoPost, setAutoPost] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const categoryList = direction === "income" ? INCOME_CATEGORIES : CATEGORIES;
+  // An archived account is missing from the picker list but the rule still
+  // posts to it, so fall back to a neutral label instead of "no account".
+  const editingAccountId = editing?.template.accountId ?? null;
+  const editingAccount = editingAccountId
+    ? accounts.find((a) => a._id === editingAccountId)?.name ?? "an account"
+    : null;
 
   useEffect(() => {
-    if (visible) {
-      setStartDate(localISODate());
-      authFetch("/api/projects/expense-tracker/prefs")
-        .then((r) => r.json())
-        .then((d) => d.prefs?.baseCurrency && setCurrency(d.prefs.baseCurrency))
-        .catch(() => {});
+    if (!visible) return;
+    setPicking(null);
+    if (editing) {
+      setDirection(editing.template.direction);
+      setAmount(String(editing.template.amount));
+      setCurrency(editing.template.currency);
+      setCategory(editing.template.category);
+      setDescription(editing.template.description);
+      setCadence(editing.cadence);
+      setStartDate(editing.nextRunAt.slice(0, 10));
+      setEndDate(editing.endDate ? editing.endDate.slice(0, 10) : "");
+      setAutoPost(editing.autoPost);
+      setAccountId(editing.template.accountId ?? "");
+      return;
     }
-  }, [visible, authFetch]);
+    setDirection("expense");
+    setAmount("");
+    setCategory(CATEGORIES[0]);
+    setDescription("");
+    setCadence("monthly");
+    setStartDate(localISODate());
+    setEndDate("");
+    setAutoPost(false);
+    setAccountId("");
+    authFetch("/api/projects/expense-tracker/prefs")
+      .then((r) => r.json())
+      .then((d) => d.prefs?.baseCurrency && setCurrency(d.prefs.baseCurrency))
+      .catch(() => {});
+  }, [visible, editing, authFetch]);
 
   function changeDirection(d: Direction) {
     setDirection(d);
@@ -213,24 +269,47 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
     const amt = parseAmount(amount);
     if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
     if (!description.trim()) return Alert.alert("Enter a description");
+    // An end date before the first/next run leaves the rule with no occurrences
+    // at all — the engine just retires it on the next sweep.
+    if (endDate && endDate < startDate) {
+      return Alert.alert(editing ? "End date is before the next run" : "End date is before the start date");
+    }
     setSaving(true);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/recurring", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: amt, currency, category, description: description.trim(),
-          direction, cadence, startDate, autoPost,
-        }),
-      });
+      const res = await authFetch(
+        editing
+          ? `/api/projects/expense-tracker/recurring/${editing._id}`
+          : "/api/projects/expense-tracker/recurring",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          // Direction, currency, start date and account are fixed once a rule
+          // exists — the update endpoint accepts none of them.
+          body: JSON.stringify(
+            editing
+              ? {
+                  amount: amt, category, description: description.trim(),
+                  cadence, autoPost, endDate: endDate || null,
+                }
+              : {
+                  amount: amt, currency, category, description: description.trim(),
+                  direction, cadence, startDate, autoPost,
+                  accountId: accountId || null,
+                  endDate: endDate || null,
+                }
+          ),
+        }
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Failed");
       }
-      setAmount(""); setDescription("");
       onSaved();
     } catch (e) {
-      Alert.alert("Couldn't add rule", e instanceof Error ? e.message : "");
+      Alert.alert(
+        editing ? "Couldn't update rule" : "Couldn't add rule",
+        e instanceof Error ? e.message : ""
+      );
     } finally {
       setSaving(false);
     }
@@ -246,17 +325,31 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
       <Pressable className="flex-1 justify-end bg-black/60" onPress={onClose}>
         <Pressable className="rounded-t-3xl border-t border-white/10 bg-[#0a0b14] p-5" onPress={(e) => e.stopPropagation()}>
           <View className="mb-4 flex-row items-center justify-between">
-            <Text className="text-base font-semibold text-zinc-100">Add recurring rule</Text>
+            <Text className="text-base font-semibold text-zinc-100">
+              {editing ? "Edit recurring rule" : "Add recurring rule"}
+            </Text>
             <Pressable onPress={onClose} hitSlop={8}><Text className="text-sm text-zinc-500">Close</Text></Pressable>
           </View>
           <ScrollView contentContainerStyle={{ gap: 12 }} keyboardShouldPersistTaps="handled">
-            <View className="flex-row gap-2">
-              {(["expense", "income"] as const).map((d) => (
-                <Pressable key={d} onPress={() => changeDirection(d)} className={`flex-1 items-center rounded-xl border py-2.5 ${direction === d ? "border-brand-500/60 bg-brand-500/15" : "border-white/10 bg-zinc-900/40"}`}>
-                  <Text className={`text-sm font-medium capitalize ${direction === d ? "text-brand-400" : "text-zinc-400"}`}>{d}</Text>
-                </Pressable>
-              ))}
-            </View>
+            {editing ? (
+              <View className="gap-1 rounded-xl border border-white/10 bg-zinc-900/40 px-4 py-3">
+                <Text className="text-xs text-zinc-300">
+                  <Text className="capitalize">{editing.template.direction}</Text> · {editing.template.currency} · next {fmtDate(editing.nextRunAt)}
+                </Text>
+                <Text className="text-xs text-zinc-400">
+                  Posts to {editingAccount ?? "no account"}
+                </Text>
+                <Text className="text-[11px] text-zinc-600">Delete and re-add the rule to change these.</Text>
+              </View>
+            ) : (
+              <View className="flex-row gap-2">
+                {(["expense", "income"] as const).map((d) => (
+                  <Pressable key={d} onPress={() => changeDirection(d)} className={`flex-1 items-center rounded-xl border py-2.5 ${direction === d ? "border-brand-500/60 bg-brand-500/15" : "border-white/10 bg-zinc-900/40"}`}>
+                    <Text className={`text-sm font-medium capitalize ${direction === d ? "text-brand-400" : "text-zinc-400"}`}>{d}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
 
             <View className="gap-1.5">
               <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Amount</Text>
@@ -264,16 +357,18 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
                 className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-lg text-zinc-100" />
             </View>
 
-            <View className="gap-1.5">
-              <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Currency</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: "center" }}>
-                {SUPPORTED_CURRENCIES.map((c) => (
-                  <Pressable key={c} onPress={() => setCurrency(c)} className={chip(currency === c)}>
-                    <Text className={chipTxt(currency === c)}>{c}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
+            {!editing && (
+              <View className="gap-1.5">
+                <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Currency</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: "center" }}>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <Pressable key={c} onPress={() => setCurrency(c)} className={chip(currency === c)}>
+                      <Text className={chipTxt(currency === c)}>{c}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
             <View className="gap-1.5">
               <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Description</Text>
@@ -292,6 +387,23 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
               </ScrollView>
             </View>
 
+            {!editing && accounts.length > 0 && (
+              <View className="gap-1.5">
+                <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Account</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  <Pressable onPress={() => setAccountId("")} className={chip(accountId === "")}>
+                    <Text className={chipTxt(accountId === "")}>No account</Text>
+                  </Pressable>
+                  {accounts.map((a) => (
+                    <Pressable key={a._id} onPress={() => setAccountId(a._id)} className={chip(accountId === a._id)}>
+                      <Text className={chipTxt(accountId === a._id)}>{a.name}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                <Text className="text-[11px] text-zinc-600">Each posted bill moves this account&apos;s balance.</Text>
+              </View>
+            )}
+
             <View className="gap-1.5">
               <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Repeats</Text>
               <View className="flex-row gap-2">
@@ -303,20 +415,38 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
               </View>
             </View>
 
+            {!editing && (
+              <View className="gap-1.5">
+                <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Starts on</Text>
+                <Pressable onPress={() => setPicking("start")} className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3">
+                  <Text className="text-zinc-100">{startDate}</Text>
+                </Pressable>
+              </View>
+            )}
+
             <View className="gap-1.5">
-              <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Starts on</Text>
-              <Pressable onPress={() => setShowDate(true)} className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3">
-                <Text className="text-zinc-100">{startDate}</Text>
+              <View className="flex-row items-center justify-between">
+                <Text className="text-[12px] uppercase tracking-wider text-zinc-500">Ends on</Text>
+                {!!endDate && (
+                  <Pressable onPress={() => setEndDate("")} hitSlop={8}><Text className="text-xs text-zinc-500">Clear</Text></Pressable>
+                )}
+              </View>
+              <Pressable onPress={() => setPicking("end")} className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3">
+                <Text className={endDate ? "text-zinc-100" : "text-zinc-500"}>{endDate || "No end date"}</Text>
               </Pressable>
+              <Text className="text-[11px] text-zinc-600">Last day a bill can post — the rule pauses itself once it passes.</Text>
             </View>
 
-            {showDate && (
+            {picking && (
               <DateTimePicker
-                value={startDate ? new Date(startDate) : new Date()}
+                value={new Date((picking === "end" ? endDate || startDate : startDate) || localISODate())}
                 mode="date"
                 onChange={(_, d) => {
-                  setShowDate(false);
-                  if (d) setStartDate(localISODate(d));
+                  const field = picking;
+                  setPicking(null);
+                  if (!d) return;
+                  if (field === "end") setEndDate(localISODate(d));
+                  else setStartDate(localISODate(d));
                 }}
               />
             )}
@@ -326,7 +456,7 @@ function AddRuleSheet({ visible, onClose, onSaved }: { visible: boolean; onClose
               <Switch value={autoPost} onValueChange={setAutoPost} trackColor={{ true: "#6366f1" }} />
             </View>
 
-            <GradientButton label="Add rule" onPress={submit} loading={saving} />
+            <GradientButton label={editing ? "Save changes" : "Add rule"} onPress={submit} loading={saving} />
           </ScrollView>
         </Pressable>
       </Pressable>

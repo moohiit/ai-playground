@@ -268,8 +268,10 @@ function CreateGroupForm({
     e.preventDefault();
     const emails = memberEmails.map((n) => n.trim()).filter(Boolean);
 
-    if (emails.length < 2) {
-      setError("At least 2 members required");
+    // One other member is a real group — two flatmates splitting rent. Mobile
+    // and the API have always accepted it; only web demanded two.
+    if (emails.length < 1) {
+      setError("Add at least one member");
       return;
     }
 

@@ -12,10 +12,10 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import { formatDay } from "../../lib/dates";
-import { localISODate } from "../../lib/dates";
+import { formatDay, localISODate } from "../../lib/dates";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney } from "../../lib/currency";
 
@@ -80,12 +80,30 @@ export default function WarrantyScreen() {
     setRefreshing(false);
   }, [load]);
 
+  // Which date field the picker is currently editing.
+  const [picker, setPicker] = useState<
+    "purchase" | "return" | "warranty" | null
+  >(null);
+
+  function onPickDate(_: unknown, date?: Date) {
+    const which = picker;
+    setPicker(null);
+    if (!date || !which) return;
+    const iso = localISODate(date);
+    setForm((f) => ({
+      ...f,
+      purchaseDate: which === "purchase" ? iso : f.purchaseDate,
+      returnByDate: which === "return" ? iso : f.returnByDate,
+      warrantyExpiresAt: which === "warranty" ? iso : f.warrantyExpiresAt,
+    }));
+  }
+
   async function handleAdd() {
     if (saving) return;
     if (!form.label.trim()) return;
     setSaving(true);
     try {
-      await authFetch("/api/projects/expense-tracker/warranty", {
+      const res = await authFetch("/api/projects/expense-tracker/warranty", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -96,6 +114,13 @@ export default function WarrantyScreen() {
           notes: form.notes,
         }),
       });
+      // The sheet used to close on any outcome, so a rejected entry looked
+      // saved and everything the user typed was gone.
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert("Couldn't save", data.error ?? "Check the dates and try again.");
+        return;
+      }
       setForm({ ...EMPTY });
       setShowAdd(false);
       load();
@@ -239,25 +264,24 @@ export default function WarrantyScreen() {
                 onChange={(v) => setForm((f) => ({ ...f, label: v }))}
                 placeholder="e.g. Laptop, iPhone case"
               />
-              <LabeledInput
+              {/* Typed dates went straight to a schema that only accepts
+                  parseable ones — "20/08/2026" was a silent 400. */}
+              <DateRow
                 label="Purchase date *"
                 value={form.purchaseDate}
-                onChange={(v) => setForm((f) => ({ ...f, purchaseDate: v }))}
-                placeholder="YYYY-MM-DD"
+                onPress={() => setPicker("purchase")}
               />
-              <LabeledInput
+              <DateRow
                 label="Return by (optional)"
                 value={form.returnByDate}
-                onChange={(v) => setForm((f) => ({ ...f, returnByDate: v }))}
-                placeholder="YYYY-MM-DD"
+                onPress={() => setPicker("return")}
+                onClear={() => setForm((f) => ({ ...f, returnByDate: "" }))}
               />
-              <LabeledInput
+              <DateRow
                 label="Warranty expires (optional)"
                 value={form.warrantyExpiresAt}
-                onChange={(v) =>
-                  setForm((f) => ({ ...f, warrantyExpiresAt: v }))
-                }
-                placeholder="YYYY-MM-DD"
+                onPress={() => setPicker("warranty")}
+                onClear={() => setForm((f) => ({ ...f, warrantyExpiresAt: "" }))}
               />
               <LabeledInput
                 label="Notes (optional)"
@@ -266,6 +290,26 @@ export default function WarrantyScreen() {
                 placeholder="Store name, serial number…"
               />
             </View>
+            {picker && (
+              <DateTimePicker
+                value={
+                  (picker === "purchase" && form.purchaseDate) ||
+                  (picker === "return" && form.returnByDate) ||
+                  (picker === "warranty" && form.warrantyExpiresAt)
+                    ? new Date(
+                        picker === "purchase"
+                          ? form.purchaseDate
+                          : picker === "return"
+                            ? form.returnByDate
+                            : form.warrantyExpiresAt
+                      )
+                    : new Date()
+                }
+                mode="date"
+                onChange={onPickDate}
+              />
+            )}
+
             <View className="mt-5 gap-2">
               <GradientButton
                 label="Save"
@@ -428,6 +472,43 @@ function CountdownBadge({
       <Text className={`text-xs font-medium ${textColor}`}>
         {label}: {formatDay(date)}{countdown}
       </Text>
+    </View>
+  );
+}
+
+/** A tappable date row — the value is always a valid YYYY-MM-DD from the
+ *  picker, so the API can never reject it as unparseable. */
+function DateRow({
+  label,
+  value,
+  onPress,
+  onClear,
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+  onClear?: () => void;
+}) {
+  return (
+    <View className="gap-1.5">
+      <Text className="text-[13px] uppercase tracking-wider text-zinc-500">
+        {label}
+      </Text>
+      <View className="flex-row items-center gap-2">
+        <Pressable
+          onPress={onPress}
+          className="flex-1 rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3"
+        >
+          <Text className={value ? "text-zinc-100" : "text-zinc-500"}>
+            {value ? formatDay(value) : "Pick a date"}
+          </Text>
+        </Pressable>
+        {onClear && value ? (
+          <Pressable onPress={onClear} hitSlop={8}>
+            <Text className="text-base text-zinc-500">✕</Text>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }

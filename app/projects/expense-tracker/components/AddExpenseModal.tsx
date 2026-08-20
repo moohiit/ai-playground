@@ -214,6 +214,14 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
       setError("Select a group for this expense");
       return;
     }
+    // Saving a group expense before the groups fetch resolves would silently
+    // replace the real payer with the current user and drop the saved split
+    // (both are derived from selectedGroup below). Block until it's loaded —
+    // mobile has always guarded this.
+    if (type === "group" && groupId && !selectedGroup) {
+      setError("Group details are still loading — try again in a second");
+      return;
+    }
     setSaving(true);
     setError(null);
 

@@ -27,19 +27,35 @@ const KINDS: { id: AccountKind; label: string; icon: string }[] = [
 ];
 const kindMeta = (k: string) => KINDS.find((x) => x.id === k) ?? KINDS[0];
 
+// An opening balance is the one signed money field in this app — a credit card
+// legitimately starts in the red. parseAmount rejects a leading "-" (it guards
+// amounts that must be positive), so peel the sign off before handing it over.
+function parseSignedAmount(raw: string): number {
+  const s = raw.trim();
+  const negative = s.startsWith("-");
+  const magnitude = parseAmount(negative ? s.slice(1) : s);
+  return negative ? -magnitude : magnitude;
+}
+
 export default function AccountsScreen() {
   const { authFetch } = useAuth();
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [base, setBase] = useState("INR");
   const [refreshing, setRefreshing] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
+  const [showSheet, setShowSheet] = useState(false);
+  // Set while the sheet is editing an existing account rather than adding one.
+  const [editing, setEditing] = useState<Account | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
+  // The list route drops archived accounts unless asked for them by name.
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [accRes, prefRes] = await Promise.all([
-        authFetch("/api/projects/expense-tracker/accounts"),
+        authFetch(
+          `/api/projects/expense-tracker/accounts${showArchived ? "?archived=true" : ""}`
+        ),
         authFetch("/api/projects/expense-tracker/prefs"),
       ]);
       const accData = await accRes.json().catch(() => ({}));
@@ -49,7 +65,7 @@ export default function AccountsScreen() {
     } catch {
       // keep last good state
     }
-  }, [authFetch]);
+  }, [authFetch, showArchived]);
 
   useFocusEffect(
     useCallback(() => {
@@ -63,7 +79,25 @@ export default function AccountsScreen() {
     setRefreshing(false);
   }, [load]);
 
-  const netWorth = accounts.reduce((s, a) => s + a.balance, 0);
+  // Archived accounts are ones the user stopped using: they stay out of net
+  // worth and out of transfers even while the list is showing them.
+  const active = accounts.filter((a) => !a.archived);
+  const netWorth = active.reduce((s, a) => s + a.balance, 0);
+
+  function openAdd() {
+    setEditing(null);
+    setShowSheet(true);
+  }
+
+  function openEdit(a: Account) {
+    setEditing(a);
+    setShowSheet(true);
+  }
+
+  function closeSheet() {
+    setShowSheet(false);
+    setEditing(null);
+  }
 
   function confirmDelete(a: Account) {
     Alert.alert("Delete account", `Delete "${a.name}"? Its transactions stay but become unassigned.`, [
@@ -97,12 +131,12 @@ export default function AccountsScreen() {
         <View className="flex-row gap-2">
           <Pressable
             onPress={() => setShowTransfer(true)}
-            disabled={accounts.length < 2}
-            className={`rounded-lg border border-white/10 bg-zinc-900/40 px-3 py-1.5 ${accounts.length < 2 ? "opacity-40" : ""}`}
+            disabled={active.length < 2}
+            className={`rounded-lg border border-white/10 bg-zinc-900/40 px-3 py-1.5 ${active.length < 2 ? "opacity-40" : ""}`}
           >
             <Text className="text-xs font-semibold text-zinc-300">⇄ Transfer</Text>
           </Pressable>
-          <Pressable onPress={() => setShowAdd(true)} className="rounded-lg bg-brand-600 px-3 py-1.5">
+          <Pressable onPress={openAdd} className="rounded-lg bg-brand-600 px-3 py-1.5">
             <Text className="text-xs font-semibold text-white">+ Add</Text>
           </Pressable>
         </View>
@@ -118,8 +152,19 @@ export default function AccountsScreen() {
             {formatMoney(netWorth, base)}
           </Text>
           <Text className="mt-0.5 text-xs text-zinc-500">
-            {accounts.length} {accounts.length === 1 ? "account" : "accounts"}
+            {active.length} active {active.length === 1 ? "account" : "accounts"}
           </Text>
+        </View>
+
+        <View className="flex-row items-center justify-between px-1">
+          <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
+            {showArchived ? "All accounts" : "Active accounts"}
+          </Text>
+          <Pressable onPress={() => setShowArchived((v) => !v)} hitSlop={8}>
+            <Text className="text-[11px] font-semibold text-brand-400">
+              {showArchived ? "Hide archived" : "Show archived"}
+            </Text>
+          </Pressable>
         </View>
 
         {accounts.length === 0 ? (
@@ -133,14 +178,22 @@ export default function AccountsScreen() {
             return (
               <Pressable
                 key={a._id}
+                onPress={() => openEdit(a)}
                 onLongPress={() => confirmDelete(a)}
-                className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+                className={`rounded-2xl border p-4 ${a.archived ? "border-white/5 bg-zinc-950/30 opacity-70" : "border-white/10 bg-white/[0.04]"}`}
               >
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-3">
                     <Text className="text-2xl">{meta.icon}</Text>
                     <View>
-                      <Text className="font-semibold text-zinc-100">{a.name}</Text>
+                      <View className="flex-row items-center gap-1.5">
+                        <Text className="font-semibold text-zinc-100">{a.name}</Text>
+                        {a.archived && (
+                          <Text className="rounded-full border border-zinc-700 bg-zinc-900/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-zinc-400">
+                            archived
+                          </Text>
+                        )}
+                      </View>
                       <Text className="text-[11px] uppercase tracking-wider text-zinc-500">{meta.label}</Text>
                     </View>
                   </View>
@@ -157,13 +210,20 @@ export default function AccountsScreen() {
             );
           })
         )}
-        <Text className="px-1 text-center text-[11px] text-zinc-600">Long-press an account to delete it.</Text>
+        <Text className="px-1 text-center text-[11px] text-zinc-600">
+          Tap an account to edit or archive it · long-press to delete.
+        </Text>
       </ScrollView>
 
-      <AddAccountModal visible={showAdd} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+      <AccountSheet
+        visible={showSheet}
+        editing={editing}
+        onClose={closeSheet}
+        onSaved={() => { closeSheet(); load(); }}
+      />
       <TransferModal
         visible={showTransfer}
-        accounts={accounts}
+        accounts={active}
         base={base}
         onClose={() => setShowTransfer(false)}
         onSaved={() => { setShowTransfer(false); load(); }}
@@ -172,34 +232,72 @@ export default function AccountsScreen() {
   );
 }
 
-function AddAccountModal({ visible, onClose, onSaved }: { visible: boolean; onClose: () => void; onSaved: () => void }) {
+function AccountSheet({ visible, editing, onClose, onSaved }: {
+  visible: boolean; editing: Account | null; onClose: () => void; onSaved: () => void;
+}) {
   const { authFetch } = useAuth();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<AccountKind>("bank");
   const [opening, setOpening] = useState("0");
+  const [archived, setArchived] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (editing) {
+      setName(editing.name);
+      setKind(editing.kind);
+      setOpening(String(editing.openingBalance));
+      setArchived(editing.archived);
+    } else {
+      setName("");
+      setKind("bank");
+      setOpening("0");
+      setArchived(false);
+    }
+  }, [visible, editing]);
 
   async function submit() {
     if (!name.trim()) return Alert.alert("Name required");
+    // A blank field means "nothing to start with"; anything else that doesn't
+    // parse is a typo worth surfacing rather than silently saving as 0.
+    const openingBalance = opening.trim() === "" ? 0 : parseSignedAmount(opening);
+    if (Number.isNaN(openingBalance)) return Alert.alert("Enter a valid opening balance");
     setSaving(true);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), kind, openingBalance: parseAmount(opening) || 0 }),
-      });
-      if (!res.ok) throw new Error("failed");
-      setName(""); setOpening("0"); setKind("bank");
+      const res = await authFetch(
+        editing
+          ? `/api/projects/expense-tracker/accounts/${editing._id}`
+          : "/api/projects/expense-tracker/accounts",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            // Both payload schemas are strict, and only the update one knows
+            // about `archived` — a new account is always active.
+            editing
+              ? { name: name.trim(), kind, openingBalance, archived }
+              : { name: name.trim(), kind, openingBalance }
+          ),
+        }
+      );
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Failed");
+      }
       onSaved();
-    } catch {
-      Alert.alert("Couldn't add account");
+    } catch (e) {
+      Alert.alert(
+        editing ? "Couldn't update account" : "Couldn't add account",
+        e instanceof Error ? e.message : ""
+      );
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Sheet visible={visible} title="Add account" onClose={onClose}>
+    <Sheet visible={visible} title={editing ? "Edit account" : "Add account"} onClose={onClose}>
       <Field label="Name">
         <Input value={name} onChangeText={setName} placeholder="e.g. HDFC Savings" placeholderTextColor="#71717a"
           className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
@@ -207,6 +305,7 @@ function AddAccountModal({ visible, onClose, onSaved }: { visible: boolean; onCl
       <Field label="Opening balance">
         <Input value={opening} onChangeText={setOpening} keyboardType="numbers-and-punctuation" placeholderTextColor="#71717a"
           className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100" />
+        <Text className="text-[11px] text-zinc-500">Use a minus sign for money owed, e.g. -4500 on a credit card.</Text>
       </Field>
       <Field label="Type">
         <View className="flex-row flex-wrap gap-2">
@@ -218,7 +317,34 @@ function AddAccountModal({ visible, onClose, onSaved }: { visible: boolean; onCl
           ))}
         </View>
       </Field>
-      <GradientButton label="Add account" onPress={submit} loading={saving} />
+      {editing && (
+        <>
+          <Field label="Status">
+            <View className="flex-row gap-2">
+              {([[false, "Active"], [true, "Archived"]] as const).map(([value, label]) => (
+                <Pressable
+                  key={label}
+                  onPress={() => setArchived(value)}
+                  className={`flex-1 items-center rounded-xl border py-2.5 ${archived === value ? "border-brand-500/60 bg-brand-500/15" : "border-white/10 bg-zinc-900/40"}`}
+                >
+                  <Text className={`text-sm font-medium ${archived === value ? "text-brand-400" : "text-zinc-400"}`}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text className="text-[11px] text-zinc-500">
+              Archiving keeps the account's history but drops it out of net worth and transfers.
+            </Text>
+          </Field>
+          {/* Currency is fixed once the account exists — the update endpoint
+              won't take it — but it decides how the balance above reads. */}
+          <Field label="Currency">
+            <View className="rounded-xl border border-white/10 bg-zinc-900/40 px-4 py-3">
+              <Text className="text-zinc-400">{editing.currency}</Text>
+            </View>
+          </Field>
+        </>
+      )}
+      <GradientButton label={editing ? "Save account" : "Add account"} onPress={submit} loading={saving} />
     </Sheet>
   );
 }

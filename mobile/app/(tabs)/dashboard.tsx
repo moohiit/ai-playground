@@ -421,6 +421,14 @@ export default function Dashboard() {
                   <Text className="mt-0.5 text-xs text-zinc-500">
                     {fmt(forecast.monthToDate)} so far · at your current daily pace
                   </Text>
+                  {/* Web has always shown this; mobile dropped it, so a month
+                      with a big bill still to post looked cheaper here. */}
+                  {forecast.upcomingRecurring > 0 && (
+                    <Text className="mt-0.5 text-xs text-zinc-400">
+                      + {fmt(forecast.upcomingRecurring)} recurring due before
+                      month end
+                    </Text>
+                  )}
                   {forecast.overallBudget != null && (
                     <Text className={`mt-1 text-xs font-medium ${forecast.projectedVsBudget! > 0 ? "text-red-400" : "text-emerald-400"}`}>
                       {forecast.projectedVsBudget! > 0

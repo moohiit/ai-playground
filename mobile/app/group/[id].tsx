@@ -853,15 +853,20 @@ export default function GroupDetailScreen() {
               </Text>
             )}
 
-            <Pressable
-              onPress={shareSplit}
-              className="mt-2 items-center rounded-xl border border-brand-500/30 bg-brand-500/10 py-3"
-            >
-              <Text className="text-sm font-medium text-white">
-                {shareId ? "🔗 Share split link" : "Share split (create link)"}
-              </Text>
-            </Pressable>
-            {shareId && (
+            {/* Creating and revoking the public link is creator-only on the
+                server, so offering it to every member only produced a refusal
+                they could not act on. Members can still open an existing link. */}
+            {(user?.userId === group?.createdBy || shareId) && (
+              <Pressable
+                onPress={shareSplit}
+                className="mt-2 items-center rounded-xl border border-brand-500/30 bg-brand-500/10 py-3"
+              >
+                <Text className="text-sm font-medium text-white">
+                  {shareId ? "🔗 Share split link" : "Share split (create link)"}
+                </Text>
+              </Pressable>
+            )}
+            {shareId && user?.userId === group?.createdBy && (
               <Pressable onPress={stopSharing} className="items-center py-1">
                 <Text className="text-[11px] text-zinc-500">Turn off public link</Text>
               </Pressable>
