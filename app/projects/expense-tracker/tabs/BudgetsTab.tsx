@@ -6,6 +6,7 @@ import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { categoryColor } from "../colors";
+import { getBaseCurrency } from "../prefs";
 
 type BudgetItem = {
   _id: string;
@@ -74,10 +75,7 @@ export function BudgetsTab() {
   }, [load]);
 
   useEffect(() => {
-    authFetch("/api/projects/expense-tracker/prefs")
-      .then((r) => r.json())
-      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
-      .catch(() => {});
+    getBaseCurrency(authFetch).then(setBase);
   }, [authFetch]);
 
   const overall = budgets.find((b) => b.scope === "overall");

@@ -22,6 +22,7 @@ import {
   type Group,
 } from "../lib/types";
 import { SUPPORTED_CURRENCIES, parseAmount } from "../lib/currency";
+import { getBaseCurrency } from "../lib/prefs";
 import {
   AppBackground,
   GradientButton,
@@ -122,10 +123,7 @@ export default function AddExpenseScreen() {
   // Default a new entry's currency to the user's base currency (unless prefilled).
   useEffect(() => {
     if (isEdit || pre?.currency) return;
-    authFetch("/api/projects/expense-tracker/prefs")
-      .then((r) => r.json())
-      .then((d) => d.prefs?.baseCurrency && setCurrency(d.prefs.baseCurrency))
-      .catch(() => {});
+    getBaseCurrency(authFetch).then(setCurrency);
   }, [authFetch, isEdit, pre?.currency]);
 
   // Load accounts so personal entries can be assigned to a wallet.

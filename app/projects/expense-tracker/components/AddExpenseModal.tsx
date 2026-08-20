@@ -6,6 +6,7 @@ import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { SUPPORTED_CURRENCIES, currencySymbol } from "../../../../modules/expense-tracker/currencies";
+import { getBaseCurrency } from "../prefs";
 
 type Direction = "expense" | "income";
 
@@ -118,12 +119,7 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   // Default a new entry's currency to the user's base currency (unless prefilled).
   useEffect(() => {
     if (isEdit || prefill?.currency) return;
-    authFetch("/api/projects/expense-tracker/prefs")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.prefs?.baseCurrency) setCurrency(d.prefs.baseCurrency);
-      })
-      .catch(() => {});
+    getBaseCurrency(authFetch).then(setCurrency);
   }, []);
 
   // Load accounts so personal entries can be assigned to a wallet.

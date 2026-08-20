@@ -8,6 +8,7 @@ import {
 } from "react";
 import * as SecureStore from "expo-secure-store";
 import { apiUrl } from "./api";
+import { invalidatePrefs } from "./prefs";
 
 const TOKEN_KEY = "auth_token";
 
@@ -163,6 +164,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     await SecureStore.deleteItemAsync(TOKEN_KEY);
+    // The prefs cache is per session — leaving it would format the next
+    // account's money in this one's base currency.
+    invalidatePrefs();
     setToken(null);
     setUser(null);
   }, [token]);

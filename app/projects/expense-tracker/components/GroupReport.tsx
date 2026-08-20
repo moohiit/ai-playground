@@ -6,6 +6,7 @@ import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { ExportPdfButton } from "./ExportPdf";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
+import { getBaseCurrency } from "../prefs";
 import {
   PieChart,
   Pie,
@@ -151,10 +152,7 @@ export function GroupReport({ groupId, groupName }: Props) {
   reportBase = base;
 
   useEffect(() => {
-    authFetch("/api/projects/expense-tracker/prefs")
-      .then((r) => r.json())
-      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
-      .catch(() => {});
+    getBaseCurrency(authFetch).then(setBase);
   }, [authFetch]);
 
 

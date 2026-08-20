@@ -400,7 +400,7 @@ function RuleSheet({ visible, editing, accounts, onClose, onSaved }: {
                     </Pressable>
                   ))}
                 </ScrollView>
-                <Text className="text-[11px] text-zinc-600">Each posted bill moves this account&apos;s balance.</Text>
+                <Text className="text-[11px] text-zinc-600">Each posted bill moves this account’s balance.</Text>
               </View>
             )}
 
@@ -439,7 +439,7 @@ function RuleSheet({ visible, editing, accounts, onClose, onSaved }: {
 
             {picking && (
               <DateTimePicker
-                value={new Date((picking === "end" ? endDate || startDate : startDate) || localISODate())}
+                value={new Date(picking === "end" && endDate ? endDate : startDate)}
                 mode="date"
                 onChange={(_, d) => {
                   const field = picking;

@@ -1,5 +1,6 @@
 "use client";
 
+import { invalidatePrefs } from "@/app/projects/expense-tracker/prefs";
 import {
   createContext,
   useContext,
@@ -150,6 +151,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem("auth_token");
+    // The prefs cache is per session — leaving it would format the next
+    // account's money in this one's base currency.
+    invalidatePrefs();
     setToken(null);
     setUser(null);
   }, []);

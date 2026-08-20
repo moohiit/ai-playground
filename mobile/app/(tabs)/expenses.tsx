@@ -24,6 +24,7 @@ import { AppBackground, Input } from "../../components/ui";
 import { categoryColor } from "../../lib/colors";
 import { exportExpensesCsv } from "../../lib/csv";
 import { formatMoney, currencySymbol } from "../../lib/currency";
+import { getBaseCurrency } from "../../lib/prefs";
 
 type ViewMode = "all" | "personal" | "group";
 type DirectionFilter = "expense" | "income" | "all";
@@ -140,10 +141,7 @@ export default function ExpensesScreen() {
   }, [search]);
 
   useEffect(() => {
-    authFetch("/api/projects/expense-tracker/prefs")
-      .then((r) => r.json())
-      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
-      .catch(() => {});
+    getBaseCurrency(authFetch).then(setBase);
   }, [authFetch]);
 
   useEffect(() => {

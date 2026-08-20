@@ -7,6 +7,7 @@ import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { ExportPdfButton } from "../components/ExportPdf";
 import { categoryColor, personalVsGroupSlices } from "../colors";
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
+import { getBaseCurrency } from "../prefs";
 import {
   PieChart,
   Pie,
@@ -140,10 +141,7 @@ export function ReportsTab() {
   reportBase = base;
 
   useEffect(() => {
-    authFetch("/api/projects/expense-tracker/prefs")
-      .then((r) => r.json())
-      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
-      .catch(() => {});
+    getBaseCurrency(authFetch).then(setBase);
   }, [authFetch]);
 
   function applyQuick(r: QuickRange) {

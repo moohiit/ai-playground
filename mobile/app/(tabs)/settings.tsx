@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../lib/auth";
+import { invalidatePrefs } from "../../lib/prefs";
 import { WEB_BASE_URL } from "../../lib/api";
 import { AppBackground, Input, KeyboardAwareScreen } from "../../components/ui";
 import { SUPPORTED_CURRENCIES, currencySymbol } from "../../lib/currency";
@@ -91,6 +92,8 @@ export default function SettingsScreen() {
     try {
       const updated = await patch({ baseCurrency: next });
       setPrefs(updated);
+      // Every other screen reads the base currency from the session cache.
+      invalidatePrefs();
       setNote(`Base set to ${next}. Existing entries re-converted from ${prev}.`);
     } catch {
       Alert.alert("Couldn't change base currency", "Please try again.");

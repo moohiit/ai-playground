@@ -32,6 +32,7 @@ import { AppBackground, GradientButton, Input, KeyboardAwareScreen } from "../..
 import { GroupReportView } from "../../components/GroupReportView";
 import { WEB_BASE_URL } from "../../lib/api";
 import { formatMoney } from "../../lib/currency";
+import { getBaseCurrency } from "../../lib/prefs";
 
 type Tab = "active" | "settled" | "report";
 
@@ -196,9 +197,7 @@ export default function GroupDetailScreen() {
       setExpenseTotal(e.total ?? 0);
       setActiveTotal(s.totalAmount ?? 0);
       setActiveMine(s.myShare ?? 0);
-      const prefsRes = await authFetch("/api/projects/expense-tracker/prefs");
-      const prefs = await prefsRes.json().catch(() => ({}));
-      if (prefs.prefs?.baseCurrency) setBaseCurrency(prefs.prefs.baseCurrency);
+      setBaseCurrency(await getBaseCurrency(authFetch));
       setHistory(h.history ?? []);
     } catch {
       // keep last good state

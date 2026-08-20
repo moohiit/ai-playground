@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
+import { invalidatePrefs } from "../prefs";
 import {
   SUPPORTED_CURRENCIES,
   currencySymbol,
@@ -50,6 +51,8 @@ export function SettingsTab() {
     try {
       const updated = await patch({ baseCurrency: next });
       setPrefs(updated);
+      // Every other tab reads the base currency from the session cache.
+      invalidatePrefs();
       setNote(
         `Base currency set to ${next}. All your existing entries were re-converted from ${prev}.`
       );

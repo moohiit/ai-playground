@@ -18,6 +18,7 @@ import { AppBackground, GradientButton, GradientHero, Input, KeyboardAwareScreen
 import { categoryColor, personalVsGroupSlices } from "../../lib/colors";
 import { formatMoney } from "../../lib/currency";
 import { localISODate } from "../../lib/dates";
+import { getBaseCurrency } from "../../lib/prefs";
 
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
@@ -80,12 +81,7 @@ export default function Dashboard() {
   const [trackingKey, setTrackingKey] = useState<string | null>(null);
 
   const fetchPrefs = useCallback(() => {
-    authFetch("/api/projects/expense-tracker/prefs")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.prefs?.baseCurrency) setBase(d.prefs.baseCurrency);
-      })
-      .catch(() => {});
+    getBaseCurrency(authFetch).then(setBase);
   }, [authFetch]);
 
   const fetchForecast = useCallback(() => {

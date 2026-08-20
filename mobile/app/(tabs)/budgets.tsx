@@ -18,6 +18,7 @@ import { CATEGORIES } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney, parseAmount } from "../../lib/currency";
 import { categoryColor } from "../../lib/colors";
+import { getBaseCurrency } from "../../lib/prefs";
 
 type BudgetItem = {
   _id: string;
@@ -69,14 +70,13 @@ export default function BudgetsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [bRes, pRes] = await Promise.all([
+      const [bRes, baseCur] = await Promise.all([
         authFetch(`/api/projects/expense-tracker/budgets?month=${month}`),
-        authFetch("/api/projects/expense-tracker/prefs"),
+        getBaseCurrency(authFetch),
       ]);
       const bData = await bRes.json().catch(() => ({}));
-      const pData = await pRes.json().catch(() => ({}));
       setBudgets(bData.budgets ?? []);
-      if (pData.prefs?.baseCurrency) setBase(pData.prefs.baseCurrency);
+      setBase(baseCur);
     } catch {
       // keep last good
     }

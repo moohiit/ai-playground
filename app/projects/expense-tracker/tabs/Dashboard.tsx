@@ -7,6 +7,7 @@ import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-track
 import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "../components/AddExpenseModal";
 import { categoryColor } from "../colors";
+import { getBaseCurrency } from "../prefs";
 
 type Expense = {
   _id: string;
@@ -262,10 +263,7 @@ export function Dashboard() {
   }, [fetchBreakdown]);
 
   useEffect(() => {
-    authFetch("/api/projects/expense-tracker/prefs")
-      .then((r) => r.json())
-      .then((d) => d.prefs?.baseCurrency && setBase(d.prefs.baseCurrency))
-      .catch(() => {});
+    getBaseCurrency(authFetch).then(setBase);
   }, [authFetch]);
 
   const fetchForecast = useCallback(() => {

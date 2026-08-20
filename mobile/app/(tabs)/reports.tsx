@@ -16,6 +16,7 @@ import { CATEGORIES, type Summary } from "../../lib/types";
 import { exportFullReportPdf } from "../../lib/pdf";
 import { AppBackground, Input } from "../../components/ui";
 import { ReportBody } from "../../components/ReportBody";
+import { getBaseCurrency } from "../../lib/prefs";
 import {
   Chip,
   DateField,
@@ -90,9 +91,7 @@ export default function ReportsTab() {
   // Fetch base currency once on mount
   const fetchPrefs = useCallback(async () => {
     try {
-      const res = await authFetch("/api/projects/expense-tracker/prefs");
-      const data = await res.json();
-      if (data.prefs?.baseCurrency) setBaseCurrency(data.prefs.baseCurrency);
+      setBaseCurrency(await getBaseCurrency(authFetch));
     } catch {
       // keep default INR
     }

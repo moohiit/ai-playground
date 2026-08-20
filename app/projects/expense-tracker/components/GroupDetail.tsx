@@ -6,6 +6,7 @@ import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
+import { getBaseCurrency } from "../prefs";
 
 // Groups are single-currency in practice (v1); format amounts with the
 // currency most of the group's expenses were entered in, instead of a
@@ -201,9 +202,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
       setExpenseTotal(eData.total ?? 0);
       setActiveAmount(sData.totalAmount ?? 0);
       setActiveMine(sData.myShare ?? 0);
-      const prefsRes = await authFetch("/api/projects/expense-tracker/prefs");
-      const prefs = await prefsRes.json().catch(() => ({}));
-      if (prefs.prefs?.baseCurrency) setBaseCurrency(prefs.prefs.baseCurrency);
+      setBaseCurrency(await getBaseCurrency(authFetch));
     } catch {
       if (seq === fetchSeqRef.current) setGroup(null); // "not found / failed" state
     } finally {

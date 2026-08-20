@@ -429,7 +429,11 @@ function Sheet({ visible, title, onClose, children }: { visible: boolean; title:
             <Text className="text-base font-semibold text-zinc-100">{title}</Text>
             <Pressable onPress={onClose} hitSlop={8}><Text className="text-sm text-zinc-500">Close</Text></Pressable>
           </View>
-          <View className="gap-3">{children}</View>
+          {/* Scrolls because the edit sheet is a good deal taller than the add
+              sheet — with the keyboard up the save button fell off-screen. */}
+          <ScrollView contentContainerStyle={{ gap: 12 }} keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
         </Pressable>
       </Pressable>
     </KeyboardAvoidingView>

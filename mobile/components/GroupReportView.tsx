@@ -8,6 +8,7 @@ import { CATEGORIES, type Summary } from "../lib/types";
 import { exportGroupReportPdf } from "../lib/pdf";
 import { ReportBody } from "./ReportBody";
 import { Chip, DateField, quickRangeToDates } from "./reportControls";
+import { getBaseCurrency } from "../lib/prefs";
 
 type Show = "false" | "true" | "all";
 type QuickRange =
@@ -58,12 +59,7 @@ export function GroupReportView({
 
   useFocusEffect(
     useCallback(() => {
-      authFetch("/api/projects/expense-tracker/prefs")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          if (d?.prefs?.baseCurrency) setBaseCurrency(d.prefs.baseCurrency);
-        })
-        .catch(() => {});
+      getBaseCurrency(authFetch).then(setBaseCurrency);
     }, [authFetch])
   );
 
