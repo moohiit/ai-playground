@@ -127,7 +127,7 @@ async function renderGroupSection(
             esc(e.description),
             esc(e.paidBy?.name ?? "-"),
             esc((e.splitAmong ?? []).map((m) => m.name).join(", ") || "-"),
-            rs(e.amount),
+            rs(e.amountBase ?? e.amount),
           ],
           [4]
         )
@@ -290,7 +290,7 @@ export async function exportFullReportPdf(opts: {
                   esc(e.category),
                   esc(e.paidBy?.name ?? "-"),
                   esc((e.splitAmong ?? []).map((m) => m.name).join(", ") || "-"),
-                  rs(e.amount),
+                  rs(e.amountBase ?? e.amount),
                   esc(e.type),
                 ],
                 [5]

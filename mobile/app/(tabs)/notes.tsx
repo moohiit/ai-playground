@@ -270,13 +270,21 @@ export default function NotesScreen() {
 
   const openNotes = notes.filter((n) => !n.settledAt);
   const settledNotes = notes.filter((n) => n.settledAt);
-  const owedToMe = openNotes
-    .filter((n) => n.direction === "lent")
-    .reduce((s, n) => s + n.amount, 0);
-  const iOwe = openNotes
-    .filter((n) => n.direction === "borrowed")
-    .reduce((s, n) => s + n.amount, 0);
-  const noteCur = openNotes[0]?.currency ?? notes[0]?.currency ?? "INR";
+  // Notes are recorded in whatever currency the money changed hands in, and
+  // there is no conversion here — adding them into one number and labelling
+  // it with the first note's currency invented a figure. Total per currency
+  // instead; single-currency users see exactly what they saw before.
+  const totalsByCurrency = (direction: "lent" | "borrowed") => {
+    const by = new Map<string, number>();
+    for (const n of openNotes) {
+      if (n.direction !== direction) continue;
+      const c = n.currency || "INR";
+      by.set(c, (by.get(c) ?? 0) + n.amount);
+    }
+    return [...by.entries()].sort((a, b) => b[1] - a[1]);
+  };
+  const owedToMe = totalsByCurrency("lent");
+  const iOwe = totalsByCurrency("borrowed");
 
   return (
     <SafeAreaView className="flex-1" edges={["top"]}>
@@ -340,25 +348,25 @@ export default function NotesScreen() {
           </View>
         ) : view === "notes" ? (
           <>
-            {(owedToMe > 0 || iOwe > 0) && (
+            {(owedToMe.length > 0 || iOwe.length > 0) && (
               <View className="flex-row gap-2">
-                {owedToMe > 0 && (
+                {owedToMe.length > 0 && (
                   <View className="flex-1 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] p-3">
                     <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
                       Owed to you
                     </Text>
                     <Text className="mt-0.5 text-base font-bold text-emerald-400">
-                      {formatMoney(owedToMe, noteCur)}
+                      {owedToMe.map(([c, v]) => formatMoney(v, c)).join(" + ")}
                     </Text>
                   </View>
                 )}
-                {iOwe > 0 && (
+                {iOwe.length > 0 && (
                   <View className="flex-1 rounded-xl border border-red-500/30 bg-red-500/[0.06] p-3">
                     <Text className="text-[11px] uppercase tracking-wider text-zinc-500">
                       You owe
                     </Text>
                     <Text className="mt-0.5 text-base font-bold text-red-400">
-                      {formatMoney(iOwe, noteCur)}
+                      {iOwe.map(([c, v]) => formatMoney(v, c)).join(" + ")}
                     </Text>
                   </View>
                 )}

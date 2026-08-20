@@ -61,6 +61,7 @@ export default function GroupDetailScreen() {
   const [activeMine, setActiveMine] = useState(0);
   // Quick toggle on the Active tab: only rows I carry a share of.
   const [onlyMine, setOnlyMine] = useState(false);
+  const [baseCurrency, setBaseCurrency] = useState("INR");
   const [history, setHistory] = useState<SettlementRecord[]>([]);
   const [tab, setTab] = useState<Tab>("active");
   const [loading, setLoading] = useState(true);
@@ -75,6 +76,12 @@ export default function GroupDetailScreen() {
 
   const cur = dominantCurrency(expenses);
   const money = (n: number) => formatMoney(n, cur);
+  // Balances, the settle-up plan and the Active/my-share totals are all
+  // base-currency figures (calculateBalances works on amountBase); only the
+  // expense rows themselves carry an entry-currency amount. Labelling the
+  // former with the group's entry currency showed a base number under a
+  // foreign symbol.
+  const baseMoney = (n: number) => formatMoney(n, baseCurrency);
 
   async function shareSplit() {
     if (sharing) return;
@@ -184,6 +191,9 @@ export default function GroupDetailScreen() {
       setExpenses(e.expenses ?? []);
       setActiveTotal(s.totalAmount ?? 0);
       setActiveMine(s.myShare ?? 0);
+      const prefsRes = await authFetch("/api/projects/expense-tracker/prefs");
+      const prefs = await prefsRes.json().catch(() => ({}));
+      if (prefs.prefs?.baseCurrency) setBaseCurrency(prefs.prefs.baseCurrency);
       setHistory(h.history ?? []);
     } catch {
       // keep last good state
@@ -315,7 +325,7 @@ export default function GroupDetailScreen() {
   function confirmSettlePayment(s: Settlement) {
     Alert.alert(
       "Record payment",
-      `${s.from.name} paid ${s.to.name} ${money(s.amount)}?\n\nTheir balances offset and this row disappears.${
+      `${s.from.name} paid ${s.to.name} ${baseMoney(s.amount)}?\n\nTheir balances offset and this row disappears.${
         settlements.length === 1
           ? " This is the last outstanding transfer, so the active expenses will move to settled history."
           : " Original expenses stay untouched."
@@ -527,7 +537,7 @@ export default function GroupDetailScreen() {
                               : "text-zinc-500"
                           }`}
                         >
-                          {net > 0 ? "+" : ""}{money(net)}
+                          {net > 0 ? "+" : ""}{baseMoney(net)}
                         </Text>
                       )}
                       {canRemove && (
@@ -625,7 +635,7 @@ export default function GroupDetailScreen() {
                           {s.to.name}
                         </Text>
                         <Text className="ml-auto text-sm text-zinc-100">
-                          {money(s.amount)}
+                          {baseMoney(s.amount)}
                         </Text>
                         <Pressable
                           onPress={() => confirmSettlePayment(s)}
@@ -660,10 +670,10 @@ export default function GroupDetailScreen() {
                         {b.name}
                       </Text>
                       <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
-                        {money(b.totalPaid)}
+                        {baseMoney(b.totalPaid)}
                       </Text>
                       <Text style={{ width: 58 }} className="text-right text-[13px] text-zinc-300">
-                        {money(b.totalOwed)}
+                        {baseMoney(b.totalOwed)}
                       </Text>
                       <Text
                         style={{ width: 66 }}
@@ -675,7 +685,7 @@ export default function GroupDetailScreen() {
                             : "text-zinc-500"
                         }`}
                       >
-                        {b.netBalance > 0 ? "+" : ""}{money(b.netBalance)}
+                        {b.netBalance > 0 ? "+" : ""}{baseMoney(b.netBalance)}
                       </Text>
                     </View>
                   ))}
@@ -732,14 +742,14 @@ export default function GroupDetailScreen() {
               </View>
               <View className="items-end">
                 <Text className="text-sm font-semibold text-indigo-300">
-                  Total: {money(activeTotal)}
+                  Total: {baseMoney(activeTotal)}
                 </Text>
                 <View className="mt-0.5 flex-row items-center gap-1.5">
                   <View
                     style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#34d399" }}
                   />
                   <Text className="text-[13px] font-semibold text-emerald-300">
-                    {money(activeMine)}
+                    {baseMoney(activeMine)}
                   </Text>
                   <Text className="text-[11px] text-zinc-500">mine</Text>
                 </View>
@@ -860,7 +870,11 @@ export default function GroupDetailScreen() {
             </View>
           ) : (
             history.map((rec) => (
-              <SettlementCard key={rec.settlementId} record={rec} />
+              <SettlementCard
+                key={rec.settlementId}
+                record={rec}
+                baseCurrency={baseCurrency}
+              />
             ))
           )
         ) : (
@@ -923,12 +937,16 @@ function rowShare(e: Expense, userId?: string): number {
 function settlementMembers(expenses: Expense[]) {
   const map = new Map<string, { id: string; name: string; paid: number; share: number }>();
   for (const e of expenses) {
+    // Base-currency figures, matching calculateBalances — splits are stored in
+    // the entry currency, so scale them by the same base/entry ratio.
+    const baseAmt = e.amountBase ?? e.amount;
+    const ratio = e.amount > 0 ? baseAmt / e.amount : 1;
     const pid = e.paidBy?.id ?? e.paidBy?.name ?? "?";
     if (!map.has(pid)) map.set(pid, { id: pid, name: e.paidBy?.name ?? "-", paid: 0, share: 0 });
-    map.get(pid)!.paid += e.amount;
+    map.get(pid)!.paid += baseAmt;
     for (const s of e.splits ?? []) {
       if (!map.has(s.memberId)) map.set(s.memberId, { id: s.memberId, name: s.name, paid: 0, share: 0 });
-      map.get(s.memberId)!.share += s.amount;
+      map.get(s.memberId)!.share += s.amount * ratio;
     }
   }
   return Array.from(map.values()).sort(
@@ -967,12 +985,20 @@ function settlementPlan(
   return plan;
 }
 
-function SettlementCard({ record }: { record: SettlementRecord }) {
-  const total = record.expenses.reduce((s, e) => s + e.amount, 0);
+function SettlementCard({
+  record,
+  baseCurrency,
+}: {
+  record: SettlementRecord;
+  baseCurrency: string;
+}) {
+  const total = record.expenses.reduce((s, e) => s + (e.amountBase ?? e.amount), 0);
   const members = settlementMembers(record.expenses);
   const totalShare = members.reduce((s, m) => s + m.share, 0);
   const plan = settlementPlan(members);
-  const money = (n: number) => formatMoney(n, dominantCurrency(record.expenses));
+  // Every figure in this card is base-currency (see settlementMembers), so it
+  // is labelled with the viewer's base rather than the batch's entry currency.
+  const money = (n: number) => formatMoney(n, baseCurrency);
   const settledVia =
     record.transfers && record.transfers.length > 0
       ? record.transfers.map((t) => ({

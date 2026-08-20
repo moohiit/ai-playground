@@ -5,6 +5,7 @@ import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { ExportPdfButton } from "./ExportPdf";
+import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker/currencies";
 import {
   PieChart,
   Pie,
@@ -72,8 +73,11 @@ type Summary = {
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const fmt = (n: number) =>
-  `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// getSummary returns every amount already converted to the viewer's base
+// currency, so hardcoding ₹ mislabelled every figure for a non-INR user.
+// Module-scoped and set on each render, matching ReportsTab.
+let reportBase = "INR";
+const fmt = (n: number) => formatMoney(n, reportBase);
 
 function pct(part: number, total: number) {
   if (total <= 0) return "0%";
@@ -144,6 +148,7 @@ export function GroupReport({ groupId, groupName }: Props) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [base, setBase] = useState("INR");
+  reportBase = base;
 
   useEffect(() => {
     authFetch("/api/projects/expense-tracker/prefs")
@@ -534,7 +539,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                     tick={{ fill: "#71717a", fontSize: 11 }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(v) => `₹${v}`}
+                    tickFormatter={(v) => `${currencySymbol(reportBase)}${v}`}
                   />
                   <Tooltip
                     cursor={{ fill: "rgba(34,211,238,0.08)" }}
@@ -589,7 +594,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                           borderRadius: 8,
                           fontSize: 12,
                         }}
-                        formatter={(val: number) => `₹${val.toFixed(2)}`}
+                        formatter={(val: number) => fmt(val)}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -608,7 +613,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                         />
                         <span className="text-zinc-400">{c.category}</span>
                         <span className="font-mono tabular-nums text-zinc-300">
-                          ₹{c.total.toFixed(2)}
+                          {fmt(c.total)}
                         </span>
                       </div>
                     ))}
@@ -653,7 +658,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                       tick={{ fill: "#71717a", fontSize: 11 }}
                       axisLine={false}
                       tickLine={false}
-                      tickFormatter={(v) => `₹${v}`}
+                      tickFormatter={(v) => `${currencySymbol(reportBase)}${v}`}
                     />
                     <Tooltip
                       cursor={{ fill: "rgba(99,102,241,0.08)" }}
@@ -663,7 +668,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                         borderRadius: 8,
                         fontSize: 12,
                       }}
-                      formatter={(val: number) => `₹${val.toFixed(2)}`}
+                      formatter={(val: number) => fmt(val)}
                     />
                     <Legend
                       wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }}
@@ -716,10 +721,10 @@ export function GroupReport({ groupId, groupName }: Props) {
                           {c.count}
                         </td>
                         <td className="py-2.5 text-right font-mono tabular-nums text-zinc-100">
-                          ₹{c.total.toFixed(2)}
+                          {fmt(c.total)}
                         </td>
                         <td className="py-2.5 text-right font-mono tabular-nums text-emerald-300">
-                          ₹{(c.myShare ?? 0).toFixed(2)}
+                          {fmt(c.myShare ?? 0)}
                         </td>
                         <td className="py-2.5 text-right tabular-nums text-zinc-400">
                           {pct.toFixed(1)}%

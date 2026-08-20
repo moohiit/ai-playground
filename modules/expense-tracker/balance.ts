@@ -30,6 +30,17 @@ export function calculateSplits(
   });
 }
 
+/**
+ * Running balances per member, in the group's base-currency terms.
+ *
+ * Every figure is taken from `amountBase` — the amount frozen in base currency
+ * at write time — with split amounts (stored in the ENTRY currency) scaled by
+ * the same base/entry ratio getSummary uses. Summing the raw `amount` fields
+ * added dollars to rupees in any group where two members entered expenses in
+ * different currencies, and the settle-up plan derived from those balances
+ * then told people to pay meaningless sums. For a single-currency group the
+ * ratio is 1 and nothing changes.
+ */
 export function calculateBalances(expenses: ExpenseDoc[]): MemberBalance[] {
   const map = new Map<
     string,
@@ -39,11 +50,14 @@ export function calculateBalances(expenses: ExpenseDoc[]): MemberBalance[] {
   for (const exp of expenses) {
     if (exp.type !== "group") continue;
 
+    const baseAmt = exp.amountBase ?? exp.amount;
+    const ratio = exp.amount > 0 ? baseAmt / exp.amount : 1;
+
     const payerId = exp.paidBy.id;
     if (!map.has(payerId)) {
       map.set(payerId, { name: exp.paidBy.name, totalPaid: 0, totalOwed: 0 });
     }
-    map.get(payerId)!.totalPaid += exp.amount;
+    map.get(payerId)!.totalPaid += baseAmt;
 
     for (const split of exp.splits) {
       if (!map.has(split.memberId)) {
@@ -53,7 +67,7 @@ export function calculateBalances(expenses: ExpenseDoc[]): MemberBalance[] {
           totalOwed: 0,
         });
       }
-      map.get(split.memberId)!.totalOwed += split.amount;
+      map.get(split.memberId)!.totalOwed += split.amount * ratio;
     }
   }
 

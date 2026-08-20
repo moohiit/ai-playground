@@ -44,6 +44,9 @@ type Expense = {
   paidBy: { id: string; name: string };
   amount: number;
   currency?: string;
+  // Amount frozen in base currency at write time; absent on pre-multi-currency
+  // rows, which fall back to `amount`.
+  amountBase?: number;
   description: string;
   category: string;
   date: string;
@@ -84,6 +87,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [activeMine, setActiveMine] = useState(0);
   // Quick toggle on the Active tab: only rows I carry a share of.
   const [onlyMine, setOnlyMine] = useState(false);
+  const [baseCurrency, setBaseCurrency] = useState("INR");
   const [page, setPage] = useState(1);
   const [settlementHistory, setSettlementHistory] = useState<SettlementRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,6 +112,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
 
   const cur = dominantCurrency(expenses);
   const money = (n: number) => formatMoney(n, cur);
+  // Balances, the settle-up plan and the Active/my-share totals are all
+  // base-currency figures (calculateBalances works on amountBase); only the
+  // expense rows themselves carry an entry-currency amount. Labelling the
+  // former with the group's entry currency showed a base number under a
+  // foreign symbol.
+  const baseMoney = (n: number) => formatMoney(n, baseCurrency);
 
   async function toggleShare() {
     if (shareBusy) return;
@@ -191,6 +201,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
       setExpenseTotal(eData.total ?? 0);
       setActiveAmount(sData.totalAmount ?? 0);
       setActiveMine(sData.myShare ?? 0);
+      const prefsRes = await authFetch("/api/projects/expense-tracker/prefs");
+      const prefs = await prefsRes.json().catch(() => ({}));
+      if (prefs.prefs?.baseCurrency) setBaseCurrency(prefs.prefs.baseCurrency);
     } catch {
       if (seq === fetchSeqRef.current) setGroup(null); // "not found / failed" state
     } finally {
@@ -366,7 +379,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
     if (payingKey) return;
     if (
       !confirm(
-        `Record that ${s.from.name} paid ${s.to.name} ${formatMoney(s.amount, cur)}?\n\nTheir balances offset and this row disappears.${
+        `Record that ${s.from.name} paid ${s.to.name} ${baseMoney(s.amount)}?\n\nTheir balances offset and this row disappears.${
           settlements.length === 1
             ? " This is the last outstanding transfer, so the active expenses will move to settled history."
             : " Original expenses stay untouched."
@@ -568,7 +581,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
               setNewGuest={setNewGuest}
               onAddGuest={handleAddGuest}
               addingGuest={addingGuest}
-              cur={cur}
+              cur={baseCurrency}
               canManage={user?.userId === group.createdBy}
               creatorId={group.createdBy}
               onRemove={handleRemoveMember}
@@ -582,7 +595,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 onSettle={handleSettle}
                 onSettlePayment={handleSettlePayment}
                 payingKey={payingKey}
-                cur={cur}
+                cur={baseCurrency}
               />
             )}
 
@@ -618,12 +631,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
                     {onlyMine ? "✓ Only mine" : "Only mine"}
                   </button>
                   <span className="font-mono text-sm font-semibold tabular-nums text-brand-300">
-                    Total: {money(activeAmount)}
+                    Total: {baseMoney(activeAmount)}
                   </span>
                   <span className="inline-flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                     <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">
-                      {money(activeMine)}
+                      {baseMoney(activeMine)}
                     </span>
                     <span className="text-[11px] text-zinc-500">mine</span>
                   </span>
@@ -675,7 +688,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
           </>
         )}
 
-        {tab === "history" && <SettledHistoryView history={settlementHistory} />}
+        {tab === "history" && (
+          <SettledHistoryView history={settlementHistory} base={baseCurrency} />
+        )}
 
         {tab === "report" && (
           <GroupReport groupId={groupId} groupName={group.name} />
@@ -1003,7 +1018,13 @@ function ExpenseRow({
   );
 }
 
-function SettledHistoryView({ history }: { history: SettlementRecord[] }) {
+function SettledHistoryView({
+  history,
+  base,
+}: {
+  history: SettlementRecord[];
+  base: string;
+}) {
   if (history.length === 0) {
     return (
       <div className="relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-12 text-center backdrop-blur-sm">
@@ -1047,7 +1068,11 @@ function SettledHistoryView({ history }: { history: SettlementRecord[] }) {
             </span>
           </div>
 
-          <SettlementSummary expenses={record.expenses} transfers={record.transfers} />
+          <SettlementSummary
+            expenses={record.expenses}
+            transfers={record.transfers}
+            base={base}
+          />
         </section>
       ))}
     </div>
@@ -1057,26 +1082,33 @@ function SettledHistoryView({ history }: { history: SettlementRecord[] }) {
 function SettlementSummary({
   expenses,
   transfers,
+  base,
 }: {
   expenses: Expense[];
   transfers?: SettlementTransfer[];
+  base: string;
 }) {
-  const total = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const money = (n: number) => formatMoney(n, dominantCurrency(expenses));
+  // Base-currency figures throughout, matching calculateBalances and the live
+  // Settle Up panel — splits are stored in the entry currency, so they are
+  // scaled by the same base/entry ratio.
+  const total = expenses.reduce((sum, e) => sum + (e.amountBase ?? e.amount), 0);
+  const money = (n: number) => formatMoney(n, base);
 
   const members = new Map<string, { name: string; paid: number; share: number }>();
   for (const e of expenses) {
+    const baseAmt = e.amountBase ?? e.amount;
+    const ratio = e.amount > 0 ? baseAmt / e.amount : 1;
     const payerId = e.paidBy?.id ?? e.paidBy?.name;
     if (!members.has(payerId)) {
       members.set(payerId, { name: e.paidBy.name, paid: 0, share: 0 });
     }
-    members.get(payerId)!.paid += e.amount;
+    members.get(payerId)!.paid += baseAmt;
 
     for (const s of e.splits ?? []) {
       if (!members.has(s.memberId)) {
         members.set(s.memberId, { name: s.name, paid: 0, share: 0 });
       }
-      members.get(s.memberId)!.share += s.amount;
+      members.get(s.memberId)!.share += s.amount * ratio;
     }
   }
 

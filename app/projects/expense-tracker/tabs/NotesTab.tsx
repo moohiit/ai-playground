@@ -231,13 +231,21 @@ export function NotesTab() {
 
   const openNotes = notes.filter((n) => !n.settledAt);
   const settledNotes = notes.filter((n) => n.settledAt);
-  const outstandingLent = openNotes
-    .filter((n) => n.direction === "lent")
-    .reduce((s, n) => s + n.amount, 0);
-  const outstandingBorrowed = openNotes
-    .filter((n) => n.direction === "borrowed")
-    .reduce((s, n) => s + n.amount, 0);
-  const noteCur = openNotes[0]?.currency ?? notes[0]?.currency ?? "INR";
+  // Notes are recorded in whatever currency the money changed hands in, and
+  // there is no conversion here — adding them into one number and labelling
+  // it with the first note's currency invented a figure. Total per currency
+  // instead; single-currency users see exactly what they saw before.
+  const totalsByCurrency = (direction: "lent" | "borrowed") => {
+    const by = new Map<string, number>();
+    for (const n of openNotes) {
+      if (n.direction !== direction) continue;
+      const c = n.currency || "INR";
+      by.set(c, (by.get(c) ?? 0) + n.amount);
+    }
+    return [...by.entries()].sort((a, b) => b[1] - a[1]);
+  };
+  const outstandingLent = totalsByCurrency("lent");
+  const outstandingBorrowed = totalsByCurrency("borrowed");
 
   if (loading) {
     return <div className="py-16 text-center text-sm text-zinc-500">Loading…</div>;
@@ -289,21 +297,21 @@ export function NotesTab() {
         </button>
       </div>
 
-      {(outstandingLent > 0 || outstandingBorrowed > 0) && (
+      {(outstandingLent.length > 0 || outstandingBorrowed.length > 0) && (
         <div className="flex flex-wrap gap-3">
-          {outstandingLent > 0 && (
+          {outstandingLent.length > 0 && (
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-2.5 text-sm">
               <span className="text-zinc-400">Owed to you: </span>
               <span className="font-semibold text-emerald-400">
-                {formatMoney(outstandingLent, noteCur)}
+                {outstandingLent.map(([c, v]) => formatMoney(v, c)).join(" + ")}
               </span>
             </div>
           )}
-          {outstandingBorrowed > 0 && (
+          {outstandingBorrowed.length > 0 && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/[0.06] px-4 py-2.5 text-sm">
               <span className="text-zinc-400">You owe: </span>
               <span className="font-semibold text-red-400">
-                {formatMoney(outstandingBorrowed, noteCur)}
+                {outstandingBorrowed.map(([c, v]) => formatMoney(v, c)).join(" + ")}
               </span>
             </div>
           )}
