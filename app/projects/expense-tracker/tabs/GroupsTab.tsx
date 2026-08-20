@@ -197,11 +197,15 @@ export function GroupsTab() {
                   <span className="inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium uppercase text-brand-500 ring-1 ring-brand-500/30">
                     {g.members.length} members
                   </span>
-                  <span className="text-[10px] text-zinc-500">
-                    {g.lastExpenseAt
-                      ? `active ${relativeTime(g.lastExpenseAt)}`
-                      : "no expenses yet"}
-                  </span>
+                  {/* undefined = an older API build that doesn't send the
+                      field; say nothing rather than claim the group is empty. */}
+                  {g.lastExpenseAt !== undefined && (
+                    <span className="text-[10px] text-zinc-500">
+                      {g.lastExpenseAt
+                        ? `active ${relativeTime(g.lastExpenseAt)}`
+                        : "no expenses yet"}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5">

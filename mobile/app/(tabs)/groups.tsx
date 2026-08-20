@@ -247,9 +247,13 @@ export default function GroupsTab() {
             <Text className="mt-2 text-[13px] text-zinc-500">
               {item.members.length}{" "}
               {item.members.length === 1 ? "member" : "members"}
-              {item.lastExpenseAt
-                ? ` · active ${relativeTime(item.lastExpenseAt)}`
-                : " · no expenses yet"}
+              {/* undefined = an older API build that doesn't send the field;
+                  say nothing rather than claim the group is empty. */}
+              {item.lastExpenseAt === undefined
+                ? ""
+                : item.lastExpenseAt
+                  ? ` · active ${relativeTime(item.lastExpenseAt)}`
+                  : " · no expenses yet"}
             </Text>
           </Pressable>
           </Animated.View>
