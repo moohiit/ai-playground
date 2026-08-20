@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { cn, localISODate } from "../../../../lib/utils";
+import { cn, formatDay, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 
@@ -13,6 +13,19 @@ type Account = {
   openingBalance: number;
   balance: number;
   archived: boolean;
+};
+
+// The transfers endpoint resolves both account names server-side — the account
+// list here can't, since it hides archived accounts older transfers point at.
+type Transfer = {
+  _id: string;
+  fromAccountId: string;
+  toAccountId: string;
+  fromName: string;
+  toName: string;
+  amount: number;
+  date: string;
+  note: string;
 };
 
 const KINDS: { id: Account["kind"]; label: string; icon: string }[] = [
@@ -27,6 +40,7 @@ const kindMeta = (k: string) => KINDS.find((x) => x.id === k) ?? KINDS[0];
 export function AccountsTab() {
   const { authFetch } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [base, setBase] = useState("INR");
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -38,11 +52,16 @@ export function AccountsTab() {
 
   const load = useCallback(async () => {
     try {
-      const res = await authFetch(
-        `/api/projects/expense-tracker/accounts${showArchived ? "?archived=true" : ""}`
-      );
+      const [res, transferRes] = await Promise.all([
+        authFetch(
+          `/api/projects/expense-tracker/accounts${showArchived ? "?archived=true" : ""}`
+        ),
+        authFetch("/api/projects/expense-tracker/transfers"),
+      ]);
       const data = await res.json().catch(() => ({}));
+      const transferData = await transferRes.json().catch(() => ({}));
       setAccounts(data.accounts ?? []);
+      setTransfers(transferData.transfers ?? []);
     } catch {
       // network failure — keep last list
     } finally {
@@ -84,6 +103,19 @@ export function AccountsTab() {
     )
       return;
     await authFetch(`/api/projects/expense-tracker/accounts/${id}`, {
+      method: "DELETE",
+    });
+    load();
+  }
+
+  async function handleDeleteTransfer(t: Transfer) {
+    if (
+      !confirm(
+        `Undo the ${formatMoney(t.amount, base)} transfer from ${t.fromName} to ${t.toName}? Both balances go back to what they were.`
+      )
+    )
+      return;
+    await authFetch(`/api/projects/expense-tracker/transfers/${t._id}`, {
       method: "DELETE",
     });
     load();
@@ -236,6 +268,49 @@ export function AccountsTab() {
           })}
         </div>
       )}
+
+      <div>
+        <div className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">
+          Transfer history
+        </div>
+        {loading ? (
+          <div className="h-24 animate-pulse rounded-xl border border-zinc-800/60 bg-zinc-900/30" />
+        ) : transfers.length === 0 ? (
+          <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-8 text-center text-sm text-zinc-400">
+            No transfers yet. Use ⇄ Transfer to move money between accounts.
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-800/60 overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40">
+            {transfers.map((t) => (
+              <div
+                key={t._id}
+                className="group flex items-center justify-between gap-4 px-5 py-3"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-zinc-100">
+                    {t.fromName} → {t.toName}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-500">
+                    {formatDay(t.date)}
+                    {t.note ? ` · ${t.note}` : ""}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="font-mono text-sm tabular-nums text-zinc-200">
+                    {formatMoney(t.amount, base)}
+                  </span>
+                  <button
+                    onClick={() => handleDeleteTransfer(t)}
+                    className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

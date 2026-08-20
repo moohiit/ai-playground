@@ -1935,9 +1935,34 @@ export async function createTransfer(
   return transfer.toObject();
 }
 
+// A transfer row reads as gibberish without the two account names, and the
+// clients can't fill them in from their own account list: that list hides
+// archived accounts, which an older transfer may well point at.
 export async function listTransfers(auth: JWTPayload) {
   await connectDB();
-  return Transfer.find({ userId: auth.userId }).sort({ date: -1 }).lean();
+  const [transfers, accounts] = await Promise.all([
+    Transfer.find({ userId: auth.userId }).sort({ date: -1 }).lean(),
+    Account.find({ userId: auth.userId }).select("name").lean(),
+  ]);
+  const nameById = new Map(accounts.map((a) => [a._id.toString(), a.name]));
+  return transfers.map((t) => ({
+    ...t,
+    fromName: nameById.get(t.fromAccountId.toString()) ?? "Unknown account",
+    toName: nameById.get(t.toAccountId.toString()) ?? "Unknown account",
+  }));
+}
+
+// Balances are derived on every read by computeBalanceDeltas, which sums the
+// surviving Transfer rows — so dropping the row is all it takes for both the
+// sending and the receiving account to go back to their pre-transfer figures.
+export async function removeTransfer(id: string, auth: JWTPayload) {
+  await connectDB();
+  const res = await Transfer.deleteOne({
+    _id: toObjectId(id, "transferId"),
+    userId: auth.userId,
+  });
+  if (res.deletedCount === 0) throw new Error("Transfer not found");
+  return { deleted: true };
 }
 
 // ── Budgets (Phase 2A) ──────────────────────────────

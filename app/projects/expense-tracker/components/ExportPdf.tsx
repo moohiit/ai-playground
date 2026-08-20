@@ -40,6 +40,9 @@ type Summary = {
   paidByOthers?: number;
   personalTotal?: number;
   groupTotal?: number;
+  incomeAmount?: number;
+  incomeCount?: number;
+  netAmount?: number;
   averagePerDay?: number;
   // The same averages restricted to the viewer's own share.
   myAveragePerDay?: number;
@@ -194,6 +197,15 @@ export function ExportPdfButton({ summary, groupId, groupName, base, filters }: 
         );
         y += 6;
       }
+      if ((summary.incomeAmount ?? 0) > 0) {
+        doc.text(
+          `Income: ${rs(summary.incomeAmount ?? 0)} (${summary.incomeCount ?? 0})  ·  Net: ${rs(summary.netAmount ?? 0)}`,
+          14,
+          y
+        );
+        y += 6;
+      }
+
       if (typeof summary.averagePerDay === "number") {
         doc.text(
           `Avg/Day: ${rs(summary.averagePerDay)} (mine ${rs(summary.myAveragePerDay ?? 0)})  ·  Avg/Txn: ${rs(summary.averagePerTransaction ?? 0)} (mine ${rs(summary.myAveragePerTransaction ?? 0)})  ·  Days: ${summary.daysCovered ?? 0}`,

@@ -59,6 +59,9 @@ type Largest = {
 type Summary = {
   totalAmount: number;
   totalCount: number;
+  incomeAmount: number;
+  incomeCount: number;
+  netAmount: number;
   myShare: number;
   // Entries the viewer is part of — the denominator for myAveragePerTransaction.
   myCount: number;
@@ -497,6 +500,28 @@ function HeroStats({ summary }: { summary: Summary }) {
         accent="from-amber-500/40"
         tooltip="Group expenses other members paid for"
       />
+      {/* getSummary has always returned these; only mobile showed them, so the
+          web report described spending as if nothing came in. */}
+      {(summary.incomeAmount ?? 0) > 0 && (
+        <>
+          <StatCard
+            label="Income"
+            value={fmt(summary.incomeAmount)}
+            hint={`${summary.incomeCount ?? 0} entries`}
+            accent="from-emerald-500/40"
+          />
+          <StatCard
+            label="Net Flow"
+            value={fmt(summary.netAmount ?? 0)}
+            hint="Income − spend"
+            accent={
+              (summary.netAmount ?? 0) < 0
+                ? "from-red-500/40"
+                : "from-emerald-500/40"
+            }
+          />
+        </>
+      )}
     </div>
   );
 }

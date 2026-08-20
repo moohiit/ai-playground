@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import { localISODate } from "../../lib/dates";
+import { formatDay, localISODate } from "../../lib/dates";
 import type { Account, AccountKind } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { formatMoney, parseAmount } from "../../lib/currency";
@@ -26,6 +26,19 @@ const KINDS: { id: AccountKind; label: string; icon: string }[] = [
   { id: "wallet", label: "Wallet", icon: "👛" },
 ];
 const kindMeta = (k: string) => KINDS.find((x) => x.id === k) ?? KINDS[0];
+
+// The transfers endpoint resolves both account names server-side, so this shape
+// is richer than the raw record and has no mirror in lib/types.
+type Transfer = {
+  _id: string;
+  fromAccountId: string;
+  toAccountId: string;
+  fromName: string;
+  toName: string;
+  amount: number;
+  date: string;
+  note: string;
+};
 
 // An opening balance is the one signed money field in this app — a credit card
 // legitimately starts in the red. parseAmount rejects a leading "-" (it guards
@@ -41,6 +54,7 @@ export default function AccountsScreen() {
   const { authFetch } = useAuth();
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [base, setBase] = useState("INR");
   const [refreshing, setRefreshing] = useState(false);
   const [showSheet, setShowSheet] = useState(false);
@@ -52,15 +66,18 @@ export default function AccountsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [accRes, prefRes] = await Promise.all([
+      const [accRes, prefRes, transferRes] = await Promise.all([
         authFetch(
           `/api/projects/expense-tracker/accounts${showArchived ? "?archived=true" : ""}`
         ),
         authFetch("/api/projects/expense-tracker/prefs"),
+        authFetch("/api/projects/expense-tracker/transfers"),
       ]);
       const accData = await accRes.json().catch(() => ({}));
       const prefData = await prefRes.json().catch(() => ({}));
+      const transferData = await transferRes.json().catch(() => ({}));
       setAccounts(accData.accounts ?? []);
+      setTransfers(transferData.transfers ?? []);
       if (prefData.prefs?.baseCurrency) setBase(prefData.prefs.baseCurrency);
     } catch {
       // keep last good state
@@ -116,6 +133,29 @@ export default function AccountsScreen() {
         },
       },
     ]);
+  }
+
+  function confirmDeleteTransfer(t: Transfer) {
+    Alert.alert(
+      "Delete transfer",
+      `Undo ${formatMoney(t.amount, base)} from ${t.fromName} to ${t.toName}? Both balances go back to what they were.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const res = await authFetch(`/api/projects/expense-tracker/transfers/${t._id}`, { method: "DELETE" });
+              if (!res.ok) throw new Error();
+              load();
+            } catch {
+              Alert.alert("Error", "Couldn't delete the transfer.");
+            }
+          },
+        },
+      ]
+    );
   }
 
   return (
@@ -213,6 +253,34 @@ export default function AccountsScreen() {
         <Text className="px-1 text-center text-[11px] text-zinc-600">
           Tap an account to edit or archive it · long-press to delete.
         </Text>
+
+        <Text className="mt-2 px-1 text-[11px] uppercase tracking-wider text-zinc-500">
+          Transfer history
+        </Text>
+        {transfers.length === 0 ? (
+          <View className="items-center rounded-2xl border border-white/10 bg-white/[0.03] py-8">
+            <Text className="text-sm text-zinc-400">No transfers yet.</Text>
+            <Text className="mt-1 text-xs text-zinc-500">Use ⇄ Transfer to move money between accounts.</Text>
+          </View>
+        ) : (
+          transfers.map((t) => (
+            <View key={t._id} className="flex-row items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <View className="flex-1">
+                <Text className="text-sm font-semibold text-zinc-100">
+                  {t.fromName} → {t.toName}
+                </Text>
+                <Text className="mt-0.5 text-xs text-zinc-500">
+                  {formatDay(t.date)}
+                  {t.note ? ` · ${t.note}` : ""}
+                </Text>
+              </View>
+              <Text className="text-sm font-semibold text-zinc-200">{formatMoney(t.amount, base)}</Text>
+              <Pressable onPress={() => confirmDeleteTransfer(t)} hitSlop={8}>
+                <Text className="text-xs text-zinc-600">✕</Text>
+              </Pressable>
+            </View>
+          ))
+        )}
       </ScrollView>
 
       <AccountSheet
