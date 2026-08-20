@@ -108,10 +108,22 @@ export type Settlement = {
   amount: number;
 };
 
+export type SettlementTransfer = {
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  amount: number;
+  paidAt: string;
+};
+
 export type SettlementRecord = {
   settlementId: string;
   settledAt: string;
   expenses: Expense[];
+  // Settle-up payments actually made before the batch closed. Empty for
+  // batches closed with no individual payments, and for pre-existing batches
+  // recorded before settlements were tracked — both fall back to the plan
+  // recomputed from Paid − Share.
+  transfers?: SettlementTransfer[];
 };
 
 export type CategoryStat = { category: string; total: number; count: number };

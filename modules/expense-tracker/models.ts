@@ -556,3 +556,68 @@ const groupInviteSchema = new Schema<GroupInviteDoc>(
 export const GroupInvite: Model<GroupInviteDoc> =
   (mongoose.models.GroupInvite as Model<GroupInviteDoc>) ||
   mongoose.model<GroupInviteDoc>("GroupInvite", groupInviteSchema);
+
+// ── Group settlement batches ────────────────────────
+//
+// A settled batch used to be described only by the expenses carrying its
+// settlementId. Individual settle-up payments (member repays member) were
+// swept into that batch as isSettlement expenses, which distorted the
+// per-member Paid/Share table — a member who paid and was repaid showed a net
+// of zero. Those payment rows are now removed when the batch closes and the
+// money movement is recorded here instead, so history keeps both the true
+// spend figures and a record of how the group actually squared up.
+export type SettlementTransfer = {
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  amount: number;
+  paidAt: Date;
+};
+
+export type GroupSettlementDoc = {
+  _id: Types.ObjectId;
+  groupId: Types.ObjectId;
+  settlementId: string;
+  settledAt: Date;
+  settledBy: string;
+  // Payments actually recorded before the batch closed. Empty when the group
+  // was closed straight from "Mark as Settled" with no individual settle-ups.
+  transfers: SettlementTransfer[];
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const settlementTransferSchema = new Schema<SettlementTransfer>(
+  {
+    from: {
+      id: { type: String, required: true },
+      name: { type: String, required: true },
+    },
+    to: {
+      id: { type: String, required: true },
+      name: { type: String, required: true },
+    },
+    amount: { type: Number, required: true },
+    paidAt: { type: Date, required: true },
+  },
+  { _id: false }
+);
+
+const groupSettlementSchema = new Schema<GroupSettlementDoc>(
+  {
+    groupId: {
+      type: Schema.Types.ObjectId,
+      ref: "Group",
+      required: true,
+      index: true,
+    },
+    settlementId: { type: String, required: true, unique: true },
+    settledAt: { type: Date, required: true },
+    settledBy: { type: String, required: true },
+    transfers: { type: [settlementTransferSchema], default: [] },
+  },
+  { timestamps: true }
+);
+
+export const GroupSettlement: Model<GroupSettlementDoc> =
+  (mongoose.models.GroupSettlement as Model<GroupSettlementDoc>) ||
+  mongoose.model<GroupSettlementDoc>("GroupSettlement", groupSettlementSchema);

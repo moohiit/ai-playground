@@ -18,8 +18,10 @@ export async function POST(req: Request, { params }: Params) {
     if (!parsed.success) {
       throw new ApiError(400, parsed.error.issues[0]?.message ?? "Invalid input");
     }
-    const expense = await recordSettlementPayment(params.id, parsed.data, auth);
-    return NextResponse.json({ expense }, { status: 201 });
+    // Returns { expense, autoSettled, settlement? } — settling the last
+    // outstanding transfer closes the active window in the same call.
+    const result = await recordSettlementPayment(params.id, parsed.data, auth);
+    return NextResponse.json(result, { status: 201 });
   } catch (err) {
     return handleRouteError(err);
   }

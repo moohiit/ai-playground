@@ -51,10 +51,21 @@ type Expense = {
   splits: { memberId: string; name: string; amount: number }[];
   isSettlement?: boolean;
 };
+type SettlementTransfer = {
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  amount: number;
+  paidAt: string;
+};
 type SettlementRecord = {
   settlementId: string;
   settledAt: string;
   expenses: Expense[];
+  // Settle-up payments actually made before the batch closed. Empty for
+  // batches closed with no individual payments, and for pre-existing batches
+  // recorded before settlements were tracked — both fall back to the plan
+  // recomputed from Paid − Share.
+  transfers?: SettlementTransfer[];
 };
 
 type Tab = "active" | "history" | "report";
@@ -70,6 +81,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expenseTotal, setExpenseTotal] = useState(0);
   const [activeAmount, setActiveAmount] = useState(0);
+  const [activeMine, setActiveMine] = useState(0);
   const [page, setPage] = useState(1);
   const [settlementHistory, setSettlementHistory] = useState<SettlementRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,6 +180,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
       setExpenses(eData.expenses ?? []);
       setExpenseTotal(eData.total ?? 0);
       setActiveAmount(sData.totalAmount ?? 0);
+      setActiveMine(sData.myShare ?? 0);
     } catch {
       if (seq === fetchSeqRef.current) setGroup(null); // "not found / failed" state
     } finally {
@@ -322,7 +335,11 @@ export function GroupDetail({ groupId, onBack }: Props) {
     if (payingKey) return;
     if (
       !confirm(
-        `Record that ${s.from.name} paid ${s.to.name} ${formatMoney(s.amount, cur)}?\n\nThis adds a settlement entry — their balances offset and this row disappears. Original expenses stay untouched.`
+        `Record that ${s.from.name} paid ${s.to.name} ${formatMoney(s.amount, cur)}?\n\nTheir balances offset and this row disappears.${
+          settlements.length === 1
+            ? " This is the last outstanding transfer, so the active expenses will move to settled history."
+            : " Original expenses stay untouched."
+        }`
       )
     )
       return;
@@ -340,10 +357,15 @@ export function GroupDetail({ groupId, onBack }: Props) {
           }),
         }
       );
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         alert(data.error ?? "Couldn't record the payment");
         return;
+      }
+      if (data.autoSettled) {
+        alert(
+          `All square — that was the last payment, so ${data.settlement?.expenseCount ?? 0} expenses moved to settled history.`
+        );
       }
       fetchAll();
     } catch {
@@ -542,8 +564,15 @@ export function GroupDetail({ groupId, onBack }: Props) {
                   </span>
                 </h3>
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
+                  <span className="font-mono text-sm font-semibold tabular-nums text-brand-300">
                     Total: {money(activeAmount)}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">
+                      {money(activeMine)}
+                    </span>
+                    <span className="text-[11px] text-zinc-500">mine</span>
                   </span>
                   {showPagination && (
                     <span className="text-xs text-zinc-500">
@@ -572,6 +601,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                       key={e._id}
                       index={i}
                       expense={e}
+                      userId={user?.userId}
                       onEdit={() => setEditingExpense(e)}
                       onDelete={() => handleDeleteExpense(e._id)}
                     />
@@ -829,16 +859,22 @@ function SettleUpSection({
 function ExpenseRow({
   expense: e,
   index,
+  userId,
   onEdit,
   onDelete,
 }: {
   expense: Expense;
   index: number;
+  userId?: string;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   // Rows show the amount as entered — label it with the row's own currency.
   const money = (n: number) => formatMoney(n, e.currency ?? "INR");
+  // The viewer's slice of the split — 0 when the split leaves them out.
+  const myShare = userId
+    ? (e.splits?.find((sp) => sp.memberId === userId)?.amount ?? 0)
+    : 0;
   return (
     <div
       className="animate-fade-up group flex items-center justify-between gap-3 rounded-lg border border-zinc-800/80 bg-gradient-to-b from-zinc-900/40 to-zinc-950/40 px-4 py-3 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-zinc-700"
@@ -878,8 +914,20 @@ function ExpenseRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-3">
-        <span className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
-          {money(e.amount)}
+        <span className="flex flex-col items-end">
+          <span className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
+            {money(e.amount)}
+          </span>
+          {!e.isSettlement && (
+            <span
+              className={cn(
+                "font-mono text-[11px] tabular-nums",
+                myShare > 0 ? "font-semibold text-emerald-300" : "text-zinc-600"
+              )}
+            >
+              {myShare > 0 ? `${money(myShare)} mine` : "not yours"}
+            </span>
+          )}
         </span>
         {!e.isSettlement && (
           <button
@@ -944,14 +992,20 @@ function SettledHistoryView({ history }: { history: SettlementRecord[] }) {
             </span>
           </div>
 
-          <SettlementSummary expenses={record.expenses} />
+          <SettlementSummary expenses={record.expenses} transfers={record.transfers} />
         </section>
       ))}
     </div>
   );
 }
 
-function SettlementSummary({ expenses }: { expenses: Expense[] }) {
+function SettlementSummary({
+  expenses,
+  transfers,
+}: {
+  expenses: Expense[];
+  transfers?: SettlementTransfer[];
+}) {
   const total = expenses.reduce((sum, e) => sum + e.amount, 0);
   const money = (n: number) => formatMoney(n, dominantCurrency(expenses));
 
@@ -1000,6 +1054,15 @@ function SettlementSummary({ expenses }: { expenses: Expense[] }) {
     if (creditors[ci].amt < 0.01) ci++;
   }
 
+  const settledVia =
+    transfers && transfers.length > 0
+      ? transfers.map((t) => ({
+          from: t.from.name,
+          to: t.to.name,
+          amount: t.amount,
+        }))
+      : plan;
+
   return (
     <div className="flex flex-col gap-3">
       <div className="text-[11px] text-zinc-500">
@@ -1009,15 +1072,17 @@ function SettlementSummary({ expenses }: { expenses: Expense[] }) {
         </span>
       </div>
 
-      {/* Who paid whom in this settlement */}
-      {plan.length > 0 && (
+      {/* Who paid whom in this settlement. Batches closed after settle-up
+          payments were tracked carry the real transfers; older ones fall back
+          to the plan recomputed from Paid − Share. */}
+      {settledVia.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/90">
             Settled via
           </div>
-          {plan.map((p) => (
+          {settledVia.map((p, i) => (
             <div
-              key={`${p.from}→${p.to}`}
+              key={`${p.from}→${p.to}-${i}`}
               className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-2.5 py-1.5"
             >
               <div className="min-w-0 flex-1 text-[11px] leading-snug">

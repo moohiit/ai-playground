@@ -58,6 +58,7 @@ export default function GroupDetailScreen() {
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [activeTotal, setActiveTotal] = useState(0);
+  const [activeMine, setActiveMine] = useState(0);
   const [history, setHistory] = useState<SettlementRecord[]>([]);
   const [tab, setTab] = useState<Tab>("active");
   const [loading, setLoading] = useState(true);
@@ -170,6 +171,7 @@ export default function GroupDetailScreen() {
       setSettlements(b.settlements ?? []);
       setExpenses(e.expenses ?? []);
       setActiveTotal(s.totalAmount ?? 0);
+      setActiveMine(s.myShare ?? 0);
       setHistory(h.history ?? []);
     } catch {
       // keep last good state
@@ -301,7 +303,11 @@ export default function GroupDetailScreen() {
   function confirmSettlePayment(s: Settlement) {
     Alert.alert(
       "Record payment",
-      `${s.from.name} paid ${s.to.name} ${money(s.amount)}?\n\nThis adds a settlement entry — their balances offset and this row disappears. Original expenses stay untouched.`,
+      `${s.from.name} paid ${s.to.name} ${money(s.amount)}?\n\nTheir balances offset and this row disappears.${
+        settlements.length === 1
+          ? " This is the last outstanding transfer, so the active expenses will move to settled history."
+          : " Original expenses stay untouched."
+      }`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -322,10 +328,16 @@ export default function GroupDetailScreen() {
                   }),
                 }
               );
+              const data = await res.json().catch(() => ({}));
               if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
                 Alert.alert("Error", data.error ?? "Couldn't record the payment");
                 return;
+              }
+              if (data.autoSettled) {
+                Alert.alert(
+                  "All square",
+                  `That was the last payment — ${data.settlement?.expenseCount ?? 0} expenses moved to settled history.`
+                );
               }
               fetchAll();
             } catch {
@@ -664,13 +676,24 @@ export default function GroupDetailScreen() {
             )}
 
             {/* Active expenses */}
-            <View className="flex-row items-center justify-between">
+            <View className="flex-row items-start justify-between">
               <Text className="text-sm font-semibold text-zinc-100">
                 Active Expenses ({expenses.length})
               </Text>
-              <Text className="text-sm font-semibold text-zinc-100">
-                Total: {money(activeTotal)}
-              </Text>
+              <View className="items-end">
+                <Text className="text-sm font-semibold text-indigo-300">
+                  Total: {money(activeTotal)}
+                </Text>
+                <View className="mt-0.5 flex-row items-center gap-1.5">
+                  <View
+                    style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#34d399" }}
+                  />
+                  <Text className="text-[13px] font-semibold text-emerald-300">
+                    {money(activeMine)}
+                  </Text>
+                  <Text className="text-[11px] text-zinc-500">mine</Text>
+                </View>
+              </View>
             </View>
 
             {expenses.length === 0 ? (
@@ -712,9 +735,24 @@ export default function GroupDetailScreen() {
                         </Text>
                       )}
                     </View>
-                    <Text className="text-base font-semibold text-zinc-100">
-                      {money(e.amount)}
-                    </Text>
+                    <View className="items-end">
+                      <Text className="text-base font-semibold text-zinc-100">
+                        {money(e.amount)}
+                      </Text>
+                      {!e.isSettlement && (
+                        <Text
+                          className={`mt-0.5 text-[13px] font-semibold ${
+                            rowShare(e, user?.userId) > 0
+                              ? "text-emerald-300"
+                              : "text-zinc-600"
+                          }`}
+                        >
+                          {rowShare(e, user?.userId) > 0
+                            ? `${money(rowShare(e, user?.userId))} mine`
+                            : "not yours"}
+                        </Text>
+                      )}
+                    </View>
                   </View>
                   <View className="mt-3 flex-row justify-end gap-4 border-t border-white/5 pt-3">
                     {!e.isSettlement && (
@@ -822,6 +860,13 @@ export default function GroupDetailScreen() {
   );
 }
 
+/** What one group row costs the viewer — their slice of the split, 0 when the
+ *  split leaves them out. Amounts here are already in the group's currency. */
+function rowShare(e: Expense, userId?: string): number {
+  if (!userId) return 0;
+  return e.splits?.find((sp) => sp.memberId === userId)?.amount ?? 0;
+}
+
 /** Per-member Paid / Share / Net for a settled batch (mirrors the web summary). */
 function settlementMembers(expenses: Expense[]) {
   const map = new Map<string, { id: string; name: string; paid: number; share: number }>();
@@ -876,6 +921,14 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
   const totalShare = members.reduce((s, m) => s + m.share, 0);
   const plan = settlementPlan(members);
   const money = (n: number) => formatMoney(n, dominantCurrency(record.expenses));
+  const settledVia =
+    record.transfers && record.transfers.length > 0
+      ? record.transfers.map((t) => ({
+          from: t.from.name,
+          to: t.to.name,
+          amount: t.amount,
+        }))
+      : plan;
 
   return (
     <View className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -892,15 +945,17 @@ function SettlementCard({ record }: { record: SettlementRecord }) {
         </Text>
       </View>
 
-      {/* Who paid whom in this settlement */}
-      {plan.length > 0 && (
+      {/* Who paid whom in this settlement. Batches closed after settle-up
+          payments were tracked carry the real transfers; older ones fall back
+          to the plan recomputed from Paid − Share. */}
+      {settledVia.length > 0 && (
         <View className="mb-3 gap-1.5">
           <Text className="text-[11px] uppercase tracking-wider text-amber-400/90">
             Settled via
           </Text>
-          {plan.map((p) => (
+          {settledVia.map((p, i) => (
             <View
-              key={`${p.from}→${p.to}`}
+              key={`${p.from}→${p.to}-${i}`}
               className="flex-row items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2"
             >
               <Text className="flex-1 text-xs" numberOfLines={1}>

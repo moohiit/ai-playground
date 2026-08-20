@@ -17,6 +17,7 @@ import {
   MoneyNote,
   Todo,
   GroupInvite,
+  GroupSettlement,
   type ExpenseDoc,
   type RecurringRuleDoc,
 } from "./models";
@@ -468,6 +469,7 @@ export async function deleteGroup(id: string, auth: JWTPayload) {
   }
   await Expense.deleteMany({ groupId: id });
   await GroupInvite.deleteMany({ groupId: id });
+  await GroupSettlement.deleteMany({ groupId: id });
   await Group.findByIdAndDelete(id);
 }
 
@@ -1283,7 +1285,101 @@ export async function recordSettlementPayment(
     splits: [{ memberId: to.userId, name: to.name, amount }],
     isSettlement: true,
   });
-  return expense.toObject();
+
+  // Settling the last outstanding transfer leaves everyone square, and there
+  // was no way to then close the window short of also pressing "Mark as
+  // Settled". Once nobody owes anybody, close it automatically.
+  const active = await Expense.find({
+    groupId: group._id,
+    type: "group",
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  }).lean();
+
+  const balances = calculateBalances(active as ExpenseDoc[]);
+  const squared =
+    balances.length > 0 && balances.every((b) => Math.abs(b.netBalance) < 0.01);
+  // A window holding nothing but settle-up payments has no spend to settle.
+  const hasSpend = active.some((e) => !e.isSettlement);
+
+  if (squared && hasSpend) {
+    const settlement = await closeActiveWindow(group, auth);
+    return { expense: expense.toObject(), autoSettled: true, settlement };
+  }
+
+  return { expense: expense.toObject(), autoSettled: false };
+}
+
+/**
+ * Close the group's active window: real expenses move into a settled batch,
+ * and the individual settle-up payments recorded along the way are lifted out
+ * of the expense list into a GroupSettlement record.
+ *
+ * Keeping those payment rows in the batch made the history table lie — a
+ * member who paid ₹612 and was repaid ₹612 showed Paid and Share both
+ * inflated and a net of zero, hiding what the group actually spent. The
+ * payments are still preserved, just as transfers rather than expenses.
+ */
+async function closeActiveWindow(
+  group: { _id: mongoose.Types.ObjectId },
+  auth: JWTPayload
+) {
+  const oid = group._id;
+  const settlementId = `settle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date();
+
+  const active = await Expense.find({
+    groupId: oid,
+    type: "group",
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  }).lean();
+
+  const payments = active.filter((e) => e.isSettlement);
+  const spend = active.filter((e) => !e.isSettlement);
+
+  if (spend.length === 0) {
+    throw new Error("No unsettled expenses in this group");
+  }
+
+  await Expense.updateMany(
+    { _id: { $in: spend.map((e) => e._id) } },
+    { $set: { settledAt: now, settlementId } }
+  );
+
+  // Recorded first, then the rows are dropped — losing the payment history to
+  // a failure between the two would be worse than a duplicate record.
+  const transfers = payments.map((p) => ({
+    from: { id: p.paidBy.id, name: p.paidBy.name },
+    to: {
+      id: p.splits?.[0]?.memberId ?? "",
+      name: p.splits?.[0]?.name ?? "-",
+    },
+    amount: p.amountBase ?? p.amount,
+    paidAt: p.date,
+  }));
+
+  await GroupSettlement.create({
+    groupId: oid,
+    settlementId,
+    settledAt: now,
+    settledBy: auth.userId,
+    transfers,
+  });
+
+  if (payments.length > 0) {
+    await Expense.deleteMany({ _id: { $in: payments.map((p) => p._id) } });
+  }
+
+  const balances = calculateBalances(spend as ExpenseDoc[]);
+  const settlementPlan = calculateSettlements(balances);
+
+  return {
+    settlementId,
+    settledAt: now,
+    expenseCount: spend.length,
+    balances,
+    settlements: settlementPlan,
+    transfers,
+  };
 }
 
 export async function settleGroup(groupId: string, auth: JWTPayload) {
@@ -1294,35 +1390,7 @@ export async function settleGroup(groupId: string, auth: JWTPayload) {
     throw new Error("Group not found or access denied");
   }
 
-  const oid = toObjectId(groupId, "groupId");
-  const settlementId = `settle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const now = new Date();
-
-  const unsettledFilter = {
-    groupId: oid,
-    type: "group",
-    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
-  };
-
-  const updateResult = await Expense.updateMany(unsettledFilter, {
-    $set: { settledAt: now, settlementId },
-  });
-
-  if (updateResult.modifiedCount === 0) {
-    throw new Error("No unsettled expenses in this group");
-  }
-
-  const settled = await Expense.find({ settlementId }).lean();
-  const balances = calculateBalances(settled as ExpenseDoc[]);
-  const settlementPlan = calculateSettlements(balances);
-
-  return {
-    settlementId,
-    settledAt: now,
-    expenseCount: updateResult.modifiedCount,
-    balances,
-    settlements: settlementPlan,
-  };
+  return closeActiveWindow(group, auth);
 }
 
 export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
@@ -1360,7 +1428,18 @@ export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
     grouped.get(sid)!.expenses.push(exp);
   }
 
-  return Array.from(grouped.values());
+  // How the group actually squared up, for batches closed after the payment
+  // rows were lifted out. Older batches have no record and fall back to the
+  // plan the clients recompute from Paid − Share.
+  const records = await GroupSettlement.find({
+    settlementId: { $in: Array.from(grouped.keys()) },
+  }).lean();
+  const transfersById = new Map(records.map((r) => [r.settlementId, r.transfers]));
+
+  return Array.from(grouped.values()).map((batch) => ({
+    ...batch,
+    transfers: transfersById.get(batch.settlementId) ?? [],
+  }));
 }
 
 // ── Account deletion ────────────────────────────────
@@ -1380,6 +1459,8 @@ export async function deleteAccount(auth: JWTPayload) {
       { groupId: { $in: ownGroupIds } },
     ],
   });
+
+  await GroupSettlement.deleteMany({ groupId: { $in: ownGroupIds } });
 
   // Delete the groups they own.
   await Group.deleteMany({ createdBy: userId });
