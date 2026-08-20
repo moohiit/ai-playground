@@ -959,7 +959,7 @@ export async function getSummary(
 
   const byCategoryMap = new Map<
     string,
-    { category: string; total: number; count: number }
+    { category: string; total: number; myShare: number; count: number }
   >();
   const byMonthMap = new Map<
     string,
@@ -1007,14 +1007,19 @@ export async function getSummary(
 
     if (e.paidBy?.id === userId) paidByMe += baseAmt;
 
+    // What this entry cost the viewer: personal entries in full, group
+    // entries only for their split. Tracked per row so breakdowns can report
+    // my share the same way the headline figures do.
+    let mine = 0;
     if (e.type === "personal") {
       personalTotal += baseAmt;
-      myShare += baseAmt;
+      mine = baseAmt;
     } else {
       groupTotal += baseAmt;
       const myPart = (e.splits ?? []).find((s) => s.memberId === userId);
-      if (myPart) myShare += myPart.amount * ratio;
+      if (myPart) mine = myPart.amount * ratio;
     }
+    myShare += mine;
 
     if (!largest || baseAmt > largest.amount) {
       largest = {
@@ -1029,9 +1034,11 @@ export async function getSummary(
     const cat = byCategoryMap.get(e.category) ?? {
       category: e.category,
       total: 0,
+      myShare: 0,
       count: 0,
     };
     cat.total += baseAmt;
+    cat.myShare += mine;
     cat.count += 1;
     byCategoryMap.set(e.category, cat);
 

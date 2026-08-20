@@ -82,6 +82,8 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [expenseTotal, setExpenseTotal] = useState(0);
   const [activeAmount, setActiveAmount] = useState(0);
   const [activeMine, setActiveMine] = useState(0);
+  // Quick toggle on the Active tab: only rows I carry a share of.
+  const [onlyMine, setOnlyMine] = useState(false);
   const [page, setPage] = useState(1);
   const [settlementHistory, setSettlementHistory] = useState<SettlementRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,9 +164,15 @@ export function GroupDetail({ groupId, onBack }: Props) {
         authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
         authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
         authFetch(
-          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=${PAGE_SIZE}&page=${page}&settled=false`
+          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=${PAGE_SIZE}&page=${page}&settled=false${
+            onlyMine ? "&mine=true" : ""
+          }`
         ),
-        authFetch(`/api/projects/expense-tracker/reports/summary?groupId=${groupId}&settled=false`),
+        authFetch(
+          `/api/projects/expense-tracker/reports/summary?groupId=${groupId}&settled=false${
+            onlyMine ? "&mine=true" : ""
+          }`
+        ),
       ]);
       const [gData, bData, eData, sData] = await Promise.all([
         gRes.json().catch(() => ({})),
@@ -186,7 +194,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
     } finally {
       if (seq === fetchSeqRef.current) setLoading(false);
     }
-  }, [groupId, page]);
+  }, [groupId, page, onlyMine]);
+
+  // A deep page can vanish when the filter narrows the list — go back to 1.
+  useEffect(() => {
+    setPage(1);
+  }, [onlyMine]);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -564,6 +577,17 @@ export function GroupDetail({ groupId, onBack }: Props) {
                   </span>
                 </h3>
                 <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setOnlyMine((v) => !v)}
+                    className={cn(
+                      "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+                      onlyMine
+                        ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                        : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                    )}
+                  >
+                    {onlyMine ? "✓ Only mine" : "Only mine"}
+                  </button>
                   <span className="font-mono text-sm font-semibold tabular-nums text-brand-300">
                     Total: {money(activeAmount)}
                   </span>
@@ -591,7 +615,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
                     </svg>
                   </div>
                   <p className="relative text-sm text-zinc-400">
-                    All cleared! No unsettled expenses.
+                    {onlyMine
+                      ? "No active expenses include you."
+                      : "All cleared! No unsettled expenses."}
                   </p>
                 </div>
               ) : (

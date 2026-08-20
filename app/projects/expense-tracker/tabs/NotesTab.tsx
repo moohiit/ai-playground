@@ -41,8 +41,9 @@ export function NotesTab() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // note form
+  // note form — editingId set means the form is editing that note
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [direction, setDirection] = useState<"lent" | "borrowed">("lent");
   const [personName, setPersonName] = useState("");
   const [amount, setAmount] = useState("");
@@ -76,6 +77,27 @@ export function NotesTab() {
     load();
   }, [load]);
 
+  function resetNoteForm() {
+    setEditingId(null);
+    setDirection("lent");
+    setPersonName("");
+    setAmount("");
+    setDescription("");
+    setGivenOn(todayLocal());
+    setDueBy("");
+  }
+
+  function openEditNote(n: MoneyNote) {
+    setEditingId(n._id);
+    setDirection(n.direction);
+    setPersonName(n.personName);
+    setAmount(String(n.amount));
+    setDescription(n.description ?? "");
+    setGivenOn(n.givenOn.slice(0, 10));
+    setDueBy(n.dueBy ? n.dueBy.slice(0, 10) : "");
+    setShowAdd(true);
+  }
+
   async function addNote() {
     if (savingNote) return;
     const amt = parseFloat(amount);
@@ -83,28 +105,29 @@ export function NotesTab() {
     if (!Number.isFinite(amt) || amt <= 0) return alert("Enter an amount greater than 0");
     setSavingNote(true);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          direction,
-          personName: personName.trim(),
-          amount: amt,
-          description: description.trim(),
-          givenOn,
-          dueBy: dueBy || null,
-        }),
-      });
+      const res = await authFetch(
+        editingId
+          ? `/api/projects/expense-tracker/notes/${editingId}`
+          : "/api/projects/expense-tracker/notes",
+        {
+          method: editingId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            direction,
+            personName: personName.trim(),
+            amount: amt,
+            description: description.trim(),
+            givenOn,
+            dueBy: dueBy || null,
+          }),
+        }
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         alert(data.error ?? "Failed to save note");
         return;
       }
-      setPersonName("");
-      setAmount("");
-      setDescription("");
-      setDueBy("");
-      setGivenOn(todayLocal());
+      resetNoteForm();
       setShowAdd(false);
       load();
     } catch {
@@ -254,7 +277,12 @@ export function NotesTab() {
           </p>
         </div>
         <button
-          onClick={() => setShowAdd((v) => !v)}
+          onClick={() => {
+            // Always open a blank form — reusing a half-finished edit here
+            // would silently PATCH the wrong note.
+            if (showAdd) { setShowAdd(false); setEditingId(null); }
+            else { resetNoteForm(); setShowAdd(true); }
+          }}
           className="rounded-lg border border-brand-500/40 bg-brand-500/15 px-4 py-2 text-sm font-semibold text-brand-300 hover:bg-brand-500/25"
         >
           {showAdd ? "Close" : "+ New note"}
@@ -284,6 +312,9 @@ export function NotesTab() {
 
       {showAdd && (
         <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-zinc-100">
+            {editingId ? "Edit money note" : "New money note"}
+          </h3>
           <div className="mb-3 flex gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 p-1">
             {(
               [
@@ -365,6 +396,7 @@ export function NotesTab() {
               n={n}
               busy={busyId === n._id}
               onSettle={() => toggleSettled(n)}
+              onEdit={() => openEditNote(n)}
               onDelete={() => deleteNote(n._id)}
             />
           ))}
@@ -379,6 +411,7 @@ export function NotesTab() {
                   n={n}
                   busy={busyId === n._id}
                   onSettle={() => toggleSettled(n)}
+                  onEdit={() => openEditNote(n)}
                   onDelete={() => deleteNote(n._id)}
                 />
               ))}
@@ -474,11 +507,13 @@ function NoteRow({
   n,
   busy,
   onSettle,
+  onEdit,
   onDelete,
 }: {
   n: MoneyNote;
   busy: boolean;
   onSettle: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const lent = n.direction === "lent";
@@ -531,6 +566,13 @@ function NoteRow({
             )}
           >
             {busy ? "…" : n.settledAt ? "Reopen" : lent ? "Mark returned" : "Mark repaid"}
+          </button>
+          <button
+            onClick={onEdit}
+            disabled={busy}
+            className="rounded-md border border-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-400 transition-colors hover:border-brand-500/40 hover:text-brand-300 disabled:opacity-50"
+          >
+            Edit
           </button>
           <button
             onClick={onDelete}

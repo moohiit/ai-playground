@@ -18,7 +18,14 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-type CategoryEntry = { category: string; total: number; count: number };
+type CategoryEntry = {
+  category: string;
+  total: number;
+  // The viewer's slice of that category — personal rows in full, group rows
+  // only for their split.
+  myShare: number;
+  count: number;
+};
 type MonthEntry = { year: number; month: number; total: number; count: number };
 type DayEntry = { day: number; total: number; count: number };
 type GroupEntry = {
@@ -737,6 +744,7 @@ function CategoryBreakdownCard({ summary }: { summary: Summary }) {
               <th className="pb-2 text-left font-semibold">Category</th>
               <th className="pb-2 text-right font-semibold">Count</th>
               <th className="pb-2 text-right font-semibold">Total</th>
+              <th className="pb-2 text-right font-semibold">My Share</th>
               <th className="pb-2 text-right font-semibold">% of Total</th>
               <th className="pb-2 pl-4 text-left font-semibold">Share</th>
             </tr>
@@ -756,6 +764,9 @@ function CategoryBreakdownCard({ summary }: { summary: Summary }) {
                   </td>
                   <td className="py-2.5 text-right font-mono tabular-nums text-zinc-100">
                     {fmt(c.total)}
+                  </td>
+                  <td className="py-2.5 text-right font-mono tabular-nums text-emerald-300">
+                    {fmt(c.myShare ?? 0)}
                   </td>
                   <td className="py-2.5 text-right tabular-nums text-zinc-400">
                     {pct.toFixed(1)}%

@@ -1,10 +1,10 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
 import { useAuth } from "../lib/auth";
 import { localISODate } from "../lib/dates";
-import type { Summary } from "../lib/types";
+import { CATEGORIES, type Summary } from "../lib/types";
 import { exportGroupReportPdf } from "../lib/pdf";
 import { ReportBody } from "./ReportBody";
 import { Chip, DateField, quickRangeToDates } from "./reportControls";
@@ -45,6 +45,10 @@ export function GroupReportView({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [picker, setPicker] = useState<"from" | "to" | null>(null);
+  // Same two filters the Expenses tab offers: narrow to entries I carry a
+  // share of, and to a single category.
+  const [mine, setMine] = useState(false);
+  const [category, setCategory] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -67,6 +71,8 @@ export function GroupReportView({
     const params = new URLSearchParams({ groupId, settled: show });
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
+    if (mine) params.set("mine", "true");
+    if (category) params.set("category", category);
     try {
       const res = await authFetch(
         `/api/projects/expense-tracker/reports/summary?${params}`
@@ -77,7 +83,7 @@ export function GroupReportView({
     } catch {
       // keep last good state
     }
-  }, [groupId, show, dateFrom, dateTo, authFetch]);
+  }, [groupId, show, dateFrom, dateTo, mine, category, authFetch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -171,6 +177,41 @@ export function GroupReportView({
               </Pressable>
             ))}
           </View>
+        </View>
+
+        <View className="gap-2">
+          <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
+            Whose
+          </Text>
+          <View className="flex-row gap-2">
+            <Chip label="Everyone" active={!mine} onPress={() => setMine(false)} />
+            <Chip label="Only mine" active={mine} onPress={() => setMine(true)} />
+          </View>
+        </View>
+
+        <View className="gap-2">
+          <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
+            Category
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8 }}
+          >
+            <Chip
+              label="All categories"
+              active={category === ""}
+              onPress={() => setCategory("")}
+            />
+            {CATEGORIES.map((c) => (
+              <Chip
+                key={c}
+                label={c}
+                active={category === c}
+                onPress={() => setCategory(c)}
+              />
+            ))}
+          </ScrollView>
         </View>
 
         <View className="gap-2">

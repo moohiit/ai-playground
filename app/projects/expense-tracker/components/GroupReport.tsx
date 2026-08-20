@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { ExportPdfButton } from "./ExportPdf";
@@ -16,7 +17,14 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-type CategoryEntry = { category: string; total: number; count: number };
+type CategoryEntry = {
+  category: string;
+  total: number;
+  // The viewer's slice of that category — personal rows in full, group rows
+  // only for their split.
+  myShare: number;
+  count: number;
+};
 type MonthEntry = { year: number; month: number; total: number; count: number };
 type DayEntry = { day: number; total: number; count: number };
 type PayerEntry = { id: string; name: string; total: number; count: number };
@@ -109,6 +117,10 @@ export function GroupReport({ groupId, groupName }: Props) {
   const { authFetch } = useAuth();
   const [scope, setScope] = useState<Scope>("unsettled");
   const [quickRange, setQuickRange] = useState<QuickRange>("all");
+  // Same two filters the Expenses tab offers: narrow to entries I carry a
+  // share of, and to a single category.
+  const [mine, setMine] = useState(false);
+  const [category, setCategory] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -153,6 +165,8 @@ export function GroupReport({ groupId, groupName }: Props) {
       "settled",
       scope === "unsettled" ? "false" : scope === "settled" ? "true" : "all"
     );
+    if (mine) params.set("mine", "true");
+    if (category) params.set("category", category);
     if (!settledDisabled) {
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
@@ -163,7 +177,7 @@ export function GroupReport({ groupId, groupName }: Props) {
     const data = await res.json();
     setSummary(data);
     setLoading(false);
-  }, [groupId, scope, dateFrom, dateTo, settledDisabled]);
+  }, [groupId, scope, dateFrom, dateTo, mine, category, settledDisabled]);
 
   useEffect(() => {
     fetchSummary();
@@ -240,6 +254,51 @@ export function GroupReport({ groupId, groupName }: Props) {
                 <div className="text-[11px] text-zinc-500">{s.hint}</div>
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <div className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">
+              Whose
+            </div>
+            <div className="flex gap-2">
+              {([[false, "Everyone"], [true, "Only mine"]] as const).map(
+                ([val, label]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setMine(val)}
+                    className={cn(
+                      "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
+                      mine === val
+                        ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                        : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                    )}
+                  >
+                    {label}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">
+              Category
+            </div>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs font-medium text-zinc-200 outline-none transition-colors hover:border-zinc-600 focus:border-brand-500/60"
+            >
+              <option value="">All categories</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -607,6 +666,7 @@ export function GroupReport({ groupId, groupName }: Props) {
                     <th className="pb-2 text-left font-semibold">Category</th>
                     <th className="pb-2 text-right font-semibold">Count</th>
                     <th className="pb-2 text-right font-semibold">Total</th>
+                    <th className="pb-2 text-right font-semibold">My share</th>
                     <th className="pb-2 text-right font-semibold">%</th>
                     <th className="pb-2 pl-4 text-left font-semibold">Share</th>
                   </tr>
@@ -626,6 +686,9 @@ export function GroupReport({ groupId, groupName }: Props) {
                         </td>
                         <td className="py-2.5 text-right font-mono tabular-nums text-zinc-100">
                           ₹{c.total.toFixed(2)}
+                        </td>
+                        <td className="py-2.5 text-right font-mono tabular-nums text-emerald-300">
+                          ₹{(c.myShare ?? 0).toFixed(2)}
                         </td>
                         <td className="py-2.5 text-right tabular-nums text-zinc-400">
                           {pct.toFixed(1)}%

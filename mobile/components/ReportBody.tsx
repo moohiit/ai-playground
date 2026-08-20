@@ -205,6 +205,9 @@ export function ReportBody({
                     </Text>
                     <Text className="text-xs text-zinc-300">
                       {fmt(c.total)} · {pct.toFixed(1)}%
+                      {c.myShare > 0 && c.myShare < c.total ? (
+                        <Text className="text-emerald-300"> · {fmt(c.myShare)} mine</Text>
+                      ) : null}
                     </Text>
                   </View>
                   <HBar pct={pct} colorHex={categoryColor(c.category)} />

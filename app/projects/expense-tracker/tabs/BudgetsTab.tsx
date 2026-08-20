@@ -58,6 +58,8 @@ export function BudgetsTab() {
   const [base, setBase] = useState("INR");
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  // Set while the form is editing an existing budget rather than adding one.
+  const [editing, setEditing] = useState<BudgetItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,7 +113,7 @@ export function BudgetsTab() {
           )}
         </div>
         <button
-          onClick={() => setShowAdd((v) => !v)}
+          onClick={() => { setEditing(null); setShowAdd((v) => !v); }}
           className="rounded-lg border border-brand-500/40 bg-brand-500/15 px-4 py-2 text-sm font-semibold text-brand-300 transition-colors hover:bg-brand-500/25"
         >
           + Add budget
@@ -119,12 +121,14 @@ export function BudgetsTab() {
       </div>
 
       {showAdd && (
-        <AddBudgetForm
+        <BudgetForm
+          editing={editing}
           hasOverall={!!overall}
           usedCategories={usedCategories}
-          onClose={() => setShowAdd(false)}
+          onClose={() => { setShowAdd(false); setEditing(null); }}
           onSaved={() => {
             setShowAdd(false);
+            setEditing(null);
             load();
           }}
         />
@@ -143,12 +147,24 @@ export function BudgetsTab() {
       ) : (
         <div className="flex flex-col gap-4">
           {overall && (
-            <BudgetCard budget={overall} base={base} onDelete={() => handleDelete(overall._id)} highlight />
+            <BudgetCard
+              budget={overall}
+              base={base}
+              onEdit={() => { setEditing(overall); setShowAdd(true); }}
+              onDelete={() => handleDelete(overall._id)}
+              highlight
+            />
           )}
           {categoryBudgets.length > 0 && (
             <div className="grid gap-3 sm:grid-cols-2">
               {categoryBudgets.map((b) => (
-                <BudgetCard key={b._id} budget={b} base={base} onDelete={() => handleDelete(b._id)} />
+                <BudgetCard
+                  key={b._id}
+                  budget={b}
+                  base={base}
+                  onEdit={() => { setEditing(b); setShowAdd(true); }}
+                  onDelete={() => handleDelete(b._id)}
+                />
               ))}
             </div>
           )}
@@ -161,11 +177,13 @@ export function BudgetsTab() {
 function BudgetCard({
   budget: b,
   base,
+  onEdit,
   onDelete,
   highlight,
 }: {
   budget: BudgetItem;
   base: string;
+  onEdit: () => void;
   onDelete: () => void;
   highlight?: boolean;
 }) {
@@ -189,6 +207,12 @@ function BudgetCard({
           <span className={cn("text-xs font-medium", STATUS_TEXT[b.status])}>
             {Math.round(b.pct * 100)}%
           </span>
+          <button
+            onClick={onEdit}
+            className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-brand-400 group-hover:opacity-100"
+          >
+            Edit
+          </button>
           <button
             onClick={onDelete}
             className="text-xs text-zinc-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
@@ -220,22 +244,32 @@ function BudgetCard({
   );
 }
 
-function AddBudgetForm({
+function BudgetForm({
+  editing,
   hasOverall,
   usedCategories,
   onClose,
   onSaved,
 }: {
+  editing: BudgetItem | null;
   hasOverall: boolean;
   usedCategories: Set<string | null>;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { authFetch } = useAuth();
-  const availableCategories = CATEGORIES.filter((c) => !usedCategories.has(c));
-  const [scope, setScope] = useState<"overall" | "category">(hasOverall ? "category" : "overall");
-  const [category, setCategory] = useState<string>(availableCategories[0] ?? "");
-  const [amount, setAmount] = useState("");
+  // When editing a category budget its own category is still "available" —
+  // it's taken by the very budget being edited.
+  const availableCategories = CATEGORIES.filter(
+    (c) => !usedCategories.has(c) || c === editing?.category
+  );
+  const [scope, setScope] = useState<"overall" | "category">(
+    editing ? editing.scope : hasOverall ? "category" : "overall"
+  );
+  const [category, setCategory] = useState<string>(
+    editing?.category ?? availableCategories[0] ?? ""
+  );
+  const [amount, setAmount] = useState(editing ? String(editing.limit) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -246,22 +280,33 @@ function AddBudgetForm({
     setSaving(true);
     setError(null);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/budgets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scope,
-          category: scope === "category" ? category : undefined,
-          amount: amt,
-        }),
-      });
+      // Scope and category are fixed once a budget exists — the update
+      // endpoint only takes the limit. Delete and re-add to move a budget.
+      const res = await authFetch(
+        editing
+          ? `/api/projects/expense-tracker/budgets/${editing._id}`
+          : "/api/projects/expense-tracker/budgets",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            editing
+              ? { amount: amt }
+              : {
+                  scope,
+                  category: scope === "category" ? category : undefined,
+                  amount: amt,
+                }
+          ),
+        }
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        throw new Error(d.error ?? "Failed to add budget");
+        throw new Error(d.error ?? "Failed to save budget");
       }
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add budget");
+      setError(e instanceof Error ? e.message : "Failed to save budget");
       setSaving(false);
     }
   }
@@ -270,22 +315,29 @@ function AddBudgetForm({
     <div className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/40 to-transparent" />
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-zinc-100">Add monthly budget</h3>
+        <h3 className="text-sm font-semibold text-zinc-100">
+          {editing
+            ? `Edit ${editing.scope === "overall" ? "overall" : editing.category} budget`
+            : "Add monthly budget"}
+        </h3>
         <button onClick={onClose} className="text-xs text-zinc-500 hover:text-zinc-200">
           Close
         </button>
       </div>
       <div className="flex flex-col gap-3">
-        <div className="flex gap-2">
-          <ScopeBtn active={scope === "overall"} disabled={hasOverall} onClick={() => setScope("overall")}>
-            Overall {hasOverall && "(exists)"}
-          </ScopeBtn>
-          <ScopeBtn active={scope === "category"} onClick={() => setScope("category")}>
-            Category
-          </ScopeBtn>
-        </div>
+        {/* Scope is fixed for an existing budget — only the limit changes. */}
+        {!editing && (
+          <div className="flex gap-2">
+            <ScopeBtn active={scope === "overall"} disabled={hasOverall} onClick={() => setScope("overall")}>
+              Overall {hasOverall && "(exists)"}
+            </ScopeBtn>
+            <ScopeBtn active={scope === "category"} onClick={() => setScope("category")}>
+              Category
+            </ScopeBtn>
+          </div>
+        )}
 
-        {scope === "category" && (
+        {!editing && scope === "category" && (
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
@@ -326,7 +378,7 @@ function AddBudgetForm({
             disabled={saving || (scope === "category" && availableCategories.length === 0)}
             className="rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Add budget"}
+            {saving ? "Saving…" : editing ? "Save limit" : "Add budget"}
           </button>
         </div>
       </div>

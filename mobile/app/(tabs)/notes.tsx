@@ -55,8 +55,9 @@ export default function NotesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // add-note sheet
+  // add/edit-note sheet — editingId set means the sheet is editing that note
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [direction, setDirection] = useState<"lent" | "borrowed">("lent");
   const [personName, setPersonName] = useState("");
   const [amount, setAmount] = useState("");
@@ -99,12 +100,29 @@ export default function NotesScreen() {
   }, [load]);
 
   function resetForm() {
+    setEditingId(null);
     setDirection("lent");
     setPersonName("");
     setAmount("");
     setDescription("");
     setGivenOn(localISODate(new Date()));
     setDueBy("");
+  }
+
+  function openAdd() {
+    resetForm();
+    setShowAdd(true);
+  }
+
+  function openEdit(n: MoneyNote) {
+    setEditingId(n._id);
+    setDirection(n.direction);
+    setPersonName(n.personName);
+    setAmount(String(n.amount));
+    setDescription(n.description ?? "");
+    setGivenOn(n.givenOn.slice(0, 10));
+    setDueBy(n.dueBy ? n.dueBy.slice(0, 10) : "");
+    setShowAdd(true);
   }
 
   async function saveNote() {
@@ -114,18 +132,23 @@ export default function NotesScreen() {
     if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
     setSaving(true);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          direction,
-          personName: personName.trim(),
-          amount: amt,
-          description: description.trim(),
-          givenOn,
-          dueBy: dueBy || null,
-        }),
-      });
+      const res = await authFetch(
+        editingId
+          ? `/api/projects/expense-tracker/notes/${editingId}`
+          : "/api/projects/expense-tracker/notes",
+        {
+          method: editingId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            direction,
+            personName: personName.trim(),
+            amount: amt,
+            description: description.trim(),
+            givenOn,
+            dueBy: dueBy || null,
+          }),
+        }
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         Alert.alert("Error", data.error ?? "Failed to save note");
@@ -271,7 +294,7 @@ export default function NotesScreen() {
         </View>
         {view === "notes" && (
           <Pressable
-            onPress={() => setShowAdd(true)}
+            onPress={openAdd}
             className="shrink-0 rounded-lg border border-brand-500/40 bg-brand-500 px-3 py-1.5"
           >
             <Text className="text-xs font-semibold text-white">+ Note</Text>
@@ -358,6 +381,7 @@ export default function NotesScreen() {
                     n={n}
                     busy={busyId === n._id}
                     onSettle={() => toggleSettled(n)}
+                    onEdit={() => openEdit(n)}
                     onDelete={() => confirmDeleteNote(n)}
                   />
                 ))}
@@ -372,9 +396,13 @@ export default function NotesScreen() {
                     n={n}
                     busy={busyId === n._id}
                     onSettle={() => toggleSettled(n)}
+                    onEdit={() => openEdit(n)}
                     onDelete={() => confirmDeleteNote(n)}
                   />
                 ))}
+                <Text className="px-1 text-center text-[11px] text-zinc-600">
+                  Tap a note to edit · long-press to delete
+                </Text>
               </>
             )}
           </>
@@ -461,7 +489,7 @@ export default function NotesScreen() {
           <View className="flex-1 justify-end bg-black/60">
             <View className="rounded-t-3xl border-t border-white/10 bg-zinc-950 px-5 pb-10 pt-5">
               <Text className="mb-4 text-base font-bold text-zinc-100">
-                New money note
+                {editingId ? "Edit money note" : "New money note"}
               </Text>
 
               <View className="mb-3 flex-row gap-2">
@@ -579,16 +607,19 @@ function NoteCard({
   n,
   busy,
   onSettle,
+  onEdit,
   onDelete,
 }: {
   n: MoneyNote;
   busy: boolean;
   onSettle: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const lent = n.direction === "lent";
   return (
     <Pressable
+      onPress={onEdit}
       onLongPress={onDelete}
       className={`rounded-2xl border p-4 ${
         n.settledAt

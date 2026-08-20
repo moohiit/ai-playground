@@ -126,7 +126,14 @@ export type SettlementRecord = {
   transfers?: SettlementTransfer[];
 };
 
-export type CategoryStat = { category: string; total: number; count: number };
+export type CategoryStat = {
+  category: string;
+  total: number;
+  // The viewer's slice of that category — personal rows in full, group rows
+  // only for their split.
+  myShare: number;
+  count: number;
+};
 export type MonthStat = {
   year: number;
   month: number;

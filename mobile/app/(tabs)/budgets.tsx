@@ -61,6 +61,8 @@ export default function BudgetsScreen() {
   const [base, setBase] = useState("INR");
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  // Set while the sheet is editing an existing budget rather than adding one.
+  const [editing, setEditing] = useState<BudgetItem | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -112,7 +114,7 @@ export default function BudgetsScreen() {
       <AppBackground />
       <View className="flex-row items-center justify-between px-5 pb-2 pt-2">
         <Text className="text-xl font-bold text-zinc-50">Budgets</Text>
-        <Pressable onPress={() => setShowAdd(true)} className="rounded-lg bg-brand-600 px-3 py-1.5">
+        <Pressable onPress={() => { setEditing(null); setShowAdd(true); }} className="rounded-lg bg-brand-600 px-3 py-1.5">
           <Text className="text-xs font-semibold text-white">+ Add</Text>
         </Pressable>
       </View>
@@ -140,32 +142,50 @@ export default function BudgetsScreen() {
           </View>
         ) : (
           <>
-            {overall && <BudgetCard b={overall} base={base} onLongPress={() => confirmDelete(overall)} highlight />}
+            {overall && (
+              <BudgetCard
+                b={overall}
+                base={base}
+                onPress={() => { setEditing(overall); setShowAdd(true); }}
+                onLongPress={() => confirmDelete(overall)}
+                highlight
+              />
+            )}
             {cats.map((b) => (
-              <BudgetCard key={b._id} b={b} base={base} onLongPress={() => confirmDelete(b)} />
+              <BudgetCard
+                key={b._id}
+                b={b}
+                base={base}
+                onPress={() => { setEditing(b); setShowAdd(true); }}
+                onLongPress={() => confirmDelete(b)}
+              />
             ))}
-            <Text className="px-1 text-center text-[11px] text-zinc-600">Long-press a budget to delete it.</Text>
+            <Text className="px-1 text-center text-[11px] text-zinc-600">
+              Tap a budget to change its limit · long-press to delete.
+            </Text>
           </>
         )}
       </ScrollView>
 
-      <AddBudgetSheet
+      <BudgetSheet
         visible={showAdd}
+        editing={editing}
         hasOverall={!!overall}
         used={used}
-        onClose={() => setShowAdd(false)}
-        onSaved={() => { setShowAdd(false); load(); }}
+        onClose={() => { setShowAdd(false); setEditing(null); }}
+        onSaved={() => { setShowAdd(false); setEditing(null); load(); }}
       />
     </SafeAreaView>
   );
 }
 
-function BudgetCard({ b, base, onLongPress, highlight }: { b: BudgetItem; base: string; onLongPress: () => void; highlight?: boolean }) {
+function BudgetCard({ b, base, onPress, onLongPress, highlight }: { b: BudgetItem; base: string; onPress: () => void; onLongPress: () => void; highlight?: boolean }) {
   const title = b.scope === "overall" ? "Overall" : b.category ?? "Category";
   const color = b.scope === "category" && b.category ? categoryColor(b.category) : undefined;
   const widthPct = Math.min(100, Math.round(b.pct * 100));
   return (
     <Pressable
+      onPress={onPress}
       onLongPress={onLongPress}
       className={`rounded-2xl border p-4 ${highlight ? "border-brand-500/30 bg-brand-500/[0.06]" : "border-white/10 bg-white/[0.04]"}`}
     >
@@ -194,11 +214,14 @@ function BudgetCard({ b, base, onLongPress, highlight }: { b: BudgetItem; base: 
   );
 }
 
-function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
-  visible: boolean; hasOverall: boolean; used: Set<string | null>; onClose: () => void; onSaved: () => void;
+function BudgetSheet({ visible, editing, hasOverall, used, onClose, onSaved }: {
+  visible: boolean; editing: BudgetItem | null; hasOverall: boolean; used: Set<string | null>;
+  onClose: () => void; onSaved: () => void;
 }) {
   const { authFetch } = useAuth();
-  const available = CATEGORIES.filter((c) => !used.has(c));
+  // When editing a category budget its own category is still "available" —
+  // it's taken by the very budget being edited.
+  const available = CATEGORIES.filter((c) => !used.has(c) || c === editing?.category);
   const [scope, setScope] = useState<"overall" | "category">("category");
   const [category, setCategory] = useState<string>(available[0] ?? "");
   const [amount, setAmount] = useState("");
@@ -206,12 +229,18 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
 
   useEffect(() => {
     if (visible) {
-      setScope(hasOverall ? "category" : "overall");
-      setCategory(available[0] ?? "");
-      setAmount("");
+      if (editing) {
+        setScope(editing.scope);
+        setCategory(editing.category ?? "");
+        setAmount(String(editing.limit));
+      } else {
+        setScope(hasOverall ? "category" : "overall");
+        setCategory(available[0] ?? "");
+        setAmount("");
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, editing]);
 
   async function submit() {
     const amt = parseAmount(amount);
@@ -219,18 +248,32 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
     if (scope === "category" && !category) return Alert.alert("Pick a category");
     setSaving(true);
     try {
-      const res = await authFetch("/api/projects/expense-tracker/budgets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope, category: scope === "category" ? category : undefined, amount: amt }),
-      });
+      // Scope and category are fixed once a budget exists — the update
+      // endpoint only takes the limit. Delete and re-add to move a budget.
+      const res = await authFetch(
+        editing
+          ? `/api/projects/expense-tracker/budgets/${editing._id}`
+          : "/api/projects/expense-tracker/budgets",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            editing
+              ? { amount: amt }
+              : { scope, category: scope === "category" ? category : undefined, amount: amt }
+          ),
+        }
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Failed");
       }
       onSaved();
     } catch (e) {
-      Alert.alert("Couldn't add budget", e instanceof Error ? e.message : "");
+      Alert.alert(
+        editing ? "Couldn't update budget" : "Couldn't add budget",
+        e instanceof Error ? e.message : ""
+      );
     } finally {
       setSaving(false);
     }
@@ -242,10 +285,16 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
       <Pressable className="flex-1 justify-end bg-black/60" onPress={onClose}>
         <Pressable className="rounded-t-3xl border-t border-white/10 bg-[#0a0b14] p-5" onPress={(e) => e.stopPropagation()}>
           <View className="mb-4 flex-row items-center justify-between">
-            <Text className="text-base font-semibold text-zinc-100">Add monthly budget</Text>
+            <Text className="text-base font-semibold text-zinc-100">
+              {editing
+                ? `Edit ${editing.scope === "overall" ? "overall" : editing.category} budget`
+                : "Add monthly budget"}
+            </Text>
             <Pressable onPress={onClose} hitSlop={8}><Text className="text-sm text-zinc-500">Close</Text></Pressable>
           </View>
           <View className="gap-3">
+            {/* Scope is fixed for an existing budget — only the limit changes. */}
+            {!editing && (
             <View className="flex-row gap-2">
               <Pressable
                 onPress={() => !hasOverall && setScope("overall")}
@@ -263,8 +312,9 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
                 <Text className={`text-sm font-medium ${scope === "category" ? "text-brand-400" : "text-zinc-400"}`}>Category</Text>
               </Pressable>
             </View>
+            )}
 
-            {scope === "category" && (
+            {!editing && scope === "category" && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                 {available.length === 0 ? (
                   <Text className="text-xs text-zinc-500">All categories already have budgets.</Text>
@@ -291,7 +341,11 @@ function AddBudgetSheet({ visible, hasOverall, used, onClose, onSaved }: {
               className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
             />
 
-            <GradientButton label="Add budget" onPress={submit} loading={saving} />
+            <GradientButton
+              label={editing ? "Save limit" : "Add budget"}
+              onPress={submit}
+              loading={saving}
+            />
           </View>
         </Pressable>
       </Pressable>

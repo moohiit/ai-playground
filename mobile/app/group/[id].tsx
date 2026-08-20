@@ -59,6 +59,8 @@ export default function GroupDetailScreen() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [activeTotal, setActiveTotal] = useState(0);
   const [activeMine, setActiveMine] = useState(0);
+  // Quick toggle on the Active tab: only rows I carry a share of.
+  const [onlyMine, setOnlyMine] = useState(false);
   const [history, setHistory] = useState<SettlementRecord[]>([]);
   const [tab, setTab] = useState<Tab>("active");
   const [loading, setLoading] = useState(true);
@@ -155,10 +157,14 @@ export default function GroupDetailScreen() {
         authFetch(`/api/projects/expense-tracker/groups/${groupId}`),
         authFetch(`/api/projects/expense-tracker/reports/balances/${groupId}`),
         authFetch(
-          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=100&settled=false`
+          `/api/projects/expense-tracker/expenses?groupId=${groupId}&limit=100&settled=false${
+            onlyMine ? "&mine=true" : ""
+          }`
         ),
         authFetch(
-          `/api/projects/expense-tracker/reports/summary?groupId=${groupId}&settled=false`
+          `/api/projects/expense-tracker/reports/summary?groupId=${groupId}&settled=false${
+            onlyMine ? "&mine=true" : ""
+          }`
         ),
         authFetch(`/api/projects/expense-tracker/groups/${groupId}/history`),
       ]);
@@ -176,7 +182,7 @@ export default function GroupDetailScreen() {
     } catch {
       // keep last good state
     }
-  }, [groupId, authFetch]);
+  }, [groupId, onlyMine, authFetch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -677,9 +683,28 @@ export default function GroupDetailScreen() {
 
             {/* Active expenses */}
             <View className="flex-row items-start justify-between">
-              <Text className="text-sm font-semibold text-zinc-100">
-                Active Expenses ({expenses.length})
-              </Text>
+              <View className="flex-1 gap-2">
+                <Text className="text-sm font-semibold text-zinc-100">
+                  Active Expenses ({expenses.length})
+                </Text>
+                <Pressable
+                  onPress={() => setOnlyMine((v) => !v)}
+                  hitSlop={6}
+                  className={`self-start rounded-lg border px-2.5 py-1 ${
+                    onlyMine
+                      ? "border-emerald-500/50 bg-emerald-500/15"
+                      : "border-white/10 bg-zinc-900/40"
+                  }`}
+                >
+                  <Text
+                    className={`text-[12px] font-medium ${
+                      onlyMine ? "text-emerald-300" : "text-zinc-400"
+                    }`}
+                  >
+                    {onlyMine ? "✓ Only mine" : "Only mine"}
+                  </Text>
+                </Pressable>
+              </View>
               <View className="items-end">
                 <Text className="text-sm font-semibold text-indigo-300">
                   Total: {money(activeTotal)}
@@ -699,7 +724,9 @@ export default function GroupDetailScreen() {
             {expenses.length === 0 ? (
               <View className="items-center rounded-2xl border border-white/10 bg-white/[0.03] py-10">
                 <Text className="text-sm text-zinc-400">
-                  All cleared! No unsettled expenses.
+                  {onlyMine
+                    ? "No active expenses include you."
+                    : "All cleared! No unsettled expenses."}
                 </Text>
               </View>
             ) : (
