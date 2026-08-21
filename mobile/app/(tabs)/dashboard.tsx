@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import type { Summary } from "../../lib/types";
+import type { MyBalances, Summary } from "../../lib/types";
 import { Donut } from "../../components/Donut";
 import { AppBackground, GradientButton, GradientHero, Input, KeyboardAwareScreen } from "../../components/ui";
 import { categoryColor, personalVsGroupSlices } from "../../lib/colors";
@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [personalActive, setPersonalActive] = useState<Summary | null>(null);
   const [groupActive, setGroupActive] = useState<Summary | null>(null);
   const [lastPersonalSettle, setLastPersonalSettle] = useState<string | null>(null);
+  const [owed, setOwed] = useState<MyBalances | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settling, setSettling] = useState(false);
@@ -177,6 +178,14 @@ export default function Dashboard() {
       if (pAct) setPersonalActive(pAct);
       if (gAct) setGroupActive(gAct);
       setLastPersonalSettle(data?.lastPersonalSettle ?? null);
+
+      const owedRes = await authFetch(
+        "/api/projects/expense-tracker/reports/my-balances"
+      );
+      if (owedRes.ok) {
+        const b = await owedRes.json().catch(() => null);
+        if (b && typeof b.net === "number") setOwed(b);
+      }
     } catch {
       // keep last good state
     }
@@ -352,6 +361,72 @@ export default function Dashboard() {
                 </View>
               </GradientHero>
             </Animated.View>
+
+            {/* Who owes whom, across every group */}
+            {owed && (owed.owedToMe > 0 || owed.iOwe > 0) && (
+              <Animated.View entering={FadeInDown.duration(400).delay(50)}>
+                <Pressable
+                  onPress={() => router.push("/groups")}
+                  className={`rounded-2xl border p-4 ${
+                    owed.net >= 0
+                      ? "border-emerald-500/30 bg-emerald-500/[0.06]"
+                      : "border-red-500/30 bg-red-500/[0.06]"
+                  }`}
+                >
+                  <View className="flex-row items-baseline justify-between">
+                    <Text className="text-[12px] uppercase tracking-wider text-zinc-400">
+                      {owed.net >= 0 ? "You're owed" : "You owe"}
+                    </Text>
+                    <Text className="text-[11px] text-zinc-500">
+                      across {owed.byGroup.length}{" "}
+                      {owed.byGroup.length === 1 ? "group" : "groups"} ›
+                    </Text>
+                  </View>
+                  <Text
+                    className={`mt-1 text-2xl font-bold ${
+                      owed.net >= 0 ? "text-emerald-300" : "text-red-300"
+                    }`}
+                  >
+                    {fmt(Math.abs(owed.net))}
+                  </Text>
+                  {/* Both directions only when they exist — a net figure alone
+                      hides that you owe one person while another owes you. */}
+                  {owed.owedToMe > 0 && owed.iOwe > 0 && (
+                    <Text className="mt-0.5 text-[12px] text-zinc-400">
+                      {fmt(owed.owedToMe)} owed to you · {fmt(owed.iOwe)} you owe
+                    </Text>
+                  )}
+                  <View className="mt-3 gap-1.5 border-t border-white/10 pt-3">
+                    {owed.byPerson.slice(0, 4).map((p) => (
+                      <View
+                        key={p.id}
+                        className="flex-row items-center justify-between"
+                      >
+                        <Text
+                          className="flex-1 text-sm text-zinc-200"
+                          numberOfLines={1}
+                        >
+                          {p.name}
+                        </Text>
+                        <Text
+                          className={`text-sm font-semibold ${
+                            p.net > 0 ? "text-emerald-300" : "text-red-300"
+                          }`}
+                        >
+                          {p.net > 0 ? "owes you " : "you owe "}
+                          {fmt(Math.abs(p.net))}
+                        </Text>
+                      </View>
+                    ))}
+                    {owed.byPerson.length > 4 && (
+                      <Text className="text-[11px] text-zinc-500">
+                        +{owed.byPerson.length - 4} more
+                      </Text>
+                    )}
+                  </View>
+                </Pressable>
+              </Animated.View>
+            )}
 
             {/* Quick actions */}
             <Animated.View

@@ -8,6 +8,7 @@ import { formatMoney, currencySymbol } from "../../../../modules/expense-tracker
 import { AddExpenseModal } from "../components/AddExpenseModal";
 import { categoryColor } from "../colors";
 import { getBaseCurrency } from "../prefs";
+import type { MyBalances } from "../types";
 
 type Expense = {
   _id: string;
@@ -144,6 +145,7 @@ export function Dashboard() {
   } | null>(null);
   const [trackingKey, setTrackingKey] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
+  const [owed, setOwed] = useState<MyBalances | null>(null);
   const [settling, setSettling] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [base, setBase] = useState("INR");
@@ -247,6 +249,14 @@ export function Dashboard() {
       allTotalMine: all.myShare ?? 0,
       lastPersonalSettle: data.lastPersonalSettle ?? null,
     });
+
+    const owedRes = await authFetch(
+      "/api/projects/expense-tracker/reports/my-balances"
+    );
+    if (owedRes.ok) {
+      const b = await owedRes.json().catch(() => null);
+      if (b && typeof b.net === "number") setOwed(b);
+    }
   }, [authFetch]);
 
   useEffect(() => {
@@ -536,6 +546,69 @@ export function Dashboard() {
           </div>
         </button>
       </div>
+
+      {/* Who owes whom, across every group */}
+      {owed && (owed.owedToMe > 0 || owed.iOwe > 0) && (
+        <div
+          className={cn(
+            "rounded-xl border p-5",
+            owed.net >= 0
+              ? "border-emerald-500/30 bg-emerald-500/[0.06]"
+              : "border-red-500/30 bg-red-500/[0.06]"
+          )}
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-zinc-400">
+                {owed.net >= 0 ? "You're owed" : "You owe"}
+              </div>
+              <div
+                className={cn(
+                  "mt-1 font-mono text-2xl font-bold tabular-nums",
+                  owed.net >= 0 ? "text-emerald-300" : "text-red-300"
+                )}
+              >
+                {formatMoney(Math.abs(owed.net), base)}
+              </div>
+              {/* Both directions only when they exist — a net figure alone
+                  hides that you owe one person while another owes you. */}
+              {owed.owedToMe > 0 && owed.iOwe > 0 && (
+                <div className="mt-0.5 text-xs text-zinc-400">
+                  {formatMoney(owed.owedToMe, base)} owed to you ·{" "}
+                  {formatMoney(owed.iOwe, base)} you owe
+                </div>
+              )}
+            </div>
+            <span className="text-[11px] text-zinc-500">
+              across {owed.byGroup.length}{" "}
+              {owed.byGroup.length === 1 ? "group" : "groups"}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-col gap-1.5 border-t border-white/10 pt-3">
+            {owed.byPerson.slice(0, 6).map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate text-sm text-zinc-200">
+                  {p.name}
+                </span>
+                <span
+                  className={cn(
+                    "font-mono text-sm font-semibold tabular-nums",
+                    p.net > 0 ? "text-emerald-300" : "text-red-300"
+                  )}
+                >
+                  {p.net > 0 ? "owes you " : "you owe "}
+                  {formatMoney(Math.abs(p.net), base)}
+                </span>
+              </div>
+            ))}
+            {owed.byPerson.length > 6 && (
+              <span className="text-[11px] text-zinc-500">
+                +{owed.byPerson.length - 6} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* AI quick-add (natural language) */}
       <div className="rounded-xl border border-brand-500/30 bg-gradient-to-b from-brand-500/[0.07] to-zinc-950/40 p-3">

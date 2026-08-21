@@ -68,3 +68,18 @@ export type Summary = {
   byGroup: GroupEntry[];
   topPayers: PayerEntry[];
 };
+
+/** Cross-group "do I owe anyone right now" rollup, in the viewer's base currency. */
+export type MyBalances = {
+  owedToMe: number;
+  iOwe: number;
+  net: number;
+  byPerson: { id: string; name: string; net: number }[];
+  byGroup: {
+    groupId: string;
+    groupName: string;
+    net: number;
+    owedToMe: number;
+    iOwe: number;
+  }[];
+};

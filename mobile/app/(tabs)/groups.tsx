@@ -15,6 +15,8 @@ import { useAuth } from "../../lib/auth";
 import type { Group } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { relativeTime } from "../../lib/dates";
+import { formatMoney } from "../../lib/currency";
+import { getBaseCurrency } from "../../lib/prefs";
 
 type Invite = {
   _id: string;
@@ -27,6 +29,10 @@ export default function GroupsTab() {
   const router = useRouter();
 
   const [groups, setGroups] = useState<Group[]>([]);
+  // Net position per group, so a card answers "am I owed here?" without
+  // opening it.
+  const [netByGroup, setNetByGroup] = useState<Record<string, number>>({});
+  const [base, setBase] = useState("INR");
   const [invites, setInvites] = useState<Invite[]>([]);
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,6 +53,25 @@ export default function GroupsTab() {
       const iData = await iRes.json().catch(() => ({}));
       setGroups(data.groups ?? []);
       setInvites(iData.invites ?? []);
+
+      const [bRes, baseCur] = await Promise.all([
+        authFetch("/api/projects/expense-tracker/reports/my-balances"),
+        getBaseCurrency(authFetch),
+      ]);
+      setBase(baseCur);
+      if (bRes.ok) {
+        const b = await bRes.json().catch(() => null);
+        if (b && Array.isArray(b.byGroup)) {
+          setNetByGroup(
+            Object.fromEntries(
+              (b.byGroup as { groupId: string; net: number }[]).map((g) => [
+                g.groupId,
+                g.net,
+              ])
+            )
+          );
+        }
+      }
     } catch {
       // keep last good state
     }
@@ -244,6 +269,16 @@ export default function GroupsTab() {
                 {item.description}
               </Text>
             ) : null}
+            {netByGroup[item._id] !== undefined && (
+              <Text
+                className={`mt-1 text-sm font-semibold ${
+                  netByGroup[item._id] > 0 ? "text-emerald-300" : "text-red-300"
+                }`}
+              >
+                {netByGroup[item._id] > 0 ? "You're owed " : "You owe "}
+                {formatMoney(Math.abs(netByGroup[item._id]), base)}
+              </Text>
+            )}
             <Text className="mt-2 text-[13px] text-zinc-500">
               {item.members.length}{" "}
               {item.members.length === 1 ? "member" : "members"}

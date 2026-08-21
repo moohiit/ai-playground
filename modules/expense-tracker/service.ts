@@ -1425,6 +1425,113 @@ export async function getGroupBalances(
   return { balances, settlements };
 }
 
+/**
+ * "Do I owe anyone anything right now?" — across every group at once.
+ *
+ * Balances have always been computed one group at a time, so the app could
+ * answer "what is my position in Room B4" but never the question people
+ * actually open it with. Each group's minimal-transfer plan is computed as
+ * usual and the rows involving the viewer are netted BY PERSON across groups,
+ * so a flatmate who owes you in one group and is owed in another shows up once
+ * with the difference, not twice with two halves that need mental arithmetic.
+ *
+ * Everything is in the viewer's base currency (calculateBalances works on
+ * amountBase), which is what makes netting across groups meaningful at all.
+ */
+export async function getMyBalances(auth: JWTPayload) {
+  await connectDB();
+
+  const groups = await Group.find(activeMemberFilter(auth.userId)).lean();
+  if (groups.length === 0) {
+    return { owedToMe: 0, iOwe: 0, net: 0, byPerson: [], byGroup: [] };
+  }
+
+  const expenses = await Expense.find({
+    groupId: { $in: groups.map((g) => g._id) },
+    type: "group",
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  }).lean();
+
+  const byGroupExpenses = new Map<string, ExpenseDoc[]>();
+  for (const e of expenses) {
+    const key = e.groupId?.toString();
+    if (!key) continue;
+    const list = byGroupExpenses.get(key) ?? [];
+    list.push(e as ExpenseDoc);
+    byGroupExpenses.set(key, list);
+  }
+
+  const perPerson = new Map<string, { id: string; name: string; net: number }>();
+  const byGroup: {
+    groupId: string;
+    groupName: string;
+    net: number;
+    owedToMe: number;
+    iOwe: number;
+  }[] = [];
+
+  for (const group of groups) {
+    const gid = group._id.toString();
+    const plan = calculateSettlements(
+      calculateBalances(byGroupExpenses.get(gid) ?? [])
+    );
+
+    let owedToMe = 0;
+    let iOwe = 0;
+    for (const t of plan) {
+      // Positive = they owe me, negative = I owe them.
+      const delta =
+        t.to.id === auth.userId
+          ? t.amount
+          : t.from.id === auth.userId
+            ? -t.amount
+            : 0;
+      if (delta === 0) continue;
+
+      const other = t.to.id === auth.userId ? t.from : t.to;
+      const entry = perPerson.get(other.id) ?? {
+        id: other.id,
+        name: other.name,
+        net: 0,
+      };
+      entry.net = Math.round((entry.net + delta) * 100) / 100;
+      perPerson.set(other.id, entry);
+
+      if (delta > 0) owedToMe += delta;
+      else iOwe += -delta;
+    }
+
+    if (owedToMe > 0.01 || iOwe > 0.01) {
+      byGroup.push({
+        groupId: gid,
+        groupName: group.name,
+        net: Math.round((owedToMe - iOwe) * 100) / 100,
+        owedToMe: Math.round(owedToMe * 100) / 100,
+        iOwe: Math.round(iOwe * 100) / 100,
+      });
+    }
+  }
+
+  // A person can net to zero across groups — that is a real answer ("you two
+  // are square"), but it does not belong in a list of outstanding debts.
+  const people = Array.from(perPerson.values())
+    .filter((p) => Math.abs(p.net) > 0.01)
+    .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
+
+  const owedToMe = people
+    .filter((p) => p.net > 0)
+    .reduce((s, p) => s + p.net, 0);
+  const iOwe = people.filter((p) => p.net < 0).reduce((s, p) => s - p.net, 0);
+
+  return {
+    owedToMe: Math.round(owedToMe * 100) / 100,
+    iOwe: Math.round(iOwe * 100) / 100,
+    net: Math.round((owedToMe - iOwe) * 100) / 100,
+    byPerson: people,
+    byGroup: byGroup.sort((a, b) => Math.abs(b.net) - Math.abs(a.net)),
+  };
+}
+
 // ── Shareable bill-split link (Phase 4B) ────────────
 
 export async function enableGroupShare(groupId: string, auth: JWTPayload) {

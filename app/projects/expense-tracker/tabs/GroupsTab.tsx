@@ -3,7 +3,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "../../../../lib/authContext";
 import { GroupDetail } from "../components/GroupDetail";
-import { relativeTime } from "../../../../lib/utils";
+import { cn, relativeTime } from "../../../../lib/utils";
+import { formatMoney } from "../../../../modules/expense-tracker/currencies";
+import { getBaseCurrency } from "../prefs";
 
 type Group = {
   _id: string;
@@ -25,6 +27,10 @@ type Invite = {
 export function GroupsTab() {
   const { authFetch } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
+  // Net position per group, so a card answers "am I owed here?" without
+  // opening it.
+  const [netByGroup, setNetByGroup] = useState<Record<string, number>>({});
+  const [base, setBase] = useState("INR");
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -204,6 +210,19 @@ export function GroupsTab() {
                       {g.lastExpenseAt
                         ? `active ${relativeTime(g.lastExpenseAt)}`
                         : "no expenses yet"}
+                    </span>
+                  )}
+                  {netByGroup[g._id] !== undefined && (
+                    <span
+                      className={cn(
+                        "font-mono text-xs font-semibold tabular-nums",
+                        netByGroup[g._id] > 0
+                          ? "text-emerald-300"
+                          : "text-red-300"
+                      )}
+                    >
+                      {netByGroup[g._id] > 0 ? "owed " : "you owe "}
+                      {formatMoney(Math.abs(netByGroup[g._id]), base)}
                     </span>
                   )}
                 </div>
