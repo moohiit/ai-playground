@@ -30,6 +30,7 @@ import {
   notifyGroupExpense,
   notifyGroupPayment,
   notifyGroupSettled,
+  notifyGroupReopened,
 } from "./push";
 import { evaluateBudget } from "./budget";
 import { advance, dueOccurrences, isDue } from "./recurring";
@@ -1949,6 +1950,106 @@ export async function getDashboardSummaries(auth: JWTPayload) {
   };
 }
 
+/**
+ * Undo the most recent settlement of a group.
+ *
+ * Settling was a one-way door, and the auto-close that fires when the last
+ * transfer is paid made it easy to walk through by accident. This puts the
+ * batch back: its expenses return to the active window and the settle-up
+ * payments recorded at the time are recreated, because without them the
+ * balances come back wrong — whoever already paid would appear to owe it again.
+ *
+ * Only the LATEST batch can be reopened. Reviving an older one while newer
+ * settlements exist would interleave two closed periods into one active window
+ * and leave the history unreadable.
+ *
+ * Any active member may do it — this is shared money, and waiting for whoever
+ * happened to press Settle is not a real constraint — so the whole group is
+ * notified.
+ */
+export async function reopenSettlement(groupId: string, auth: JWTPayload) {
+  await connectDB();
+
+  const group = await Group.findById(groupId).lean();
+  if (!group || !isActiveMember(group, auth.userId)) {
+    throw new Error("Group not found or access denied");
+  }
+
+  const oid = toObjectId(groupId, "groupId");
+  const latest = await GroupSettlement.findOne({
+    groupId: oid,
+    reopenedAt: null,
+  })
+    .sort({ settledAt: -1 })
+    .lean();
+
+  if (!latest) throw new Error("This group has no settled batch to reopen");
+
+  const rows = await Expense.find({ settlementId: latest.settlementId }).lean();
+  if (rows.length === 0) {
+    throw new Error("That settlement's expenses are no longer available");
+  }
+
+  // Back into the active window.
+  await Expense.updateMany(
+    { settlementId: latest.settlementId },
+    { $set: { settledAt: null, settlementId: null } }
+  );
+
+  // Recreate the settle-up payments. They were deleted when the window closed
+  // and survive only as `transfers` here; the rebuilt rows get new ids, but
+  // amount, direction and date are faithful. `transfers[].amount` is already a
+  // base-currency figure, so amount and amountBase agree and the balance maths
+  // reads it exactly as it did before.
+  const { baseCurrency } = await getPrefs(auth);
+  if (latest.transfers.length > 0) {
+    await Expense.insertMany(
+      latest.transfers.map((t) => ({
+        type: "group",
+        direction: "expense",
+        groupId: oid,
+        createdBy: auth.userId,
+        paidBy: { id: t.from.id, name: t.from.name },
+        amount: t.amount,
+        currency: baseCurrency,
+        amountBase: t.amount,
+        description: `${t.from.name} paid ${t.to.name}`,
+        category: "Settlement",
+        date: t.paidAt ?? latest.settledAt,
+        splitAmong: [{ memberId: t.to.id, name: t.to.name }],
+        splits: [{ memberId: t.to.id, name: t.to.name, amount: t.amount }],
+        isSettlement: true,
+      }))
+    );
+  }
+
+  await GroupSettlement.updateOne(
+    { _id: latest._id },
+    { $set: { reopenedAt: new Date(), reopenedBy: auth.userId } }
+  );
+
+  const total = rows.reduce((sum, e) => sum + (e.amountBase ?? e.amount), 0);
+
+  try {
+    const actor = await User.findById(auth.userId).select("name").lean();
+    await notifyGroupReopened({
+      memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+      actorId: auth.userId,
+      actorName: actor?.name ?? auth.name,
+      groupName: group.name,
+      expenseCount: rows.length,
+    });
+  } catch {
+    /* notifications are optional */
+  }
+
+  return {
+    expenseCount: rows.length,
+    total: Math.round(total * 100) / 100,
+    paymentsRestored: latest.transfers.length,
+  };
+}
+
 export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
   await connectDB();
 
@@ -1989,6 +2090,7 @@ export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
   // plan the clients recompute from Paid − Share.
   const records = await GroupSettlement.find({
     settlementId: { $in: Array.from(grouped.keys()) },
+    reopenedAt: null,
   }).lean();
   const transfersById = new Map(records.map((r) => [r.settlementId, r.transfers]));
 

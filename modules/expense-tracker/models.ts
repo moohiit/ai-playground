@@ -636,6 +636,11 @@ export type GroupSettlementDoc = {
   // Payments actually recorded before the batch closed. Empty when the group
   // was closed straight from "Mark as Settled" with no individual settle-ups.
   transfers: SettlementTransfer[];
+  // Set when the batch is reopened. The record is KEPT rather than deleted so
+  // "settled on the 9th, reopened on the 21st by Mohit" survives — deleting it
+  // would erase who closed the window in the first place.
+  reopenedAt?: Date | null;
+  reopenedBy?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -668,6 +673,8 @@ const groupSettlementSchema = new Schema<GroupSettlementDoc>(
     settledAt: { type: Date, required: true },
     settledBy: { type: String, required: true },
     transfers: { type: [settlementTransferSchema], default: [] },
+    reopenedAt: { type: Date, default: null },
+    reopenedBy: { type: String, default: null },
   },
   { timestamps: true }
 );

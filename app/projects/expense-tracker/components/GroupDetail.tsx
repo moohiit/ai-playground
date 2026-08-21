@@ -346,6 +346,48 @@ export function GroupDetail({ groupId, onBack }: Props) {
     }
   }
 
+  const [reopening, setReopening] = useState(false);
+
+  async function confirmReopen(rec: SettlementRecord) {
+    const count = rec.expenses.length;
+    const total = rec.expenses.reduce(
+      (sum, e) => sum + (e.amountBase ?? e.amount),
+      0
+    );
+    const payments = rec.transfers?.length ?? 0;
+    if (
+      !confirm(
+        `Reopen this settlement?\n\n${count} ${
+          count === 1 ? "expense" : "expenses"
+        } worth ${formatMoney(total, baseCurrency)} go back to Active, and the ` +
+          `settle-up payments recorded at the time are restored.` +
+          (payments > 0
+            ? `\n\n${payments} payment${payments === 1 ? "" : "s"} will reappear as settlement rows.`
+            : "") +
+          `\n\nEveryone in the group is notified.`
+      )
+    )
+      return;
+    setReopening(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/reopen`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error ?? "Couldn't reopen that settlement");
+        return;
+      }
+      setTab("active");
+      await fetchAll();
+    } catch {
+      alert("Network error — nothing was reopened.");
+    } finally {
+      setReopening(false);
+    }
+  }
+
   async function handleDeleteExpense(id: string) {
     if (!confirm("Delete this expense?")) return;
     const res = await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
@@ -717,7 +759,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
         )}
 
         {tab === "history" && (
-          <SettledHistoryView history={settlementHistory} base={baseCurrency} />
+          <SettledHistoryView
+            history={settlementHistory}
+            base={baseCurrency}
+            onReopen={confirmReopen}
+            reopening={reopening}
+          />
         )}
 
         {tab === "report" && (
@@ -1076,9 +1123,13 @@ function ExpenseRow({
 function SettledHistoryView({
   history,
   base,
+  onReopen,
+  reopening,
 }: {
   history: SettlementRecord[];
   base: string;
+  onReopen: (rec: SettlementRecord) => void;
+  reopening: boolean;
 }) {
   if (history.length === 0) {
     return (
@@ -1117,10 +1168,24 @@ function SettledHistoryView({
                 minute: "2-digit",
               })}
             </h3>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-400 ring-1 ring-emerald-500/30">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              {record.expenses.length} expenses
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-400 ring-1 ring-emerald-500/30">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                {record.expenses.length} expenses
+              </span>
+              {/* Only the newest batch can go back — reviving an older one
+                  while newer settlements exist would interleave two closed
+                  periods into one active window. */}
+              {i === 0 && (
+                <button
+                  onClick={() => onReopen(record)}
+                  disabled={reopening}
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                >
+                  {reopening ? "Reopening…" : "Reopen"}
+                </button>
+              )}
+            </div>
           </div>
 
           <SettlementSummary

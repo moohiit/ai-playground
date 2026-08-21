@@ -350,6 +350,56 @@ export default function GroupDetailScreen() {
     }
   }
 
+  const [reopening, setReopening] = useState(false);
+
+  function confirmReopen(rec: SettlementRecord) {
+    const count = rec.expenses.length;
+    const total = rec.expenses.reduce(
+      (sum, e) => sum + (e.amountBase ?? e.amount),
+      0
+    );
+    Alert.alert(
+      "Reopen this settlement",
+      `${count} ${count === 1 ? "expense" : "expenses"} worth ${formatMoney(
+        total,
+        baseCurrency
+      )} go back to Active, and the settle-up payments recorded at the time are restored.${
+        (rec.transfers?.length ?? 0) > 0
+          ? `\n\n${rec.transfers!.length} payment${
+              rec.transfers!.length === 1 ? "" : "s"
+            } will reappear as settlement rows.`
+          : ""
+      }\n\nEveryone in the group is notified.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reopen",
+          style: "destructive",
+          onPress: async () => {
+            setReopening(true);
+            try {
+              const res = await authFetch(
+                `/api/projects/expense-tracker/groups/${groupId}/reopen`,
+                { method: "POST" }
+              );
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                Alert.alert("Couldn't reopen", data.error ?? "Try again.");
+                return;
+              }
+              setTab("active");
+              await fetchAll();
+            } catch {
+              Alert.alert("Error", "Network error — nothing was reopened.");
+            } finally {
+              setReopening(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   // Record an individual "X paid Y" settlement payment for one transfer row.
   const [payingKey, setPayingKey] = useState<string | null>(null);
 
@@ -941,11 +991,16 @@ export default function GroupDetailScreen() {
               <Text className="text-sm text-zinc-400">No settlement history yet.</Text>
             </View>
           ) : (
-            history.map((rec) => (
+            history.map((rec, i) => (
               <SettlementCard
                 key={rec.settlementId}
                 record={rec}
                 baseCurrency={baseCurrency}
+                // Only the newest batch can go back — reviving an older one
+                // while newer settlements exist would interleave two closed
+                // periods into one active window.
+                onReopen={i === 0 ? () => confirmReopen(rec) : undefined}
+                reopening={reopening}
               />
             ))
           )
@@ -1060,9 +1115,13 @@ function settlementPlan(
 function SettlementCard({
   record,
   baseCurrency,
+  onReopen,
+  reopening,
 }: {
   record: SettlementRecord;
   baseCurrency: string;
+  onReopen?: () => void;
+  reopening?: boolean;
 }) {
   const total = record.expenses.reduce((s, e) => s + (e.amountBase ?? e.amount), 0);
   const members = settlementMembers(record.expenses);
@@ -1090,9 +1149,25 @@ function SettlementCard({
             year: "numeric",
           })}
         </Text>
-        <Text className="text-xs text-emerald-400">
-          {record.expenses.length} expenses · {money(total)}
-        </Text>
+        <View className="flex-row items-center gap-3">
+          <Text className="text-xs text-emerald-400">
+            {record.expenses.length} expenses · {money(total)}
+          </Text>
+          {onReopen && (
+            <Pressable
+              onPress={onReopen}
+              disabled={reopening}
+              hitSlop={6}
+              className={`rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 ${
+                reopening ? "opacity-50" : ""
+              }`}
+            >
+              <Text className="text-[12px] font-semibold text-amber-300">
+                {reopening ? "…" : "Reopen"}
+              </Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {/* Who paid whom in this settlement. Batches closed after settle-up

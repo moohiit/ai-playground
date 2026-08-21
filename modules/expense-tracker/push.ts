@@ -353,3 +353,19 @@ export async function notifyGroupSettled(opts: {
     })
   );
 }
+
+/** A settled batch was put back into the active window. */
+export async function notifyGroupReopened(opts: {
+  memberIds: string[];
+  actorId: string;
+  actorName: string;
+  groupName: string;
+  expenseCount: number;
+}) {
+  await notifyGroupMembers(opts.memberIds, opts.actorId, "", null, () => ({
+    title: `${opts.groupName} ↩️`,
+    body: `${opts.actorName} reopened the last settlement — ${opts.expenseCount} ${
+      opts.expenseCount === 1 ? "expense is" : "expenses are"
+    } active again.`,
+  }));
+}
