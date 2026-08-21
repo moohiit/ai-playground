@@ -770,8 +770,8 @@ export function GroupDetail({ groupId, onBack }: Props) {
                     {/* The group plan nets debts through other people, so it
                         can differ from what is directly between two members. */}
                     <div className="text-[11px] text-zinc-600">
-                      Directly between them — the Settle Up plan above may route
-                      it through someone else.
+                      Only expenses one of them paid for the other. The Settle Up
+                      plan above may route this through someone else.
                     </div>
                   </div>
                 ) : (

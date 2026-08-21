@@ -2057,10 +2057,11 @@ export async function reopenSettlement(groupId: string, auth: JWTPayload) {
  * between me and Rahul specifically" — the question that actually comes up
  * when two flatmates want to square off without settling the whole group.
  *
- * Only an expense one of THEM paid can create a debt between them: if a third
- * member paid for a dinner they both ate, they each owe that third member, not
- * each other. Those still appear in the list — they are shared spending and
- * useful context — but they move the balance by nothing.
+ * An expense belongs here only when ONE OF THEM PAID and the other is in the
+ * split. If a third member paid for a dinner they both ate, they each owe that
+ * third member, not each other — so it is not between them and is left out
+ * entirely. Everything listed therefore moves the balance; nothing is shown
+ * that the figure below does not account for.
  *
  * Settle-up payments between the pair are included and count, because that is
  * exactly what repaying looks like: it offsets the debt in the other direction.
@@ -2097,10 +2098,15 @@ export async function getExpensesBetween(
 
   const rows = await Expense.find(match).sort({ date: -1, _id: -1 }).lean();
 
-  const involves = (e: (typeof rows)[number], id: string) =>
-    e.paidBy?.id === id || (e.splits ?? []).some((sp) => sp.memberId === id);
+  const inSplit = (e: (typeof rows)[number], id: string) =>
+    (e.splits ?? []).some((sp) => sp.memberId === id);
 
-  const between = rows.filter((e) => involves(e, memberA) && involves(e, memberB));
+  // One of them paid, the other is in the split — in either direction.
+  const between = rows.filter(
+    (e) =>
+      (e.paidBy?.id === memberA && inSplit(e, memberB)) ||
+      (e.paidBy?.id === memberB && inSplit(e, memberA))
+  );
 
   const shareOf = (e: (typeof rows)[number], id: string, ratio: number) =>
     ((e.splits ?? []).find((sp) => sp.memberId === id)?.amount ?? 0) * ratio;
