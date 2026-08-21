@@ -2118,7 +2118,25 @@ export async function getPersonalSettlementHistory(auth: JWTPayload) {
 
 export async function getPrefs(auth: JWTPayload) {
   await connectDB();
-  const prefs = await UserPrefs.findOne({ userId: auth.userId }).lean();
+  let prefs = await UserPrefs.findOne({ userId: auth.userId }).lean();
+
+  // A base-currency switch that was cut short leaves a marker. Finish it here
+  // so the next request repairs it, rather than leaving the user's money half
+  // converted until they happen to try again.
+  if (prefs?.pendingBaseCurrency) {
+    try {
+      await resumeBaseCurrencyMigration({
+        userId: auth.userId,
+        baseCurrency: prefs.baseCurrency,
+        pendingBaseCurrency: prefs.pendingBaseCurrency,
+      });
+      prefs = await UserPrefs.findOne({ userId: auth.userId }).lean();
+    } catch {
+      // Rates still unavailable — report the currency the money is actually
+      // in and try again on the next read.
+    }
+  }
+
   // No row yet → return defaults without persisting; first write upserts.
   return {
     baseCurrency: prefs?.baseCurrency ?? DEFAULT_PREFS.baseCurrency,
@@ -2138,22 +2156,38 @@ export async function updatePrefs(input: UpdatePrefsInput, auth: JWTPayload) {
   const prev = await UserPrefs.findOne({ userId: auth.userId }).lean();
   const prevBase = prev?.baseCurrency ?? DEFAULT_PREFS.baseCurrency;
 
+  const changingBase = !!input.baseCurrency && input.baseCurrency !== prevBase;
+
+  if (changingBase) {
+    // Record the intent BEFORE touching any money, and leave baseCurrency
+    // alone until the conversion has finished. If this dies halfway, the
+    // preference still says the old currency and the marker says what was in
+    // flight — so nothing is left claiming to be something it is not, and
+    // getPrefs finishes the job on the next read.
+    await UserPrefs.findOneAndUpdate(
+      { userId: auth.userId },
+      {
+        $set: {
+          ...input,
+          baseCurrency: prevBase,
+          pendingBaseCurrency: input.baseCurrency,
+        },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    await migrateBaseCurrency(auth.userId, prevBase, input.baseCurrency!);
+  }
+
   const prefs = await UserPrefs.findOneAndUpdate(
     { userId: auth.userId },
-    { $set: input },
+    {
+      $set: changingBase
+        ? { ...input, pendingBaseCurrency: null }
+        : input,
+    },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   ).lean();
-
-  // Changing the base currency re-freezes every owned row's `amountBase` against
-  // the new base, so historical amounts don't show old numbers with a new symbol.
-  if (input.baseCurrency && input.baseCurrency !== prevBase) {
-    await recomputeAmountBase(auth.userId, prefs!.baseCurrency);
-    // Accounts, transfers, budgets, and goals are all stored in the BASE
-    // currency too — leaving them alone turned an ₹80,000 opening balance
-    // into "$80,000" after an INR→USD switch (and budgets/goals likewise
-    // kept old-base numbers compared against new-base spending).
-    await rebaseBaseCurrencyDocs(auth.userId, prevBase, prefs!.baseCurrency);
-  }
 
   return {
     baseCurrency: prefs!.baseCurrency,
@@ -2162,64 +2196,127 @@ export async function updatePrefs(input: UpdatePrefsInput, auth: JWTPayload) {
   };
 }
 
-// Convert every base-currency-denominated document (account opening balances,
-// transfers, budget limits, goal targets/saved) from the old base to the new one.
-async function rebaseBaseCurrencyDocs(
+/**
+ * Finish a base-currency switch that was cut short.
+ *
+ * Called from getPrefs, so the very next request self-heals rather than
+ * leaving the user's money half-converted until they happen to try again.
+ * Safe to call at any time: migrateBaseCurrency skips whatever is already in
+ * the target currency.
+ */
+async function resumeBaseCurrencyMigration(prefs: {
+  userId: string;
+  baseCurrency?: string;
+  pendingBaseCurrency?: string | null;
+}) {
+  const target = prefs.pendingBaseCurrency;
+  if (!target) return;
+  const from = prefs.baseCurrency ?? DEFAULT_PREFS.baseCurrency;
+  await migrateBaseCurrency(prefs.userId, from, target);
+  await UserPrefs.updateOne(
+    { userId: prefs.userId },
+    { $set: { baseCurrency: target, pendingBaseCurrency: null } }
+  );
+}
+
+/**
+ * Re-denominate everything the user owns into `toBase`.
+ *
+ * This used to write the new preference FIRST and then convert document by
+ * document — hundreds of round trips under a 15-second route cap. A timeout
+ * mid-loop left the preference saying USD while an arbitrary prefix of the
+ * user's money was still in INR, with nothing recording how far it got.
+ *
+ * Two changes make that unreachable:
+ *
+ * 1. Every write is a single bulk update per currency, computed by Mongo from
+ *    a fixed multiplier, so the whole migration is a handful of queries rather
+ *    than one per row.
+ * 2. It is IDEMPOTENT, so an interrupted run is fixed by running it again.
+ *    Expenses re-derive `amountBase` from `amount` + `currency`, which never
+ *    change. Accounts, transfers, budgets and goals now record the currency
+ *    their figure is stored in, and are only touched when it differs from the
+ *    target — a converted row is skipped on a second pass instead of being
+ *    converted twice.
+ */
+/** The slice of a Mongoose model the currency migration uses. Structural, so
+ *  one loop can drive five collections without casting between model types. */
+type BulkModel = {
+  distinct(field: string, filter: Record<string, unknown>): Promise<unknown[]>;
+  countDocuments(filter: Record<string, unknown>): Promise<number>;
+  updateMany(
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>[]
+  ): Promise<unknown>;
+};
+
+async function migrateBaseCurrency(
   userId: string,
   fromBase: string,
   toBase: string
 ) {
   if (fromBase === toBase) return;
 
-  const [accounts, transfers, budgets, goals] = await Promise.all([
-    Account.find({ userId }).select("openingBalance").lean(),
-    Transfer.find({ userId }).select("amount").lean(),
-    Budget.find({ userId }).select("amount").lean(),
-    Goal.find({ userId }).select("target savedAmount").lean(),
-  ]);
+  // Rows are grouped by the currency their figure is in, so one bulk update
+  // covers every row sharing one.
+  //
+  // `distinct` cannot drive this: it omits documents where the field is
+  // ABSENT, which is most of them. Expenses predating multi-currency have no
+  // `currency`, and the field is new on budgets/goals/transfers, so relying on
+  // distinct silently skipped exactly the rows most in need of converting —
+  // they would have kept a stale figure under the new currency's name.
+  // The absent/null rows get their own bucket, treated as the base we are
+  // leaving, which is what they are denominated in.
+  const LEGACY = { $or: [{ currency: null }, { currency: { $exists: false } }] };
 
-  for (const a of accounts) {
-    await Account.updateOne(
-      { _id: a._id },
-      { $set: { openingBalance: await convert(a.openingBalance ?? 0, fromBase, toBase), currency: toBase } }
-    );
+  const buckets = async (
+    model: BulkModel,
+    scope: Record<string, unknown>
+  ): Promise<{ currency: string; match: Record<string, unknown> }[]> => {
+    const named = (await model.distinct("currency", {
+      ...scope,
+      currency: { $type: "string" },
+    })) as string[];
+    const list = named.map((c) => ({
+      currency: c,
+      match: { ...scope, currency: c } as Record<string, unknown>,
+    }));
+    if (await model.countDocuments({ ...scope, ...LEGACY })) {
+      list.push({ currency: fromBase, match: { ...scope, ...LEGACY } });
+    }
+    return list;
+  };
+
+  // ── Expenses: amountBase = amount converted from the ENTRY currency ──
+  for (const b of await buckets(Expense, { createdBy: userId })) {
+    const rate = await convert(1, b.currency, toBase);
+    await Expense.updateMany(b.match, [
+      { $set: { amountBase: { $round: [{ $multiply: ["$amount", rate] }, 2] } } },
+    ]);
   }
-  for (const t of transfers) {
-    await Transfer.updateOne(
-      { _id: t._id },
-      { $set: { amount: await convert(t.amount, fromBase, toBase) } }
-    );
-  }
-  for (const b of budgets) {
-    await Budget.updateOne(
-      { _id: b._id },
-      { $set: { amount: await convert(b.amount, fromBase, toBase) } }
-    );
-  }
-  for (const g of goals) {
-    await Goal.updateOne(
-      { _id: g._id },
-      {
-        $set: {
-          target: await convert(g.target, fromBase, toBase),
-          savedAmount: await convert(g.savedAmount ?? 0, fromBase, toBase),
-        },
+
+  // ── Documents stored directly in the base currency ──
+  const rebase = async (model: BulkModel, fields: string[]) => {
+    for (const b of await buckets(model, { userId })) {
+      // Already in the target — skip, so a second pass cannot double-convert.
+      if (b.currency === toBase) continue;
+      const rate = await convert(1, b.currency, toBase);
+      const set: Record<string, unknown> = { currency: toBase };
+      for (const f of fields) {
+        set[f] = {
+          $round: [{ $multiply: [{ $ifNull: [`$${f}`, 0] }, rate] }, 2],
+        };
       }
-    );
-  }
+      await model.updateMany(b.match, [{ $set: set }]);
+    }
+  };
+
+  await rebase(Account, ["openingBalance"]);
+  await rebase(Transfer, ["amount"]);
+  await rebase(Budget, ["amount"]);
+  await rebase(Goal, ["target", "savedAmount"]);
 }
 
-// Re-convert amountBase for every expense the user owns into `base`. FX rates are
-// cached per source currency, so this is one network call per distinct currency.
-async function recomputeAmountBase(userId: string, base: string) {
-  const docs = await Expense.find({ createdBy: userId })
-    .select("amount currency")
-    .lean();
-  for (const d of docs) {
-    const newBase = await convert(d.amount, d.currency ?? "INR", base);
-    await Expense.updateOne({ _id: d._id }, { $set: { amountBase: newBase } });
-  }
-}
 
 // ── Accounts / wallets (Phase 1C) ───────────────────
 
@@ -2381,6 +2478,7 @@ export async function createTransfer(
     fromAccountId: from._id,
     toAccountId: to._id,
     amount: input.amount,
+    currency: await getBaseCurrency(auth.userId),
     date: new Date(input.date),
     note: input.note,
   });
@@ -2514,6 +2612,7 @@ export async function createBudget(input: CreateBudgetInput, auth: JWTPayload) {
       scope: input.scope,
       category,
       amount: input.amount,
+      currency: await getBaseCurrency(auth.userId),
       rollover: input.rollover,
     });
     return budget.toObject();
@@ -3031,6 +3130,7 @@ export async function createGoal(input: CreateGoalInput, auth: JWTPayload) {
     userId: auth.userId,
     name: input.name,
     target: input.target,
+    currency: await getBaseCurrency(auth.userId),
     savedAmount: linkedAccountId ? 0 : input.savedAmount,
     deadline: input.deadline ? new Date(input.deadline) : null,
     linkedAccountId,

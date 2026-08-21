@@ -220,6 +220,8 @@ export type UserPrefsDoc = {
   _id: Types.ObjectId;
   userId: string;
   baseCurrency: string;
+  /** Target of an in-flight base-currency switch; null when settled. */
+  pendingBaseCurrency?: string | null;
   locale: string;
   weekStart: number; // 0 = Sunday, 1 = Monday
   expoPushToken: string | null;
@@ -231,6 +233,10 @@ const userPrefsSchema = new Schema<UserPrefsDoc>(
   {
     userId: { type: String, required: true, unique: true, index: true },
     baseCurrency: { type: String, default: "INR" },
+    // Set while a base-currency switch is in flight, cleared when it lands.
+    // Its presence means the money may be half-converted, and getPrefs uses
+    // it to finish the job on the next read.
+    pendingBaseCurrency: { type: String, default: null },
     locale: { type: String, default: "en-IN" },
     weekStart: { type: Number, default: 1 },
     expoPushToken: { type: String, default: null },
@@ -289,6 +295,8 @@ export type TransferDoc = {
   fromAccountId: Types.ObjectId;
   toAccountId: Types.ObjectId;
   amount: number;
+  /** Currency the stored figure is in; null on rows written before this existed. */
+  currency?: string | null;
   date: Date;
   note: string;
   createdAt: Date;
@@ -301,6 +309,10 @@ const transferSchema = new Schema<TransferDoc>(
     fromAccountId: { type: Schema.Types.ObjectId, ref: "Account", required: true },
     toAccountId: { type: Schema.Types.ObjectId, ref: "Account", required: true },
     amount: { type: Number, required: true },
+    // Which currency the stored figure is in. Without it a base-currency
+    // switch cannot tell a converted row from an unconverted one, so an
+    // interrupted switch could never be safely retried.
+    currency: { type: String, default: null },
     date: { type: Date, required: true },
     note: { type: String, default: "" },
   },
@@ -322,6 +334,8 @@ export type BudgetDoc = {
   scope: BudgetScope;
   category: string | null;
   amount: number;
+  /** Currency the stored figure is in; null on rows written before this existed. */
+  currency?: string | null;
   period: "monthly";
   rollover: boolean;
   createdAt: Date;
@@ -334,6 +348,8 @@ const budgetSchema = new Schema<BudgetDoc>(
     scope: { type: String, enum: ["overall", "category"], required: true },
     category: { type: String, default: null },
     amount: { type: Number, required: true },
+    // Which currency the stored figure is in — see the note on TransferDoc.
+    currency: { type: String, default: null },
     period: { type: String, enum: ["monthly"], default: "monthly" },
     rollover: { type: Boolean, default: false },
   },
@@ -418,6 +434,8 @@ export type GoalDoc = {
   name: string;
   target: number;
   savedAmount: number;
+  /** Currency the stored figure is in; null on rows written before this existed. */
+  currency?: string | null;
   deadline: Date | null;
   linkedAccountId: Types.ObjectId | null;
   archived: boolean;
@@ -431,6 +449,8 @@ const goalSchema = new Schema<GoalDoc>(
     name: { type: String, required: true },
     target: { type: Number, required: true },
     savedAmount: { type: Number, default: 0 },
+    // Which currency the stored figure is in — see the note on TransferDoc.
+    currency: { type: String, default: null },
     deadline: { type: Date, default: null },
     linkedAccountId: { type: Schema.Types.ObjectId, ref: "Account", default: null },
     archived: { type: Boolean, default: false },

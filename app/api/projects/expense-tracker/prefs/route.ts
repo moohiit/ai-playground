@@ -6,7 +6,10 @@ import { ApiError, handleRouteError } from "@/lib/apiError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+// A base-currency switch runs here. It is a handful of bulk updates now
+// rather than one write per row, but give it room — and if it is ever cut
+// short anyway, the next read of /prefs finishes it.
+export const maxDuration = 60;
 
 export async function GET(req: Request) {
   try {
