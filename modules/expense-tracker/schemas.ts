@@ -80,7 +80,11 @@ const expenseObjectSchema = z
       .optional(),
     // How the amount is divided. "equal" needs no values and stays the
     // default, so every existing caller keeps working untouched.
-    splitMode: z.enum(["equal", "shares", "exact", "percent"]).default("equal"),
+    // "items" derives each member's share from the receipt lines assigned to
+    // them; the server computes the values, the client never sends them.
+    splitMode: z
+      .enum(["equal", "shares", "exact", "percent", "items"])
+      .default("equal"),
     splitValues: z
       .array(
         z.object({
@@ -95,6 +99,7 @@ const expenseObjectSchema = z
           name: z.string(),
           quantity: z.number().default(1),
           price: z.number(),
+          assignedTo: z.array(z.string()).optional(),
         })
       )
       .optional(),
@@ -120,7 +125,9 @@ function refineSplitValues(
   ctx: z.RefinementCtx
 ) {
   const mode = val.splitMode ?? "equal";
-  if (mode === "equal") return;
+  // "items" carries no values — the server derives them from the assigned
+  // receipt lines, so there is nothing here to check.
+  if (mode === "equal" || mode === "items") return;
 
   const values = val.splitValues;
   if (!values || values.length === 0) {

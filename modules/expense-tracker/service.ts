@@ -208,6 +208,7 @@ import {
 } from "./schemas";
 import {
   calculateSplits,
+  splitValuesFromItems,
   calculateBalances,
   calculateSettlements,
   type MemberBalance,
@@ -642,6 +643,9 @@ export async function createExpense(
 
   let splitAmong = input.splitAmong ?? [];
   let splits: { memberId: string; name: string; amount: number }[] = [];
+  // What the split actually resolved to — for an item split this is derived,
+  // so it is not simply what the client sent.
+  let resolvedSplitValues: { memberId: string; value: number }[] | undefined;
 
   if (input.type === "group") {
     if (!input.groupId) {
@@ -666,12 +670,16 @@ export async function createExpense(
       throw new Error("Split members must belong to the group");
     }
 
-    splits = calculateSplits(
-      input.amount,
-      splitAmong,
-      input.splitMode ?? "equal",
-      input.splitValues
-    );
+    // An item split is derived here, never trusted from the client: the
+    // values must follow from the lines actually stored on the expense, or the
+    // receipt and the division could disagree.
+    const mode = input.splitMode ?? "equal";
+    const values =
+      mode === "items"
+        ? splitValuesFromItems(input.amount, input.items ?? [], splitAmong)
+        : input.splitValues;
+    splits = calculateSplits(input.amount, splitAmong, mode, values);
+    resolvedSplitValues = values;
   } else {
     // Personal expenses never carry a group or splits.
     splitAmong = [];
@@ -704,7 +712,7 @@ export async function createExpense(
     splitAmong,
     splits,
     splitMode: input.type === "group" ? input.splitMode ?? "equal" : "equal",
-    splitValues: input.type === "group" ? input.splitValues ?? [] : [],
+    splitValues: input.type === "group" ? resolvedSplitValues ?? [] : [],
     items: input.items ?? [],
   });
 
@@ -944,16 +952,33 @@ export async function updateExpense(
     // cannot, because the stored amounts no longer add up, so that falls back
     // to an equal division rather than silently keeping stale numbers.
     const splitMode = input.splitMode ?? expense.splitMode ?? "equal";
-    const splitValues =
-      input.splitValues ??
-      (expense.splitValues as { memberId: string; value: number }[] | undefined);
     const amountChanged =
       input.amount !== undefined && input.amount !== expense.amount;
-    const staleExact =
-      splitMode === "exact" && amountChanged && input.splitValues === undefined;
 
-    const effectiveMode = staleExact ? "equal" : splitMode;
-    const effectiveValues = staleExact ? undefined : splitValues;
+    let effectiveMode = splitMode;
+    let effectiveValues: { memberId: string; value: number }[] | undefined;
+
+    if (splitMode === "items") {
+      // Always re-derived from the lines being stored, so editing an item's
+      // price or reassigning it redistributes without the client resending
+      // anything.
+      const items = (input.items ??
+        (expense.items as { price: number; quantity?: number; assignedTo?: string[] }[])) ??
+        [];
+      effectiveValues = splitValuesFromItems(amount, items, splitAmong ?? []);
+    } else {
+      const stored = expense.splitValues as
+        | { memberId: string; value: number }[]
+        | undefined;
+      const splitValues = input.splitValues ?? stored;
+      // Changing the amount of an EXACT split without resending the values
+      // leaves numbers that no longer add up, so fall back to an equal
+      // division rather than keeping them.
+      const staleExact =
+        splitMode === "exact" && amountChanged && input.splitValues === undefined;
+      effectiveMode = staleExact ? "equal" : splitMode;
+      effectiveValues = staleExact ? undefined : splitValues;
+    }
 
     expense.splitAmong = splitAmong as typeof expense.splitAmong;
     expense.splits = calculateSplits(

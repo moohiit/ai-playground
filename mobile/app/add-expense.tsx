@@ -19,11 +19,17 @@ import {
   type Account,
   type Direction,
   type Expense,
+  type ExpenseItem,
   type Group,
   type SplitMode,
 } from "../lib/types";
 import { SUPPORTED_CURRENCIES, formatMoney, parseAmount } from "../lib/currency";
-import { SPLIT_HINT, SPLIT_MODES, calculateSplits } from "../lib/splits";
+import {
+  SPLIT_HINT,
+  SPLIT_MODES,
+  calculateSplits,
+  splitValuesFromItems,
+} from "../lib/splits";
 import { getBaseCurrency } from "../lib/prefs";
 import {
   AppBackground,
@@ -124,6 +130,11 @@ export default function AddExpenseScreen() {
   );
   // Kept as text, keyed by member: a partially typed "1." must survive a
   // re-render, which a number state would round away mid-keystroke.
+  // Receipt lines, kept so a bill can be divided by what each person had.
+  // Scanning used to extract these and throw them away.
+  const [items, setItems] = useState<ExpenseItem[]>(
+    () => editExpense?.items ?? []
+  );
   const [splitInputs, setSplitInputs] = useState<Record<string, string>>(() => {
     const seed: Record<string, string> = {};
     for (const v of editExpense?.splitValues ?? []) {
@@ -180,6 +191,21 @@ export default function AddExpenseScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroup]);
 
+  function toggleItemMember(index: number, memberId: string) {
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== index) return it;
+        const current = it.assignedTo ?? [];
+        return {
+          ...it,
+          assignedTo: current.includes(memberId)
+            ? current.filter((id) => id !== memberId)
+            : [...current, memberId],
+        };
+      })
+    );
+  }
+
   function toggleMember(memberId: string) {
     setPresent((prev) => {
       const next = new Set(prev);
@@ -226,6 +252,16 @@ export default function AddExpenseScreen() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       const r = data.result;
+      if (Array.isArray(r.items)) {
+        setItems(
+          r.items.map((it: ExpenseItem) => ({
+            name: it.name,
+            quantity: it.quantity ?? 1,
+            price: it.price,
+            assignedTo: [],
+          }))
+        );
+      }
       if (r.total != null) setAmount(String(r.total));
       if (r.vendor) setDescription(r.vendor);
       if (r.category) setCategory(r.category);
@@ -258,14 +294,19 @@ export default function AddExpenseScreen() {
     return list.map((m) => ({ memberId: m.userId, name: m.name }));
   }, [selectedGroup, present]);
 
-  const splitValues = useMemo(
-    () =>
-      splitMembers.map((m) => ({
-        memberId: m.memberId,
-        value: parseAmount(splitInputs[m.memberId] ?? "") ?? 0,
-      })),
-    [splitMembers, splitInputs]
-  );
+  const splitValues = useMemo(() => {
+    if (splitMode === "items") {
+      return splitValuesFromItems(
+        parseAmount(amount) ?? 0,
+        items,
+        splitMembers
+      );
+    }
+    return splitMembers.map((m) => ({
+      memberId: m.memberId,
+      value: parseAmount(splitInputs[m.memberId] ?? "") ?? 0,
+    }));
+  }, [amount, items, splitMode, splitMembers, splitInputs]);
 
   // What each member would actually owe, shown live so the numbers are never a
   // surprise after saving — and so a percentage split reads in real money.
@@ -283,6 +324,18 @@ export default function AddExpenseScreen() {
   const splitStatus = useMemo(() => {
     const total = splitValues.reduce((sum, v) => sum + v.value, 0);
     const amt = parseAmount(amount) ?? 0;
+    if (splitMode === "items") {
+      const unassigned = items.filter(
+        (it) => (it.assignedTo?.length ?? 0) === 0
+      ).length;
+      return {
+        ok: true,
+        message:
+          unassigned > 0
+            ? `${unassigned} line${unassigned === 1 ? "" : "s"} unassigned — shared by everyone`
+            : "Every line is assigned",
+      };
+    }
     if (splitMode === "shares") {
       return total > 0
         ? { ok: true, message: `${total} share${total === 1 ? "" : "s"} in total` }
@@ -365,9 +418,12 @@ export default function AddExpenseScreen() {
           category,
           date,
           splitAmong,
+          items: items.length > 0 ? items : undefined,
           splitMode: effectiveType === "group" ? splitMode : undefined,
           splitValues:
-            effectiveType === "group" && splitMode !== "equal"
+            effectiveType === "group" &&
+            splitMode !== "equal" &&
+            splitMode !== "items"
               ? splitValues
               : undefined,
         }),
@@ -572,7 +628,9 @@ export default function AddExpenseScreen() {
 
                   <Field label="How to divide it">
                     <View className="flex-row flex-wrap gap-2">
-                      {SPLIT_MODES.map((m) => (
+                      {SPLIT_MODES.filter(
+                        (m) => m.id !== "items" || items.length > 0
+                      ).map((m) => (
                         <Chip
                           key={m.id}
                           active={splitMode === m.id}
@@ -583,7 +641,58 @@ export default function AddExpenseScreen() {
                     </View>
                   </Field>
 
-                  {splitMode !== "equal" && (
+                  {splitMode === "items" && (
+                    <Field label={SPLIT_HINT.items}>
+                      <View className="gap-3">
+                        {items.map((it, idx) => (
+                          <View key={`${it.name}-${idx}`} className="gap-1.5">
+                            <View className="flex-row items-center justify-between">
+                              <Text
+                                className="flex-1 text-sm text-zinc-200"
+                                numberOfLines={1}
+                              >
+                                {it.name}
+                                {it.quantity > 1 ? ` ×${it.quantity}` : ""}
+                              </Text>
+                              <Text className="text-sm text-zinc-400">
+                                {formatMoney(it.price * (it.quantity || 1), currency)}
+                              </Text>
+                            </View>
+                            <View className="flex-row flex-wrap gap-1.5">
+                              {splitMembers.map((m) => (
+                                <Chip
+                                  key={m.memberId}
+                                  active={
+                                    it.assignedTo?.includes(m.memberId) ?? false
+                                  }
+                                  label={m.name}
+                                  onPress={() => toggleItemMember(idx, m.memberId)}
+                                />
+                              ))}
+                            </View>
+                          </View>
+                        ))}
+                        <Text className="text-xs text-zinc-500">
+                          {splitStatus.message}
+                        </Text>
+                        <View className="gap-1 border-t border-white/5 pt-2">
+                          {splitMembers.map((m) => (
+                            <View
+                              key={m.memberId}
+                              className="flex-row justify-between"
+                            >
+                              <Text className="text-xs text-zinc-400">{m.name}</Text>
+                              <Text className="text-xs font-semibold text-emerald-300">
+                                {splitPreview.get(m.memberId) ?? ""}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    </Field>
+                  )}
+
+                  {splitMode !== "equal" && splitMode !== "items" && (
                     <Field label={SPLIT_HINT[splitMode]}>
                       <View className="gap-2">
                         {splitMembers.map((m) => (

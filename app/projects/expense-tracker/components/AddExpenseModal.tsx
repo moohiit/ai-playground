@@ -8,8 +8,10 @@ import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-track
 import { SUPPORTED_CURRENCIES, currencySymbol, formatMoney } from "../../../../modules/expense-tracker/currencies";
 import {
   calculateSplits,
+  splitValuesFromItems,
   type SplitMode,
 } from "../../../../modules/expense-tracker/balance";
+import type { ExpenseItem } from "../../../../modules/expense-tracker/models";
 import { SPLIT_HINT, SPLIT_MODES } from "../splits";
 import { getBaseCurrency } from "../prefs";
 
@@ -38,6 +40,7 @@ type EditExpense = {
   splitAmong?: { memberId: string; name: string }[];
   splitMode?: SplitMode;
   splitValues?: { memberId: string; value: number }[];
+  items?: ExpenseItem[];
 };
 
 // A draft to pre-populate a NEW entry (e.g. parsed from natural language). Not edit mode.
@@ -115,6 +118,11 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   );
   // Kept as text, keyed by member: a partially typed "1." must survive a
   // re-render, which a number state would round away mid-keystroke.
+  // Receipt lines, kept so a bill can be divided by what each person had.
+  // Scanning used to extract these and throw them away.
+  const [items, setItems] = useState<ExpenseItem[]>(
+    () => editExpense?.items ?? []
+  );
   const [splitInputs, setSplitInputs] = useState<Record<string, string>>(() => {
     const seed: Record<string, string> = {};
     for (const v of editExpense?.splitValues ?? []) {
@@ -180,6 +188,21 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
     }
   }, [selectedGroup]);
 
+  function toggleItemMember(index: number, memberId: string) {
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== index) return it;
+        const current = it.assignedTo ?? [];
+        return {
+          ...it,
+          assignedTo: current.includes(memberId)
+            ? current.filter((m) => m !== memberId)
+            : [...current, memberId],
+        };
+      })
+    );
+  }
+
   function toggleMember(id: string) {
     setPresentMembers((prev) => {
       const next = new Set(prev);
@@ -204,6 +227,16 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       const r = data.result;
+      if (Array.isArray(r.items)) {
+        setItems(
+          r.items.map((it: ExpenseItem) => ({
+            name: it.name,
+            quantity: it.quantity ?? 1,
+            price: it.price,
+            assignedTo: [],
+          }))
+        );
+      }
       setAmount(String(r.total));
       setDescription(r.vendor);
       setCategory(r.category);
@@ -228,14 +261,15 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
     return list.map((m) => ({ memberId: m.userId, name: m.name }));
   }, [selectedGroup, presentMembers]);
 
-  const splitValues = useMemo(
-    () =>
-      splitMembers.map((m) => ({
-        memberId: m.memberId,
-        value: Number(splitInputs[m.memberId] ?? "") || 0,
-      })),
-    [splitMembers, splitInputs]
-  );
+  const splitValues = useMemo(() => {
+    if (splitMode === "items") {
+      return splitValuesFromItems(parseFloat(amount) || 0, items, splitMembers);
+    }
+    return splitMembers.map((m) => ({
+      memberId: m.memberId,
+      value: Number(splitInputs[m.memberId] ?? "") || 0,
+    }));
+  }, [amount, items, splitMode, splitMembers, splitInputs]);
 
   // What each member would actually owe, shown live so the numbers are never a
   // surprise after saving — and so a percentage split reads in real money.
@@ -253,6 +287,18 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   const splitStatus = useMemo(() => {
     const total = splitValues.reduce((sum, v) => sum + v.value, 0);
     const amt = parseFloat(amount) || 0;
+    if (splitMode === "items") {
+      const unassigned = items.filter(
+        (it) => (it.assignedTo?.length ?? 0) === 0
+      ).length;
+      return {
+        ok: true,
+        message:
+          unassigned > 0
+            ? `${unassigned} line${unassigned === 1 ? "" : "s"} unassigned — shared by everyone`
+            : "Every line is assigned",
+      };
+    }
     if (splitMode === "shares") {
       return total > 0
         ? { ok: true, message: `${total} share${total === 1 ? "" : "s"} in total` }
@@ -346,9 +392,13 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
           category,
           date,
           splitAmong,
+          items: items.length > 0 ? items : undefined,
           splitMode: type === "group" ? splitMode : undefined,
+          // An item split's values are the server's to derive.
           splitValues:
-            type === "group" && splitMode !== "equal" ? splitValues : undefined,
+            type === "group" && splitMode !== "equal" && splitMode !== "items"
+              ? splitValues
+              : undefined,
         }),
       });
       const data = await res.json();
@@ -568,7 +618,9 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                         How to divide it
                       </label>
                       <div className="flex flex-wrap gap-1.5">
-                        {SPLIT_MODES.map((m) => (
+                        {SPLIT_MODES.filter(
+                          (m) => m.id !== "items" || items.length > 0
+                        ).map((m) => (
                           <button
                             key={m.id}
                             type="button"
@@ -586,7 +638,61 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                       </div>
                     </div>
 
-                    {splitMode !== "equal" && (
+                    {splitMode === "items" && (
+                      <div>
+                        <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                          {SPLIT_HINT.items}
+                        </label>
+                        <div className="flex flex-col gap-3">
+                          {items.map((it, idx) => (
+                            <div key={`${it.name}-${idx}`} className="flex flex-col gap-1.5">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="min-w-0 truncate text-sm text-zinc-200">
+                                  {it.name}
+                                  {it.quantity > 1 ? ` ×${it.quantity}` : ""}
+                                </span>
+                                <span className="font-mono text-sm tabular-nums text-zinc-400">
+                                  {formatMoney(it.price * (it.quantity || 1), currency)}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {splitMembers.map((m) => {
+                                  const on = it.assignedTo?.includes(m.memberId) ?? false;
+                                  return (
+                                    <button
+                                      key={m.memberId}
+                                      type="button"
+                                      onClick={() => toggleItemMember(idx, m.memberId)}
+                                      className={cn(
+                                        "rounded-md border px-2 py-1 text-xs transition-all",
+                                        on
+                                          ? "border-brand-500/60 bg-brand-500/15 text-brand-500"
+                                          : "border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+                                      )}
+                                    >
+                                      {m.name}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                          <p className="text-xs text-zinc-500">{splitStatus.message}</p>
+                          <div className="flex flex-col gap-1 border-t border-zinc-800/60 pt-2">
+                            {splitMembers.map((m) => (
+                              <div key={m.memberId} className="flex justify-between">
+                                <span className="text-xs text-zinc-400">{m.name}</span>
+                                <span className="font-mono text-xs font-semibold tabular-nums text-emerald-300">
+                                  {splitPreview.get(m.memberId) ?? ""}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {splitMode !== "equal" && splitMode !== "items" && (
                       <div>
                         <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
                           {SPLIT_HINT[splitMode]}

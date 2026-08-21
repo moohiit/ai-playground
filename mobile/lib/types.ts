@@ -50,7 +50,15 @@ export type RecurringRule = {
 };
 
 /** How a group expense is divided; see modules/expense-tracker/balance.ts. */
-export type SplitMode = "equal" | "shares" | "exact" | "percent";
+export type SplitMode = "equal" | "shares" | "exact" | "percent" | "items";
+
+/** A receipt line. `assignedTo` drives the "by item" split. */
+export type ExpenseItem = {
+  name: string;
+  quantity: number;
+  price: number;
+  assignedTo?: string[];
+};
 
 export type Expense = {
   _id: string;
@@ -71,6 +79,7 @@ export type Expense = {
   // existed — those are equal.
   splitMode?: SplitMode;
   splitValues?: { memberId: string; value: number }[];
+  items?: ExpenseItem[];
   isSettlement?: boolean;
   // Set once the row has been swept into a settlement batch. Settled rows are
   // history: the API refuses to edit or delete them.

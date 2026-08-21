@@ -24,9 +24,61 @@ export type Settlement = {
  *
  * Leaving someone out entirely is not a mode: drop them from `splitAmong`.
  */
-export type SplitMode = "equal" | "shares" | "exact" | "percent";
+export type SplitMode = "equal" | "shares" | "exact" | "percent" | "items";
 
 export type SplitValue = { memberId: string; value: number };
+
+/**
+ * Turn assigned receipt lines into an exact amount per member.
+ *
+ * Each line is divided among the members it was assigned to; a line assigned
+ * to nobody is shared by everyone, which is the right reading for a service
+ * charge and a forgiving default for anything the user did not get round to.
+ *
+ * Receipt lines rarely add up to the amount charged — tax, tip and rounding
+ * live outside them — so whatever is left over is shared equally rather than
+ * quietly dropped or dumped on whoever came last. If the lines somehow exceed
+ * the total, the same arithmetic scales the difference back off everyone.
+ */
+export function splitValuesFromItems(
+  amount: number,
+  items: { price: number; quantity?: number; assignedTo?: string[] }[],
+  splitAmong: { memberId: string }[]
+): SplitValue[] {
+  const ids = splitAmong.map((m) => m.memberId);
+  if (ids.length === 0) return [];
+
+  const totals = new Map<string, number>(ids.map((id) => [id, 0]));
+  let itemsTotal = 0;
+
+  for (const item of items) {
+    const line = item.price * (item.quantity ?? 1);
+    itemsTotal += line;
+    // Only assignees who are actually in the split — a member removed from
+    // splitAmong after assigning must not keep a share of the line.
+    const owners = (item.assignedTo ?? []).filter((id) => totals.has(id));
+    const share = owners.length > 0 ? owners : ids;
+    const each = line / share.length;
+    for (const id of share) totals.set(id, (totals.get(id) ?? 0) + each);
+  }
+
+  const residual = (amount - itemsTotal) / ids.length;
+
+  // Same residue rule as calculateSplits: round as we allocate and let the
+  // last member absorb the difference. Rounding each member independently let
+  // the parts drift off the total — a three-way shared plate of 100 came to
+  // 99.99, and a bill with tax came to a cent over.
+  let allocated = 0;
+  return ids.map((id, i) => {
+    const isLast = i === ids.length - 1;
+    const raw = (totals.get(id) ?? 0) + residual;
+    const value = isLast
+      ? Math.round((amount - allocated) * 100) / 100
+      : Math.round(raw * 100) / 100;
+    allocated = Math.round((allocated + value) * 100) / 100;
+    return { memberId: id, value };
+  });
+}
 
 /**
  * Divide `amount` among `splitAmong`.
@@ -47,7 +99,7 @@ export function calculateSplits(
 
   const byId = new Map((values ?? []).map((v) => [v.memberId, v.value]));
 
-  if (mode === "exact") {
+  if (mode === "exact" || mode === "items") {
     return splitAmong.map((m) => ({
       memberId: m.memberId,
       name: m.name,

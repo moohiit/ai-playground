@@ -59,6 +59,10 @@ export type ExpenseItem = {
   name: string;
   quantity: number;
   price: number;
+  // Members this line is for, when the bill is split by item. Empty means
+  // shared by everyone in the split — the natural reading for a service
+  // charge, and for anything the user did not bother to assign.
+  assignedTo?: string[];
 };
 
 export type ExpenseDoc = {
@@ -91,7 +95,7 @@ export type ExpenseDoc = {
   // How `splits` was derived, kept so editing an expense reopens the form on
   // the same basis rather than silently reverting it to an equal division.
   // Absent on rows written before unequal splits existed — those are equal.
-  splitMode?: "equal" | "shares" | "exact" | "percent";
+  splitMode?: "equal" | "shares" | "exact" | "percent" | "items";
   splitValues?: { memberId: string; value: number }[];
   items: ExpenseItem[];
   receiptUrl: string | null;
@@ -116,6 +120,7 @@ const expenseItemSchema = new Schema<ExpenseItem>(
     name: { type: String, required: true },
     quantity: { type: Number, default: 1 },
     price: { type: Number, required: true },
+    assignedTo: { type: [String], default: [] },
   },
   { _id: false }
 );
@@ -170,7 +175,7 @@ const expenseSchema = new Schema<ExpenseDoc>(
     splits: { type: [splitEntrySchema], default: [] },
     splitMode: {
       type: String,
-      enum: ["equal", "shares", "exact", "percent"],
+      enum: ["equal", "shares", "exact", "percent", "items"],
       default: "equal",
     },
     splitValues: {
