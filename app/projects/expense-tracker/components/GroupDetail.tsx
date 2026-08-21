@@ -7,6 +7,8 @@ import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
 import { getBaseCurrency } from "../prefs";
+import type { SplitMode } from "../../../../modules/expense-tracker/balance";
+import { SPLIT_LABEL } from "../splits";
 
 // Groups are single-currency in practice (v1); format amounts with the
 // currency most of the group's expenses were entered in, instead of a
@@ -42,6 +44,7 @@ type Settlement = {
 };
 type Expense = {
   _id: string;
+  splitMode?: SplitMode;
   paidBy: { id: string; name: string };
   amount: number;
   currency?: string;
@@ -971,7 +974,11 @@ function ExpenseRow({
             <>
               Paid by{" "}
               <span className="font-medium text-zinc-300">{e.paidBy.name}</span> ·
-              Split {e.splitAmong.length} ways ·{" "}
+              Split {e.splitAmong.length} ways
+              {e.splitMode && e.splitMode !== "equal"
+                ? ` (${SPLIT_LABEL[e.splitMode]})`
+                : ""}{" "}
+              ·{" "}
               {formatDay(e.date)}
             </>
           )}

@@ -32,6 +32,7 @@ import { AppBackground, GradientButton, Input, KeyboardAwareScreen } from "../..
 import { GroupReportView } from "../../components/GroupReportView";
 import { WEB_BASE_URL } from "../../lib/api";
 import { formatMoney } from "../../lib/currency";
+import { SPLIT_LABEL } from "../../lib/splits";
 import { formatDay } from "../../lib/dates";
 import { getBaseCurrency } from "../../lib/prefs";
 
@@ -799,7 +800,11 @@ export default function GroupDetailScreen() {
                       <Text className="mt-0.5 text-xs text-zinc-500">
                         {e.isSettlement
                           ? `Recorded ${new Date(e.date).toLocaleDateString()}`
-                          : `Paid by ${e.paidBy.name} · ${formatDay(e.date)} · split ${e.splitAmong?.length ?? 0} ways`}
+                          : `Paid by ${e.paidBy.name} · ${formatDay(e.date)} · split ${e.splitAmong?.length ?? 0} ways${
+                              e.splitMode && e.splitMode !== "equal"
+                                ? ` (${SPLIT_LABEL[e.splitMode]})`
+                                : ""
+                            }`}
                       </Text>
                       {!e.isSettlement && e.splitAmong && e.splitAmong.length > 0 && (
                         <Text className="mt-0.5 text-[13px] text-zinc-600" numberOfLines={2}>

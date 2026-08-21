@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
-import { SUPPORTED_CURRENCIES, currencySymbol } from "../../../../modules/expense-tracker/currencies";
+import { SUPPORTED_CURRENCIES, currencySymbol, formatMoney } from "../../../../modules/expense-tracker/currencies";
+import {
+  calculateSplits,
+  type SplitMode,
+} from "../../../../modules/expense-tracker/balance";
+import { SPLIT_HINT, SPLIT_MODES } from "../splits";
 import { getBaseCurrency } from "../prefs";
 
 type Direction = "expense" | "income";
@@ -31,6 +36,8 @@ type EditExpense = {
   category: string;
   date: string;
   splitAmong?: { memberId: string; name: string }[];
+  splitMode?: SplitMode;
+  splitValues?: { memberId: string; value: number }[];
 };
 
 // A draft to pre-populate a NEW entry (e.g. parsed from natural language). Not edit mode.
@@ -103,6 +110,18 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
   const [presentMembers, setPresentMembers] = useState<Set<string>>(
     () => new Set(editExpense?.splitAmong?.map((m) => m.memberId) ?? [])
   );
+  const [splitMode, setSplitMode] = useState<SplitMode>(
+    editExpense?.splitMode ?? "equal"
+  );
+  // Kept as text, keyed by member: a partially typed "1." must survive a
+  // re-render, which a number state would round away mid-keystroke.
+  const [splitInputs, setSplitInputs] = useState<Record<string, string>>(() => {
+    const seed: Record<string, string> = {};
+    for (const v of editExpense?.splitValues ?? []) {
+      seed[v.memberId] = String(v.value);
+    }
+    return seed;
+  });
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -196,6 +215,70 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
     }
   }
 
+  // The members the split actually applies to, in the order the API will see.
+  const splitMembers = useMemo(() => {
+    if (!selectedGroup) return [];
+    const chosen = selectedGroup.members.filter(
+      (m) => m.isActive && presentMembers.has(m.userId)
+    );
+    const list =
+      chosen.length > 0
+        ? chosen
+        : selectedGroup.members.filter((m) => m.isActive);
+    return list.map((m) => ({ memberId: m.userId, name: m.name }));
+  }, [selectedGroup, presentMembers]);
+
+  const splitValues = useMemo(
+    () =>
+      splitMembers.map((m) => ({
+        memberId: m.memberId,
+        value: Number(splitInputs[m.memberId] ?? "") || 0,
+      })),
+    [splitMembers, splitInputs]
+  );
+
+  // What each member would actually owe, shown live so the numbers are never a
+  // surprise after saving — and so a percentage split reads in real money.
+  const splitPreview = useMemo(() => {
+    const amt = parseFloat(amount) || 0;
+    const map = new Map<string, string>();
+    if (splitMode === "equal" || amt <= 0 || splitMembers.length === 0) return map;
+    for (const part of calculateSplits(amt, splitMembers, splitMode, splitValues)) {
+      map.set(part.memberId, formatMoney(part.amount, currency));
+    }
+    return map;
+  }, [amount, currency, splitMembers, splitMode, splitValues]);
+
+  // Mirrors the server's rules so the user is told before the round trip.
+  const splitStatus = useMemo(() => {
+    const total = splitValues.reduce((sum, v) => sum + v.value, 0);
+    const amt = parseFloat(amount) || 0;
+    if (splitMode === "shares") {
+      return total > 0
+        ? { ok: true, message: `${total} share${total === 1 ? "" : "s"} in total` }
+        : { ok: false, message: "At least one share must be above 0" };
+    }
+    if (splitMode === "percent") {
+      const off = Math.round((100 - total) * 100) / 100;
+      return Math.abs(off) <= 0.01
+        ? { ok: true, message: "Adds up to 100%" }
+        : {
+            ok: false,
+            message: off > 0 ? `${off}% left to assign` : `${-off}% over 100%`,
+          };
+    }
+    const off = Math.round((amt - total) * 100) / 100;
+    return Math.abs(off) <= 0.01
+      ? { ok: true, message: `Adds up to ${formatMoney(amt, currency)}` }
+      : {
+          ok: false,
+          message:
+            off > 0
+              ? `${formatMoney(off, currency)} left to assign`
+              : `${formatMoney(-off, currency)} over the total`,
+        };
+  }, [amount, currency, splitMode, splitValues]);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (saving) return;
@@ -216,6 +299,10 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
     // mobile has always guarded this.
     if (type === "group" && groupId && !selectedGroup) {
       setError("Group details are still loading — try again in a second");
+      return;
+    }
+    if (type === "group" && splitMode !== "equal" && !splitStatus.ok) {
+      setError(splitStatus.message);
       return;
     }
     setSaving(true);
@@ -259,6 +346,9 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
           category,
           date,
           splitAmong,
+          splitMode: type === "group" ? splitMode : undefined,
+          splitValues:
+            type === "group" && splitMode !== "equal" ? splitValues : undefined,
         }),
       });
       const data = await res.json();
@@ -472,6 +562,71 @@ export function AddExpenseModal({ onClose, onSaved, preselectedGroupId, editExpe
                           })}
                       </div>
                     </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                        How to divide it
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {SPLIT_MODES.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setSplitMode(m.id)}
+                            className={cn(
+                              "rounded-md border px-2.5 py-1.5 text-xs font-medium transition-all",
+                              splitMode === m.id
+                                ? "border-brand-500/60 bg-brand-500/15 text-brand-500"
+                                : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                            )}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {splitMode !== "equal" && (
+                      <div>
+                        <label className="mb-1 block text-[11px] uppercase tracking-wider text-zinc-500">
+                          {SPLIT_HINT[splitMode]}
+                        </label>
+                        <div className="flex flex-col gap-1.5">
+                          {splitMembers.map((m) => (
+                            <div key={m.memberId} className="flex items-center gap-3">
+                              <span className="min-w-0 flex-1 truncate text-sm text-zinc-300">
+                                {m.name}
+                              </span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={splitInputs[m.memberId] ?? ""}
+                                onChange={(e) =>
+                                  setSplitInputs((prev) => ({
+                                    ...prev,
+                                    [m.memberId]: e.target.value,
+                                  }))
+                                }
+                                placeholder="0"
+                                className="w-24 rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-right text-sm text-zinc-200 focus:border-brand-500 focus:outline-none"
+                              />
+                              <span className="w-24 text-right font-mono text-xs tabular-nums text-zinc-500">
+                                {splitPreview.get(m.memberId) ?? ""}
+                              </span>
+                            </div>
+                          ))}
+                          <p
+                            className={cn(
+                              "text-xs",
+                              splitStatus.ok ? "text-zinc-500" : "text-amber-400"
+                            )}
+                          >
+                            {splitStatus.message}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </>

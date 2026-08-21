@@ -20,8 +20,10 @@ import {
   type Direction,
   type Expense,
   type Group,
+  type SplitMode,
 } from "../lib/types";
-import { SUPPORTED_CURRENCIES, parseAmount } from "../lib/currency";
+import { SUPPORTED_CURRENCIES, formatMoney, parseAmount } from "../lib/currency";
+import { SPLIT_HINT, SPLIT_MODES, calculateSplits } from "../lib/splits";
 import { getBaseCurrency } from "../lib/prefs";
 import {
   AppBackground,
@@ -117,6 +119,18 @@ export default function AddExpenseScreen() {
   const [present, setPresent] = useState<Set<string>>(
     () => new Set(editExpense?.splitAmong?.map((m) => m.memberId) ?? [])
   );
+  const [splitMode, setSplitMode] = useState<SplitMode>(
+    editExpense?.splitMode ?? "equal"
+  );
+  // Kept as text, keyed by member: a partially typed "1." must survive a
+  // re-render, which a number state would round away mid-keystroke.
+  const [splitInputs, setSplitInputs] = useState<Record<string, string>>(() => {
+    const seed: Record<string, string> = {};
+    for (const v of editExpense?.splitValues ?? []) {
+      seed[v.memberId] = String(v.value);
+    }
+    return seed;
+  });
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDate, setShowDate] = useState(false);
@@ -231,6 +245,70 @@ export default function AddExpenseScreen() {
     ]);
   }
 
+  // The members the split actually applies to, in the order the API will see.
+  const splitMembers = useMemo(() => {
+    if (!selectedGroup) return [];
+    const chosen = selectedGroup.members.filter(
+      (m) => m.isActive && present.has(m.userId)
+    );
+    const list =
+      chosen.length > 0
+        ? chosen
+        : selectedGroup.members.filter((m) => m.isActive);
+    return list.map((m) => ({ memberId: m.userId, name: m.name }));
+  }, [selectedGroup, present]);
+
+  const splitValues = useMemo(
+    () =>
+      splitMembers.map((m) => ({
+        memberId: m.memberId,
+        value: parseAmount(splitInputs[m.memberId] ?? "") ?? 0,
+      })),
+    [splitMembers, splitInputs]
+  );
+
+  // What each member would actually owe, shown live so the numbers are never a
+  // surprise after saving — and so a percentage split reads in real money.
+  const splitPreview = useMemo(() => {
+    const amt = parseAmount(amount) ?? 0;
+    const map = new Map<string, string>();
+    if (splitMode === "equal" || amt <= 0 || splitMembers.length === 0) return map;
+    for (const part of calculateSplits(amt, splitMembers, splitMode, splitValues)) {
+      map.set(part.memberId, formatMoney(part.amount, currency));
+    }
+    return map;
+  }, [amount, currency, splitMembers, splitMode, splitValues]);
+
+  // Mirrors the server's rules so the user is told before the round trip.
+  const splitStatus = useMemo(() => {
+    const total = splitValues.reduce((sum, v) => sum + v.value, 0);
+    const amt = parseAmount(amount) ?? 0;
+    if (splitMode === "shares") {
+      return total > 0
+        ? { ok: true, message: `${total} share${total === 1 ? "" : "s"} in total` }
+        : { ok: false, message: "At least one share must be above 0" };
+    }
+    if (splitMode === "percent") {
+      const off = Math.round((100 - total) * 100) / 100;
+      return Math.abs(off) <= 0.01
+        ? { ok: true, message: "Adds up to 100%" }
+        : {
+            ok: false,
+            message: off > 0 ? `${off}% left to assign` : `${-off}% over 100%`,
+          };
+    }
+    const off = Math.round((amt - total) * 100) / 100;
+    return Math.abs(off) <= 0.01
+      ? { ok: true, message: `Adds up to ${formatMoney(amt, currency)}` }
+      : {
+          ok: false,
+          message:
+            off > 0
+              ? `${formatMoney(off, currency)} left to assign`
+              : `${formatMoney(-off, currency)} over the total`,
+        };
+  }, [amount, currency, splitMode, splitValues]);
+
   async function handleSave() {
     if (saving) return;
     setError(null);
@@ -244,6 +322,9 @@ export default function AddExpenseScreen() {
     // (both are derived from selectedGroup below). Block until it's loaded.
     if (effectiveType === "group" && !selectedGroup) {
       return setError("Group details are still loading — try again in a second");
+    }
+    if (effectiveType === "group" && splitMode !== "equal" && !splitStatus.ok) {
+      return setError(splitStatus.message);
     }
 
     setSaving(true);
@@ -284,6 +365,11 @@ export default function AddExpenseScreen() {
           category,
           date,
           splitAmong,
+          splitMode: effectiveType === "group" ? splitMode : undefined,
+          splitValues:
+            effectiveType === "group" && splitMode !== "equal"
+              ? splitValues
+              : undefined,
         }),
       });
       const data = await res.json();
@@ -483,6 +569,62 @@ export default function AddExpenseScreen() {
                         ))}
                     </View>
                   </Field>
+
+                  <Field label="How to divide it">
+                    <View className="flex-row flex-wrap gap-2">
+                      {SPLIT_MODES.map((m) => (
+                        <Chip
+                          key={m.id}
+                          active={splitMode === m.id}
+                          label={m.label}
+                          onPress={() => setSplitMode(m.id)}
+                        />
+                      ))}
+                    </View>
+                  </Field>
+
+                  {splitMode !== "equal" && (
+                    <Field label={SPLIT_HINT[splitMode]}>
+                      <View className="gap-2">
+                        {splitMembers.map((m) => (
+                          <View
+                            key={m.memberId}
+                            className="flex-row items-center gap-3"
+                          >
+                            <Text
+                              className="flex-1 text-sm text-zinc-300"
+                              numberOfLines={1}
+                            >
+                              {m.name}
+                            </Text>
+                            <Input
+                              value={splitInputs[m.memberId] ?? ""}
+                              onChangeText={(v) =>
+                                setSplitInputs((prev) => ({
+                                  ...prev,
+                                  [m.memberId]: v,
+                                }))
+                              }
+                              placeholder="0"
+                              keyboardType="decimal-pad"
+                              placeholderTextColor="#52525b"
+                              className="w-24 rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-right text-zinc-100"
+                            />
+                            <Text className="w-20 text-right text-xs text-zinc-500">
+                              {splitPreview.get(m.memberId) ?? ""}
+                            </Text>
+                          </View>
+                        ))}
+                        <Text
+                          className={`text-xs ${
+                            splitStatus.ok ? "text-zinc-500" : "text-amber-400"
+                          }`}
+                        >
+                          {splitStatus.message}
+                        </Text>
+                      </View>
+                    </Field>
+                  )}
                 </>
               )}
             </View>
