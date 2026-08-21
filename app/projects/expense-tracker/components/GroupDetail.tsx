@@ -7,6 +7,7 @@ import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
 import { getBaseCurrency } from "../prefs";
+import type { PairBalance } from "../types";
 import type { KnownPerson } from "../types";
 import type { SplitMode } from "../../../../modules/expense-tracker/balance";
 import { SPLIT_LABEL } from "../splits";
@@ -92,6 +93,11 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [activeMine, setActiveMine] = useState(0);
   // Quick toggle on the Active tab: only rows I carry a share of.
   const [onlyMine, setOnlyMine] = useState(false);
+  // Pairwise view: the expenses two members share, and what that leaves
+  // between them specifically.
+  const [pairA, setPairA] = useState<string | null>(null);
+  const [pairB, setPairB] = useState<string | null>(null);
+  const [pair, setPair] = useState<PairBalance | null>(null);
   const [baseCurrency, setBaseCurrency] = useState("INR");
   const [page, setPage] = useState(1);
   const [settlementHistory, setSettlementHistory] = useState<SettlementRecord[]>([]);
@@ -126,6 +132,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
   // former with the group's entry currency showed a base number under a
   // foreign symbol.
   const baseMoney = (n: number) => formatMoney(n, baseCurrency);
+  // With a pair selected the list narrows to what those two share; otherwise
+  // it is the group's active window as before.
+  const visibleExpenses = pair ? pair.expenses : expenses;
 
   // Matching on name and address, because people search for whichever they
   // remember. Capped so the list never pushes the form off-screen.
@@ -215,6 +224,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
       ]);
       if (seq !== fetchSeqRef.current) return; // superseded by a newer fetch
       setGroup(gData.group ?? null);
+      setPairA((prev) => prev ?? user?.userId ?? null);
       setShareId(gData.group?.shareId ?? null);
       setBalances(bData.balances ?? []);
       setSettlements(bData.settlements ?? []);
@@ -388,6 +398,36 @@ export function GroupDetail({ groupId, onBack }: Props) {
     }
   }
 
+  // Fetch the pair whenever both ends are chosen. Server-side because the
+  // list here is paginated and the answer must cover the whole group.
+  useEffect(() => {
+    if (!pairA || !pairB || pairA === pairB) {
+      setPair(null);
+      return;
+    }
+    let cancelled = false;
+    authFetch(
+      `/api/projects/expense-tracker/groups/${groupId}/between?a=${pairA}&b=${pairB}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.net === "number") setPair(d);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authFetch, groupId, pairA, pairB]);
+
+  /** First click picks one end, the next picks the other; clicking a chosen
+   *  member releases that end so it can be reassigned. */
+  function selectPairMember(id: string) {
+    if (pairA === id) return setPairA(null);
+    if (pairB === id) return setPairB(null);
+    if (!pairA) return setPairA(id);
+    setPairB(id);
+  }
+
   async function handleDeleteExpense(id: string) {
     if (!confirm("Delete this expense?")) return;
     const res = await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
@@ -525,7 +565,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
   if (!group) return <p className="text-sm text-red-400">Group not found</p>;
 
   const totalPages = Math.max(1, Math.ceil(expenseTotal / PAGE_SIZE));
-  const showPagination = expenseTotal > PAGE_SIZE;
+  // A pair result covers the whole group in one response, so paging controls
+  // would be describing a list that is not paginated.
+  const showPagination = !pair && expenseTotal > PAGE_SIZE;
   const rangeStart = expenseTotal === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(expenseTotal, page * PAGE_SIZE);
 
@@ -669,12 +711,83 @@ export function GroupDetail({ groupId, onBack }: Props) {
               />
             )}
 
+            {group.members.filter((m) => m.isActive).length > 1 && (
+              <section className="flex flex-col gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-5">
+                <div className="text-[11px] uppercase tracking-wider text-zinc-500">
+                  Between two members
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.members
+                    .filter((m) => m.isActive)
+                    .map((m) => {
+                      const isA = pairA === m.userId;
+                      const isB = pairB === m.userId;
+                      return (
+                        <button
+                          key={m.userId}
+                          type="button"
+                          onClick={() => selectPairMember(m.userId)}
+                          className={cn(
+                            "rounded-md border px-2.5 py-1.5 text-xs font-medium transition-all",
+                            isA
+                              ? "border-brand-500/60 bg-brand-500/15 text-brand-300"
+                              : isB
+                                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                                : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                          )}
+                        >
+                          {m.name}
+                        </button>
+                      );
+                    })}
+                </div>
+
+                {pair ? (
+                  <div className="flex flex-col gap-1 border-t border-zinc-800/60 pt-2">
+                    <div className="text-sm text-zinc-300">
+                      {pair.expenseCount}{" "}
+                      {pair.expenseCount === 1 ? "expense" : "expenses"} together
+                      · {baseMoney(pair.total)}
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                      {pair.memberA.name} {baseMoney(pair.shareA)} ·{" "}
+                      {pair.memberB.name} {baseMoney(pair.shareB)}
+                    </div>
+                    <div
+                      className={cn(
+                        "mt-1 text-base font-bold",
+                        Math.abs(pair.net) < 0.01
+                          ? "text-zinc-400"
+                          : "text-emerald-300"
+                      )}
+                    >
+                      {Math.abs(pair.net) < 0.01
+                        ? "They're square"
+                        : pair.net > 0
+                          ? `${pair.memberB.name} owes ${pair.memberA.name} ${baseMoney(pair.net)}`
+                          : `${pair.memberA.name} owes ${pair.memberB.name} ${baseMoney(-pair.net)}`}
+                    </div>
+                    {/* The group plan nets debts through other people, so it
+                        can differ from what is directly between two members. */}
+                    <div className="text-[11px] text-zinc-600">
+                      Directly between them — the Settle Up plan above may route
+                      it through someone else.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-zinc-500">
+                    Pick two members to see what they have between them.
+                  </div>
+                )}
+              </section>
+            )}
+
             <section className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-zinc-100">
-                  Active Expenses{" "}
+                  {pair ? "Shared expenses" : "Active Expenses"}{" "}
                   <span className="ml-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
-                    {expenseTotal}
+                    {pair ? visibleExpenses.length : expenseTotal}
                   </span>
                 </h3>
                 <div className="flex items-center gap-3">
@@ -718,7 +831,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 </div>
               </div>
 
-              {expenses.length === 0 ? (
+              {visibleExpenses.length === 0 ? (
                 <div className="relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-12 text-center backdrop-blur-sm">
                   <div className="pointer-events-none absolute left-1/2 top-1/2 h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 blur-3xl" />
                   <div className="relative mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10">
@@ -734,7 +847,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {expenses.map((e, i) => (
+                  {visibleExpenses.map((e, i) => (
                     <ExpenseRow
                       key={e._id}
                       index={i}

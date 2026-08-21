@@ -91,3 +91,29 @@ export type KnownPerson = {
   email: string;
   sharedGroups: number;
 };
+
+/** What two group members have between them: shared expenses and the debt. */
+export type PairBalance = {
+  memberA: { id: string; name: string };
+  memberB: { id: string; name: string };
+  expenseCount: number;
+  total: number;
+  shareA: number;
+  shareB: number;
+  /** Positive = memberB owes memberA. */
+  net: number;
+  expenses: {
+    _id: string;
+    paidBy: { id: string; name: string };
+    amount: number;
+    amountBase?: number;
+    currency?: string;
+    description: string;
+    category: string;
+    date: string;
+    splitAmong: { memberId: string; name: string }[];
+    splits: { memberId: string; name: string; amount: number }[];
+    isSettlement?: boolean;
+    settledAt?: string | null;
+  }[];
+};

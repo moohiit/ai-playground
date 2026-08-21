@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +28,7 @@ import type {
   Settlement,
   SettlementRecord,
   KnownPerson,
+  PairBalance,
 } from "../../lib/types";
 import { AppBackground, GradientButton, Input, KeyboardAwareScreen } from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
@@ -66,6 +67,11 @@ export default function GroupDetailScreen() {
   const [expenseTotal, setExpenseTotal] = useState(0);
   // Quick toggle on the Active tab: only rows I carry a share of.
   const [onlyMine, setOnlyMine] = useState(false);
+  // Pairwise view: the expenses two members share, and what that leaves
+  // between them specifically.
+  const [pairA, setPairA] = useState<string | null>(null);
+  const [pairB, setPairB] = useState<string | null>(null);
+  const [pair, setPair] = useState<PairBalance | null>(null);
   const [baseCurrency, setBaseCurrency] = useState("INR");
   const [history, setHistory] = useState<SettlementRecord[]>([]);
   const [tab, setTab] = useState<Tab>("active");
@@ -166,6 +172,27 @@ export default function GroupDetailScreen() {
     ]);
   }
 
+  // Fetch the pair whenever both ends are chosen. Server-side because the
+  // list here is capped at 100 rows and the answer must cover the group.
+  useEffect(() => {
+    if (!pairA || !pairB || pairA === pairB) {
+      setPair(null);
+      return;
+    }
+    let cancelled = false;
+    authFetch(
+      `/api/projects/expense-tracker/groups/${groupId}/between?a=${pairA}&b=${pairB}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.net === "number") setPair(d);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authFetch, groupId, pairA, pairB]);
+
   // Settle-up rows are listed here but are not spending — the Total beside
   // this count excludes them, so the count must too.
   const spendCount = expenses.filter((e) => !e.isSettlement).length;
@@ -185,6 +212,19 @@ export default function GroupDetailScreen() {
   // The list is fetched with limit=100. In a busier group the count would
   // otherwise read "100" forever while the total beside it covered everything.
   const listTruncated = expenseTotal > expenses.length;
+  // With a pair selected the list narrows to what those two share; otherwise
+  // it is the group's active window as before.
+  const pairExpenses = pair?.expenses ?? [];
+  const visibleExpenses = pair ? pairExpenses : expenses;
+
+  /** First tap picks one end, the next picks the other; tapping a chosen
+   *  member releases that end so it can be reassigned. */
+  function selectPairMember(id: string) {
+    if (pairA === id) return setPairA(null);
+    if (pairB === id) return setPairB(null);
+    if (!pairA) return setPairA(id);
+    setPairB(id);
+  }
 
   const fetchAll = useCallback(async () => {
     try {
@@ -209,6 +249,7 @@ export default function GroupDetailScreen() {
         gRes.json(), bRes.json(), eRes.json(), sRes.json(), hRes.json(),
       ]);
       setGroup(g.group ?? null);
+      setPairA((prev) => prev ?? user?.userId ?? null);
       setShareId(g.group?.shareId ?? null);
       setBalances(b.balances ?? []);
       setSettlements(b.settlements ?? []);
@@ -799,12 +840,94 @@ export default function GroupDetailScreen() {
             )}
 
             {/* Active expenses */}
+            {/* Between two members */}
+            {(group?.members.filter((m) => m.isActive).length ?? 0) > 1 && (
+              <View className="gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
+                  Between two members
+                </Text>
+                <View className="flex-row flex-wrap gap-1.5">
+                  {group!.members
+                    .filter((m) => m.isActive)
+                    .map((m) => {
+                      const isA = pairA === m.userId;
+                      const isB = pairB === m.userId;
+                      return (
+                        <Pressable
+                          key={m.userId}
+                          onPress={() => selectPairMember(m.userId)}
+                          className={`rounded-lg border px-2.5 py-1.5 ${
+                            isA
+                              ? "border-brand-500/60 bg-brand-500/15"
+                              : isB
+                                ? "border-emerald-500/50 bg-emerald-500/15"
+                                : "border-white/10 bg-zinc-900/40"
+                          }`}
+                        >
+                          <Text
+                            className={`text-xs font-medium ${
+                              isA
+                                ? "text-brand-300"
+                                : isB
+                                  ? "text-emerald-300"
+                                  : "text-zinc-400"
+                            }`}
+                          >
+                            {m.name}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                </View>
+
+                {pair ? (
+                  <View className="gap-1 border-t border-white/5 pt-2">
+                    <Text className="text-sm text-zinc-300">
+                      {pair.expenseCount}{" "}
+                      {pair.expenseCount === 1 ? "expense" : "expenses"} together
+                      · {baseMoney(pair.total)}
+                    </Text>
+                    <Text className="text-[12px] text-zinc-500">
+                      {pair.memberA.name} {baseMoney(pair.shareA)} ·{" "}
+                      {pair.memberB.name} {baseMoney(pair.shareB)}
+                    </Text>
+                    <Text
+                      className={`mt-1 text-base font-bold ${
+                        Math.abs(pair.net) < 0.01
+                          ? "text-zinc-400"
+                          : "text-emerald-300"
+                      }`}
+                    >
+                      {Math.abs(pair.net) < 0.01
+                        ? "They're square"
+                        : pair.net > 0
+                          ? `${pair.memberB.name} owes ${pair.memberA.name} ${baseMoney(pair.net)}`
+                          : `${pair.memberA.name} owes ${pair.memberB.name} ${baseMoney(-pair.net)}`}
+                    </Text>
+                    {/* The group plan nets debts through other people, so it
+                        can differ from what is directly between two members. */}
+                    <Text className="text-[11px] text-zinc-600">
+                      Directly between them — the Settle Up plan above may route
+                      it through someone else.
+                    </Text>
+                  </View>
+                ) : (
+                  <Text className="text-[12px] text-zinc-500">
+                    Tap two members to see what they have between them.
+                  </Text>
+                )}
+              </View>
+            )}
+
             <View className="flex-row items-start justify-between">
               <View className="flex-1 gap-2">
                 <View className="flex-row items-center gap-2">
                   <Text className="text-sm font-semibold text-zinc-100">
-                    Active Expenses ({spendCount}
-                    {listTruncated ? ` of ${expenseTotal}` : ""})
+                    {pair
+                      ? `Shared expenses (${pairExpenses.length})`
+                      : `Active Expenses (${spendCount}${
+                          listTruncated ? ` of ${expenseTotal}` : ""
+                        })`}
                   </Text>
                   {/* Settling was only reachable from the Settle Up panel,
                       which is hidden once every balance is square — leaving a
@@ -858,7 +981,7 @@ export default function GroupDetailScreen() {
               </View>
             </View>
 
-            {expenses.length === 0 ? (
+            {visibleExpenses.length === 0 ? (
               <View className="items-center rounded-2xl border border-white/10 bg-white/[0.03] py-10">
                 <Text className="text-sm text-zinc-400">
                   {onlyMine
@@ -867,7 +990,7 @@ export default function GroupDetailScreen() {
                 </Text>
               </View>
             ) : (
-              expenses.map((e) => (
+              visibleExpenses.map((e) => (
                 <View
                   key={e._id}
                   className={`rounded-2xl border p-4 ${
@@ -950,7 +1073,7 @@ export default function GroupDetailScreen() {
               ))
             )}
 
-            {listTruncated && (
+            {listTruncated && !pair && (
               <Text className="px-1 text-center text-[12px] text-zinc-500">
                 Showing the {expenses.length} most recent of {expenseTotal}.
                 Open Reports for the full picture.

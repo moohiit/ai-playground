@@ -2050,6 +2050,100 @@ export async function reopenSettlement(groupId: string, auth: JWTPayload) {
   };
 }
 
+/**
+ * The expenses two members are both part of, and what that leaves between them.
+ *
+ * The group view answers "what do I owe the group"; this answers "what is
+ * between me and Rahul specifically" — the question that actually comes up
+ * when two flatmates want to square off without settling the whole group.
+ *
+ * Only an expense one of THEM paid can create a debt between them: if a third
+ * member paid for a dinner they both ate, they each owe that third member, not
+ * each other. Those still appear in the list — they are shared spending and
+ * useful context — but they move the balance by nothing.
+ *
+ * Settle-up payments between the pair are included and count, because that is
+ * exactly what repaying looks like: it offsets the debt in the other direction.
+ */
+export async function getExpensesBetween(
+  groupId: string,
+  memberA: string,
+  memberB: string,
+  auth: JWTPayload,
+  opts: { settled?: "true" | "false" | "all" } = {}
+) {
+  await connectDB();
+
+  const group = await Group.findById(groupId).lean();
+  if (!group || !isActiveMember(group, auth.userId)) {
+    throw new Error("Group not found or access denied");
+  }
+  if (memberA === memberB) throw new Error("Pick two different members");
+
+  const known = new Set(group.members.map((m) => m.userId));
+  if (!known.has(memberA) || !known.has(memberB)) {
+    throw new Error("Both people must be members of this group");
+  }
+
+  const match: Record<string, unknown> = {
+    groupId: toObjectId(groupId, "groupId"),
+    type: "group",
+  };
+  const settled = opts.settled ?? "false";
+  if (settled === "true") match.settledAt = { $ne: null, $exists: true };
+  else if (settled === "false") {
+    match.$or = [{ settledAt: null }, { settledAt: { $exists: false } }];
+  }
+
+  const rows = await Expense.find(match).sort({ date: -1, _id: -1 }).lean();
+
+  const involves = (e: (typeof rows)[number], id: string) =>
+    e.paidBy?.id === id || (e.splits ?? []).some((sp) => sp.memberId === id);
+
+  const between = rows.filter((e) => involves(e, memberA) && involves(e, memberB));
+
+  const shareOf = (e: (typeof rows)[number], id: string, ratio: number) =>
+    ((e.splits ?? []).find((sp) => sp.memberId === id)?.amount ?? 0) * ratio;
+
+  let total = 0;
+  let shareA = 0;
+  let shareB = 0;
+  // Positive = B owes A.
+  let net = 0;
+
+  for (const e of between) {
+    const baseAmt = e.amountBase ?? e.amount;
+    const ratio = e.amount > 0 ? baseAmt / e.amount : 1;
+    const a = shareOf(e, memberA, ratio);
+    const b = shareOf(e, memberB, ratio);
+
+    // Repayments are not spending; they only move the balance.
+    if (!e.isSettlement) {
+      total += baseAmt;
+      shareA += a;
+      shareB += b;
+    }
+
+    if (e.paidBy?.id === memberA) net += b;
+    else if (e.paidBy?.id === memberB) net -= a;
+  }
+
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const nameOf = (id: string) =>
+    group.members.find((m) => m.userId === id)?.name ?? "Unknown";
+
+  return {
+    memberA: { id: memberA, name: nameOf(memberA) },
+    memberB: { id: memberB, name: nameOf(memberB) },
+    expenseCount: between.filter((e) => !e.isSettlement).length,
+    total: round(total),
+    shareA: round(shareA),
+    shareB: round(shareB),
+    net: round(net),
+    expenses: between.map((e) => ({ ...e, _id: e._id.toString() })),
+  };
+}
+
 export async function getSettlementHistory(groupId: string, auth: JWTPayload) {
   await connectDB();
 
