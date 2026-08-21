@@ -258,6 +258,31 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-08-21 — **v1.9.0 — unequal splits, cross-group balances, and an audit sweep.**
+  Group expenses can be divided by shares, exact amounts, percentages, or per receipt
+  line (`splitMode` + `splitValues` on `Expense`; `items[].assignedTo` drives the
+  item split, whose values are derived server-side). Every mode's parts sum to exactly
+  the amount — each rounded as allocated, the last member taking the residue.
+  `GET /reports/my-balances` nets each group's transfer plan by person, answering "do I
+  owe anyone right now" across groups; `GET /groups/:id/between` answers it for one pair,
+  counting only expenses one of the two paid. `POST /groups/:id/reopen` undoes the latest
+  settlement, restoring the settle-up rows that closing the window deleted and marking the
+  `GroupSettlement` `reopenedAt`/`reopenedBy` rather than erasing it. `GET /people`
+  suggests members you already split with. Group activity (expense added, payment
+  recorded, settled, reopened) now pushes to everyone but the actor, converted per
+  recipient's base currency.
+
+  From the 136-finding audit: membership checks honour `isActive`, so removing someone
+  actually revokes access; `createGroup` invites rather than adding outright; infrastructure
+  failures return 500 instead of a 401 that logged mobile users out; settle-up rows are
+  excluded from the expense list, its count, the CSV and both PDFs, matching `getSummary`;
+  balances and the settled-history table work on `amountBase`; date ranges snap to whole
+  UTC days; and a base-currency switch is now bulk, idempotent and resumable
+  (`pendingBaseCurrency` marker, finished by the next `getPrefs`). Editing reached budgets,
+  money notes, goals, accounts and recurring rules; transfers gained a history and a delete.
+  New: `GET /reports/dashboard` serves the dashboard's five summary variants in one request,
+  plus the expense indexes the queries actually run.
+
 - 2026-07-10 — **Individual settle-up shipped.** Each Settle-Up transfer row has a
   "Settle" button (web + mobile) that records an `isSettlement` expense (payer's paid ↑,
   receiver's share ↑ — nets offset, row disappears; original expenses untouched).
