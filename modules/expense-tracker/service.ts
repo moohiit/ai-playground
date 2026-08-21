@@ -329,6 +329,66 @@ export async function listGroups(auth: JWTPayload) {
     });
 }
 
+/**
+ * People the user has already shared a group with.
+ *
+ * Adding someone to a group meant typing their full email address every time,
+ * even for the flatmate already in four of your groups. These are the
+ * candidates worth suggesting, most-shared first.
+ *
+ * Guests are left out: they are placeholders with no account and no email, so
+ * they cannot be invited to anything.
+ */
+export async function listKnownPeople(
+  auth: JWTPayload,
+  opts: { excludeGroupId?: string } = {}
+) {
+  await connectDB();
+  const groups = await Group.find(activeMemberFilter(auth.userId)).lean();
+
+  // Anyone already in the target group is not a suggestion for it.
+  const alreadyIn = new Set<string>();
+  if (opts.excludeGroupId) {
+    const target = groups.find((g) => g._id.toString() === opts.excludeGroupId);
+    for (const m of target?.members ?? []) {
+      if (m.isActive !== false) alreadyIn.add(m.userId);
+    }
+  }
+
+  const people = new Map<
+    string,
+    { userId: string; name: string; email: string; sharedGroups: number }
+  >();
+
+  for (const group of groups) {
+    for (const m of group.members) {
+      if (
+        m.userId === auth.userId ||
+        m.isGuest ||
+        !m.email ||
+        alreadyIn.has(m.userId)
+      ) {
+        continue;
+      }
+      const entry = people.get(m.userId) ?? {
+        userId: m.userId,
+        // The freshest copy of the name wins — propagateUserName keeps these
+        // in step, but an older group can still hold a stale one.
+        name: m.name,
+        email: m.email,
+        sharedGroups: 0,
+      };
+      entry.name = m.name;
+      entry.sharedGroups += 1;
+      people.set(m.userId, entry);
+    }
+  }
+
+  return Array.from(people.values()).sort(
+    (a, b) => b.sharedGroups - a.sharedGroups || a.name.localeCompare(b.name)
+  );
+}
+
 export async function getGroup(id: string, auth: JWTPayload) {
   await connectDB();
   const group = await Group.findById(id).lean();

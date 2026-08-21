@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import type { KnownPerson } from "../types";
 import { useAuth } from "../../../../lib/authContext";
 import { GroupDetail } from "../components/GroupDetail";
 import { cn, relativeTime } from "../../../../lib/utils";
@@ -268,6 +269,28 @@ function CreateGroupForm({
   const [memberEmails, setMemberEmails] = useState(["", ""]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // People you already share a group with, so a new group of the usual
+  // flatmates is a few clicks rather than a few addresses typed from memory.
+  const [people, setPeople] = useState<KnownPerson[]>([]);
+
+  useEffect(() => {
+    authFetch("/api/projects/expense-tracker/people")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setPeople(d?.people ?? []))
+      .catch(() => {});
+  }, [authFetch]);
+
+  /** Fill the first empty field, or append one if they are all taken. */
+  function addPerson(email: string) {
+    setMemberEmails((prev) => {
+      if (prev.includes(email)) return prev;
+      const idx = prev.findIndex((v) => !v.trim());
+      if (idx === -1) return [...prev, email];
+      const next = [...prev];
+      next[idx] = email;
+      return next;
+    });
+  }
 
   function addMemberField() {
     setMemberEmails([...memberEmails, ""]);
@@ -373,6 +396,33 @@ function CreateGroupForm({
           >
             + Add member
           </button>
+
+          {people.length > 0 && (
+            <div className="mt-3">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500">
+                People you split with
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {people
+                  .filter((p) => !memberEmails.includes(p.email))
+                  .slice(0, 8)
+                  .map((p) => (
+                    <button
+                      key={p.userId}
+                      type="button"
+                      onClick={() => addPerson(p.email)}
+                      className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5 text-left transition-colors hover:border-brand-500/40 hover:bg-brand-500/10"
+                    >
+                      <span className="block text-xs text-zinc-200">{p.name}</span>
+                      <span className="block text-[10px] text-zinc-500">
+                        {p.sharedGroups} shared{" "}
+                        {p.sharedGroups === 1 ? "group" : "groups"}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {error && (

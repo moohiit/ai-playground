@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +27,7 @@ import type {
   Member,
   Settlement,
   SettlementRecord,
+  KnownPerson,
 } from "../../lib/types";
 import { AppBackground, GradientButton, Input, KeyboardAwareScreen } from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
@@ -72,6 +73,9 @@ export default function GroupDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [settling, setSettling] = useState(false);
   const [newMember, setNewMember] = useState("");
+  // People already sharing a group with you — so adding a flatmate is a tap
+  // rather than typing their address again.
+  const [people, setPeople] = useState<KnownPerson[]>([]);
   const [addingMember, setAddingMember] = useState(false);
   const [newGuest, setNewGuest] = useState("");
   const [addingGuest, setAddingGuest] = useState(false);
@@ -165,6 +169,19 @@ export default function GroupDetailScreen() {
   // Settle-up rows are listed here but are not spending — the Total beside
   // this count excludes them, so the count must too.
   const spendCount = expenses.filter((e) => !e.isSettlement).length;
+
+  // Matching on name and address, because people search for whichever they
+  // remember. Capped so the list never pushes the form off-screen.
+  const suggestions = useMemo(() => {
+    const q = newMember.trim().toLowerCase();
+    const pool = q
+      ? people.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)
+        )
+      : people;
+    return pool.slice(0, 6);
+  }, [people, newMember]);
   // The list is fetched with limit=100. In a busier group the count would
   // otherwise read "100" forever while the total beside it covered everything.
   const listTruncated = expenseTotal > expenses.length;
@@ -200,6 +217,14 @@ export default function GroupDetailScreen() {
       setActiveTotal(s.totalAmount ?? 0);
       setActiveMine(s.myShare ?? 0);
       setBaseCurrency(await getBaseCurrency(authFetch));
+
+      const pRes = await authFetch(
+        `/api/projects/expense-tracker/people?excludeGroupId=${groupId}`
+      );
+      if (pRes.ok) {
+        const pData = await pRes.json().catch(() => ({}));
+        setPeople(pData.people ?? []);
+      }
       setHistory(h.history ?? []);
     } catch {
       // keep last good state
@@ -584,6 +609,26 @@ export default function GroupDetailScreen() {
                   </Text>
                 </Pressable>
               </View>
+
+              {/* Suggestions narrow as you type, so the field still accepts
+                  an address nobody in your groups has. */}
+              {suggestions.length > 0 && (
+                <View className="mt-2 flex-row flex-wrap gap-2">
+                  {suggestions.map((p) => (
+                    <Pressable
+                      key={p.userId}
+                      onPress={() => setNewMember(p.email)}
+                      className="rounded-lg border border-white/10 bg-zinc-900/60 px-2.5 py-1.5"
+                    >
+                      <Text className="text-[13px] text-zinc-200">{p.name}</Text>
+                      <Text className="text-[11px] text-zinc-500">
+                        {p.sharedGroups} shared{" "}
+                        {p.sharedGroups === 1 ? "group" : "groups"}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
 
               <View className="mt-2 flex-row gap-2">
                 <Input

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { cn, formatDay } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
 import { getBaseCurrency } from "../prefs";
+import type { KnownPerson } from "../types";
 import type { SplitMode } from "../../../../modules/expense-tracker/balance";
 import { SPLIT_LABEL } from "../splits";
 
@@ -100,6 +101,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [showAdd, setShowAdd] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [newMember, setNewMember] = useState("");
+  // People already sharing a group with you — so adding a flatmate is a click
+  // rather than typing their address again.
+  const [people, setPeople] = useState<KnownPerson[]>([]);
   const [addingMember, setAddingMember] = useState(false);
   const [newGuest, setNewGuest] = useState("");
   const [addingGuest, setAddingGuest] = useState(false);
@@ -122,6 +126,19 @@ export function GroupDetail({ groupId, onBack }: Props) {
   // former with the group's entry currency showed a base number under a
   // foreign symbol.
   const baseMoney = (n: number) => formatMoney(n, baseCurrency);
+
+  // Matching on name and address, because people search for whichever they
+  // remember. Capped so the list never pushes the form off-screen.
+  const suggestions = useMemo(() => {
+    const q = newMember.trim().toLowerCase();
+    const pool = q
+      ? people.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)
+        )
+      : people;
+    return pool.slice(0, 6);
+  }, [people, newMember]);
 
   async function toggleShare() {
     if (shareBusy) return;
@@ -206,6 +223,14 @@ export function GroupDetail({ groupId, onBack }: Props) {
       setActiveAmount(sData.totalAmount ?? 0);
       setActiveMine(sData.myShare ?? 0);
       setBaseCurrency(await getBaseCurrency(authFetch));
+
+      const pRes = await authFetch(
+        `/api/projects/expense-tracker/people?excludeGroupId=${groupId}`
+      );
+      if (pRes.ok) {
+        const pData = await pRes.json().catch(() => ({}));
+        setPeople(pData.people ?? []);
+      }
     } catch {
       if (seq === fetchSeqRef.current) setGroup(null); // "not found / failed" state
     } finally {
@@ -575,6 +600,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
             <MembersSection
               members={group.members}
               balances={balances}
+              suggestions={suggestions}
               newMember={newMember}
               setNewMember={setNewMember}
               onAdd={handleAddMember}
@@ -727,6 +753,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
 function MembersSection({
   members,
   balances,
+  suggestions,
   newMember,
   setNewMember,
   onAdd,
@@ -743,6 +770,7 @@ function MembersSection({
 }: {
   members: Member[];
   balances: Balance[];
+  suggestions: KnownPerson[];
   newMember: string;
   setNewMember: (v: string) => void;
   onAdd: () => void;
@@ -839,6 +867,27 @@ function MembersSection({
           {adding ? "Inviting..." : "Invite"}
         </button>
       </div>
+      {/* Suggestions narrow as you type, so the field still accepts an
+          address nobody in your groups has. */}
+      {suggestions.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {suggestions.map((p) => (
+            <button
+              key={p.userId}
+              type="button"
+              onClick={() => setNewMember(p.email)}
+              className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5 text-left transition-colors hover:border-brand-500/40 hover:bg-brand-500/10"
+            >
+              <span className="block text-xs text-zinc-200">{p.name}</span>
+              <span className="block text-[10px] text-zinc-500">
+                {p.sharedGroups} shared{" "}
+                {p.sharedGroups === 1 ? "group" : "groups"}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="mt-2 flex gap-2">
         <input
           type="text"

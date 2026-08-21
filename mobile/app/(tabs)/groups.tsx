@@ -12,7 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import type { Group } from "../../lib/types";
+import type { Group, KnownPerson } from "../../lib/types";
 import { AppBackground, GradientButton, Input } from "../../components/ui";
 import { relativeTime } from "../../lib/dates";
 import { formatMoney } from "../../lib/currency";
@@ -41,6 +41,9 @@ export default function GroupsTab() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [emails, setEmails] = useState("");
+  // People you already share a group with, so a new group of the usual
+  // flatmates is a few taps rather than a few addresses typed from memory.
+  const [people, setPeople] = useState<KnownPerson[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const fetchGroups = useCallback(async () => {
@@ -59,6 +62,11 @@ export default function GroupsTab() {
         getBaseCurrency(authFetch),
       ]);
       setBase(baseCur);
+      const pRes = await authFetch("/api/projects/expense-tracker/people");
+      if (pRes.ok) {
+        const pData = await pRes.json().catch(() => ({}));
+        setPeople(pData.people ?? []);
+      }
       if (bRes.ok) {
         const b = await bRes.json().catch(() => null);
         if (b && Array.isArray(b.byGroup)) {
@@ -113,6 +121,15 @@ export default function GroupsTab() {
     await fetchGroups();
     setRefreshing(false);
   }, [fetchGroups]);
+
+  /** Append to the comma-separated field the form already uses. */
+  function addPerson(email: string) {
+    setEmails((prev) => {
+      const parts = prev.split(/[,\s]+/).map((e) => e.trim()).filter(Boolean);
+      if (parts.includes(email)) return prev;
+      return [...parts, email].join(", ");
+    });
+  }
 
   async function handleCreate() {
     if (creating) return;
@@ -233,6 +250,33 @@ export default function GroupsTab() {
                 keyboardType="email-address"
                 className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
               />
+              {people.length > 0 && (
+                <View className="gap-2">
+                  <Text className="text-[12px] uppercase tracking-wider text-zinc-500">
+                    People you split with
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {people
+                      .filter((p) => !emails.includes(p.email))
+                      .slice(0, 8)
+                      .map((p) => (
+                        <Pressable
+                          key={p.userId}
+                          onPress={() => addPerson(p.email)}
+                          className="rounded-lg border border-white/10 bg-zinc-900/60 px-2.5 py-1.5"
+                        >
+                          <Text className="text-[13px] text-zinc-200">
+                            {p.name}
+                          </Text>
+                          <Text className="text-[11px] text-zinc-500">
+                            {p.sharedGroups} shared{" "}
+                            {p.sharedGroups === 1 ? "group" : "groups"}
+                          </Text>
+                        </Pressable>
+                      ))}
+                  </View>
+                </View>
+              )}
               <Text className="text-[13px] text-zinc-500">
                 Members must already have an account.
               </Text>

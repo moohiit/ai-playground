@@ -83,3 +83,11 @@ export type MyBalances = {
     iOwe: number;
   }[];
 };
+
+/** Someone the viewer already shares a group with, for member suggestions. */
+export type KnownPerson = {
+  userId: string;
+  name: string;
+  email: string;
+  sharedGroups: number;
+};
