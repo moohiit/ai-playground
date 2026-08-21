@@ -666,7 +666,12 @@ export async function createExpense(
       throw new Error("Split members must belong to the group");
     }
 
-    splits = calculateSplits(input.amount, splitAmong);
+    splits = calculateSplits(
+      input.amount,
+      splitAmong,
+      input.splitMode ?? "equal",
+      input.splitValues
+    );
   } else {
     // Personal expenses never carry a group or splits.
     splitAmong = [];
@@ -698,6 +703,8 @@ export async function createExpense(
     date: new Date(input.date),
     splitAmong,
     splits,
+    splitMode: input.type === "group" ? input.splitMode ?? "equal" : "equal",
+    splitValues: input.type === "group" ? input.splitValues ?? [] : [],
     items: input.items ?? [],
   });
 
@@ -930,14 +937,42 @@ export async function updateExpense(
     }
 
     const amount = input.amount ?? expense.amount;
+    // A partial update may change the amount, the members, the mode or the
+    // values independently — fall back to what is stored for whatever it does
+    // not carry, then recompute from the combination. Editing the amount of a
+    // percentage split has to redistribute; editing it on an EXACT split
+    // cannot, because the stored amounts no longer add up, so that falls back
+    // to an equal division rather than silently keeping stale numbers.
+    const splitMode = input.splitMode ?? expense.splitMode ?? "equal";
+    const splitValues =
+      input.splitValues ??
+      (expense.splitValues as { memberId: string; value: number }[] | undefined);
+    const amountChanged =
+      input.amount !== undefined && input.amount !== expense.amount;
+    const staleExact =
+      splitMode === "exact" && amountChanged && input.splitValues === undefined;
+
+    const effectiveMode = staleExact ? "equal" : splitMode;
+    const effectiveValues = staleExact ? undefined : splitValues;
+
     expense.splitAmong = splitAmong as typeof expense.splitAmong;
-    expense.splits = calculateSplits(amount, splitAmong ?? []);
+    expense.splits = calculateSplits(
+      amount,
+      splitAmong ?? [],
+      effectiveMode,
+      effectiveValues
+    );
+    expense.splitMode = effectiveMode;
+    expense.splitValues = (effectiveValues ??
+      []) as typeof expense.splitValues;
     expense.groupId = toObjectId(newGroupId, "groupId");
   } else {
     // Personal expenses carry no group / splits.
     expense.groupId = null;
     expense.splitAmong = [] as typeof expense.splitAmong;
     expense.splits = [];
+    expense.splitMode = "equal";
+    expense.splitValues = [] as typeof expense.splitValues;
   }
 
   if (input.amount !== undefined) expense.amount = input.amount;

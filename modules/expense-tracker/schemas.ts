@@ -78,6 +78,17 @@ const expenseObjectSchema = z
         })
       )
       .optional(),
+    // How the amount is divided. "equal" needs no values and stays the
+    // default, so every existing caller keeps working untouched.
+    splitMode: z.enum(["equal", "shares", "exact", "percent"]).default("equal"),
+    splitValues: z
+      .array(
+        z.object({
+          memberId: z.string().min(1),
+          value: z.number().min(0),
+        })
+      )
+      .optional(),
     items: z
       .array(
         z.object({
@@ -89,6 +100,78 @@ const expenseObjectSchema = z
       .optional(),
   })
   .strict();
+
+/**
+ * Split values have to describe the people the expense is actually split with,
+ * and — for exact and percent — add up. Checked here so a malformed split can
+ * never reach calculateSplits, where it would silently distort balances.
+ *
+ * Only runs when the request carries enough to judge: a PATCH that changes the
+ * amount without resending the values is completed by the service against the
+ * stored row.
+ */
+function refineSplitValues(
+  val: {
+    splitMode?: string;
+    splitValues?: { memberId: string; value: number }[];
+    splitAmong?: { memberId: string }[];
+    amount?: number;
+  },
+  ctx: z.RefinementCtx
+) {
+  const mode = val.splitMode ?? "equal";
+  if (mode === "equal") return;
+
+  const values = val.splitValues;
+  if (!values || values.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `A ${mode} split needs a value for each member`,
+      path: ["splitValues"],
+    });
+    return;
+  }
+
+  if (val.splitAmong) {
+    const provided = new Set(values.map((v) => v.memberId));
+    const missing = val.splitAmong.filter((m) => !provided.has(m.memberId));
+    if (missing.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Every member in the split needs a value",
+        path: ["splitValues"],
+      });
+      return;
+    }
+  }
+
+  const total = values.reduce((s, v) => s + v.value, 0);
+
+  if (mode === "shares" && total <= 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "At least one share must be greater than 0",
+      path: ["splitValues"],
+    });
+  }
+
+  // A cent of tolerance: these arrive from inputs the user typed.
+  if (mode === "percent" && Math.abs(total - 100) > 0.01) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Percentages must add up to 100 (they add up to ${Math.round(total * 100) / 100})`,
+      path: ["splitValues"],
+    });
+  }
+
+  if (mode === "exact" && val.amount !== undefined && Math.abs(total - val.amount) > 0.01) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `The amounts must add up to ${val.amount} (they add up to ${Math.round(total * 100) / 100})`,
+      path: ["splitValues"],
+    });
+  }
+}
 
 // Validate the category against the right set, given the (possibly partial) direction.
 // `currentType`/`currentDirection` let updates fall back to the stored values.
@@ -129,14 +212,16 @@ function refineDirectionCategory(
   }
 }
 
-export const createExpenseSchema =
-  expenseObjectSchema.superRefine(refineDirectionCategory);
+export const createExpenseSchema = expenseObjectSchema
+  .superRefine(refineDirectionCategory)
+  .superRefine(refineSplitValues);
 
 // PATCH: every field optional. Category/direction consistency is re-validated in the
 // service against the stored row, since a partial update may omit `direction`.
 export const updateExpenseSchema = expenseObjectSchema
   .partial()
-  .superRefine(refineDirectionCategory);
+  .superRefine(refineDirectionCategory)
+  .superRefine(refineSplitValues);
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 

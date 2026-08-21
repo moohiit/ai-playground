@@ -88,6 +88,11 @@ export type ExpenseDoc = {
   date: Date;
   splitAmong: { memberId: string; name: string }[];
   splits: SplitEntry[];
+  // How `splits` was derived, kept so editing an expense reopens the form on
+  // the same basis rather than silently reverting it to an equal division.
+  // Absent on rows written before unequal splits existed — those are equal.
+  splitMode?: "equal" | "shares" | "exact" | "percent";
+  splitValues?: { memberId: string; value: number }[];
   items: ExpenseItem[];
   receiptUrl: string | null;
   rawExtraction: Record<string, unknown> | null;
@@ -163,6 +168,21 @@ const expenseSchema = new Schema<ExpenseDoc>(
       },
     ],
     splits: { type: [splitEntrySchema], default: [] },
+    splitMode: {
+      type: String,
+      enum: ["equal", "shares", "exact", "percent"],
+      default: "equal",
+    },
+    splitValues: {
+      type: [
+        {
+          memberId: { type: String, required: true },
+          value: { type: Number, required: true },
+          _id: false,
+        },
+      ],
+      default: [],
+    },
     items: { type: [expenseItemSchema], default: [] },
     receiptUrl: { type: String, default: null },
     rawExtraction: { type: Schema.Types.Mixed, default: null },

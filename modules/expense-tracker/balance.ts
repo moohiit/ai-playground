@@ -14,18 +14,66 @@ export type Settlement = {
   amount: number;
 };
 
+/**
+ * How an expense is divided among the members it is split with.
+ *
+ * - `equal`   — the same amount each (the historical behaviour, still default)
+ * - `shares`  — weights, e.g. a couple counting double: 2 / 1 / 1
+ * - `exact`   — an amount per member, entered directly
+ * - `percent` — a percentage per member, summing to 100
+ *
+ * Leaving someone out entirely is not a mode: drop them from `splitAmong`.
+ */
+export type SplitMode = "equal" | "shares" | "exact" | "percent";
+
+export type SplitValue = { memberId: string; value: number };
+
+/**
+ * Divide `amount` among `splitAmong`.
+ *
+ * Whatever the mode, the parts always sum to exactly `amount`: each part is
+ * rounded to cents as it is allocated and the final member takes the residue,
+ * so repeated rounding can never leave the group a cent short or over. For
+ * `exact` the caller's numbers are authoritative (the schema already checks
+ * they sum), so nothing is adjusted.
+ */
 export function calculateSplits(
   amount: number,
-  splitAmong: { memberId: string; name: string }[]
+  splitAmong: { memberId: string; name: string }[],
+  mode: SplitMode = "equal",
+  values?: SplitValue[]
 ): { memberId: string; name: string; amount: number }[] {
   if (splitAmong.length === 0) return [];
-  const share = Math.round((amount / splitAmong.length) * 100) / 100;
 
-  let remaining = amount;
+  const byId = new Map((values ?? []).map((v) => [v.memberId, v.value]));
+
+  if (mode === "exact") {
+    return splitAmong.map((m) => ({
+      memberId: m.memberId,
+      name: m.name,
+      amount: round2(byId.get(m.memberId) ?? 0),
+    }));
+  }
+
+  // Weight per member for the proportional modes. `equal` is the same
+  // calculation with every weight at 1, which keeps one code path for the
+  // rounding rule rather than two that could drift apart.
+  const weights = splitAmong.map((m) =>
+    mode === "equal" ? 1 : Math.max(0, byId.get(m.memberId) ?? 0)
+  );
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
+  // Every weight zero (or missing) would divide by zero; fall back to equal
+  // rather than handing the whole amount to the last member.
+  const effective = totalWeight > 0 ? weights : splitAmong.map(() => 1);
+  const effectiveTotal = totalWeight > 0 ? totalWeight : splitAmong.length;
+
+  let allocated = 0;
   return splitAmong.map((m, i) => {
     const isLast = i === splitAmong.length - 1;
-    const amt = isLast ? Math.round(remaining * 100) / 100 : share;
-    remaining -= share;
+    const amt = isLast
+      ? round2(amount - allocated)
+      : round2((effective[i] / effectiveTotal) * amount);
+    allocated = round2(allocated + amt);
     return { memberId: m.memberId, name: m.name, amount: amt };
   });
 }
