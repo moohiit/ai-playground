@@ -110,6 +110,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
   // People already sharing a group with you — so adding a flatmate is a click
   // rather than typing their address again.
   const [people, setPeople] = useState<KnownPerson[]>([]);
+  // Suggestions belong to the invite field, so they appear while it has focus
+  // and get out of the way otherwise.
+  const [memberFocused, setMemberFocused] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
   const [newGuest, setNewGuest] = useState("");
   const [addingGuest, setAddingGuest] = useState(false);
@@ -685,6 +688,8 @@ export function GroupDetail({ groupId, onBack }: Props) {
               members={group.members}
               balances={balances}
               suggestions={suggestions}
+              suggestionsOpen={memberFocused}
+              setSuggestionsOpen={setMemberFocused}
               newMember={newMember}
               setNewMember={setNewMember}
               onAdd={handleAddMember}
@@ -914,6 +919,8 @@ function MembersSection({
   members,
   balances,
   suggestions,
+  suggestionsOpen,
+  setSuggestionsOpen,
   newMember,
   setNewMember,
   onAdd,
@@ -931,6 +938,8 @@ function MembersSection({
   members: Member[];
   balances: Balance[];
   suggestions: KnownPerson[];
+  suggestionsOpen: boolean;
+  setSuggestionsOpen: (v: boolean) => void;
   newMember: string;
   setNewMember: (v: string) => void;
   onAdd: () => void;
@@ -1017,7 +1026,14 @@ function MembersSection({
           onChange={(e) => setNewMember(e.target.value)}
           placeholder="Invite member by email"
           className="flex-1 rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-          onKeyDown={(e) => e.key === "Enter" && onAdd()}
+          onFocus={() => setSuggestionsOpen(true)}
+          // Delayed so a click on a suggestion registers before the list
+          // unmounts — otherwise blur removes it mid-click.
+          onBlur={() => setTimeout(() => setSuggestionsOpen(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onAdd();
+            if (e.key === "Escape") setSuggestionsOpen(false);
+          }}
         />
         <button
           onClick={onAdd}
@@ -1029,19 +1045,29 @@ function MembersSection({
       </div>
       {/* Suggestions narrow as you type, so the field still accepts an
           address nobody in your groups has. */}
-      {suggestions.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {suggestions.map((p) => (
+      {suggestionsOpen && suggestions.length > 0 && (
+        <div className="mt-1 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/90">
+          {suggestions.map((p, i) => (
             <button
               key={p.userId}
               type="button"
-              onClick={() => setNewMember(p.email)}
-              className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5 text-left transition-colors hover:border-brand-500/40 hover:bg-brand-500/10"
+              onClick={() => {
+                setNewMember(p.email);
+                setSuggestionsOpen(false);
+              }}
+              className={cn(
+                "flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-brand-500/10",
+                i > 0 && "border-t border-zinc-800/60"
+              )}
             >
-              <span className="block text-xs text-zinc-200">{p.name}</span>
-              <span className="block text-[10px] text-zinc-500">
-                {p.sharedGroups} shared{" "}
-                {p.sharedGroups === 1 ? "group" : "groups"}
+              <span className="min-w-0">
+                <span className="block text-xs text-zinc-200">{p.name}</span>
+                <span className="block truncate text-[10px] text-zinc-500">
+                  {p.email}
+                </span>
+              </span>
+              <span className="shrink-0 text-[10px] text-zinc-600">
+                {p.sharedGroups} shared
               </span>
             </button>
           ))}

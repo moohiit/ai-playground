@@ -82,6 +82,9 @@ export default function GroupDetailScreen() {
   // People already sharing a group with you — so adding a flatmate is a tap
   // rather than typing their address again.
   const [people, setPeople] = useState<KnownPerson[]>([]);
+  // Suggestions belong to the invite field, so they appear while it has focus
+  // and get out of the way otherwise.
+  const [memberFocused, setMemberFocused] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
   const [newGuest, setNewGuest] = useState("");
   const [addingGuest, setAddingGuest] = useState(false);
@@ -682,6 +685,10 @@ export default function GroupDetailScreen() {
                 <Input
                   value={newMember}
                   onChangeText={setNewMember}
+                  onFocus={() => setMemberFocused(true)}
+                  // Delayed so a tap on a suggestion lands before the list
+                  // unmounts — otherwise the blur removes it mid-press.
+                  onBlur={() => setTimeout(() => setMemberFocused(false), 150)}
                   placeholder="Invite member by email"
                   placeholderTextColor="#71717a"
                   autoCapitalize="none"
@@ -703,18 +710,27 @@ export default function GroupDetailScreen() {
 
               {/* Suggestions narrow as you type, so the field still accepts
                   an address nobody in your groups has. */}
-              {suggestions.length > 0 && (
-                <View className="mt-2 flex-row flex-wrap gap-2">
-                  {suggestions.map((p) => (
+              {memberFocused && suggestions.length > 0 && (
+                <View className="mt-1 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/80">
+                  {suggestions.map((p, i) => (
                     <Pressable
                       key={p.userId}
-                      onPress={() => setNewMember(p.email)}
-                      className="rounded-lg border border-white/10 bg-zinc-900/60 px-2.5 py-1.5"
+                      onPress={() => {
+                        setNewMember(p.email);
+                        setMemberFocused(false);
+                      }}
+                      className={`flex-row items-center justify-between px-3 py-2.5 ${
+                        i > 0 ? "border-t border-white/5" : ""
+                      }`}
                     >
-                      <Text className="text-[13px] text-zinc-200">{p.name}</Text>
-                      <Text className="text-[11px] text-zinc-500">
-                        {p.sharedGroups} shared{" "}
-                        {p.sharedGroups === 1 ? "group" : "groups"}
+                      <View className="flex-1">
+                        <Text className="text-[13px] text-zinc-200">{p.name}</Text>
+                        <Text className="text-[11px] text-zinc-500" numberOfLines={1}>
+                          {p.email}
+                        </Text>
+                      </View>
+                      <Text className="text-[11px] text-zinc-600">
+                        {p.sharedGroups} shared
                       </Text>
                     </Pressable>
                   ))}
