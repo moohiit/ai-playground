@@ -17,6 +17,7 @@ const PUSH_SCREEN_ROUTES: Record<string, Href> = {
   budgets: "/budgets",
   expenses: "/expenses",
   recurring: "/recurring",
+  groups: "/groups",
 };
 
 function PushSetup() {

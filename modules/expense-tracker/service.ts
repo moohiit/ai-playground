@@ -19,6 +19,7 @@ import {
   GroupInvite,
   GroupSettlement,
   type ExpenseDoc,
+  type GroupDoc,
   type RecurringRuleDoc,
 } from "./models";
 import {
@@ -26,6 +27,9 @@ import {
   getUserPushConfig,
   checkAndNotifyBudget,
   checkAndNotifyAnomaly,
+  notifyGroupExpense,
+  notifyGroupPayment,
+  notifyGroupSettled,
 } from "./push";
 import { evaluateBudget } from "./budget";
 import { advance, dueOccurrences, isDue } from "./recurring";
@@ -646,12 +650,14 @@ export async function createExpense(
   // What the split actually resolved to — for an item split this is derived,
   // so it is not simply what the client sent.
   let resolvedSplitValues: { memberId: string; value: number }[] | undefined;
+  // Held beyond the branch so the group can be notified after the write.
+  let group: GroupDoc | null = null;
 
   if (input.type === "group") {
     if (!input.groupId) {
       throw new Error("A group is required for a group expense");
     }
-    const group = await Group.findById(input.groupId).lean();
+    group = await Group.findById(input.groupId).lean();
     if (!group) throw new Error("Group not found");
     if (!isActiveMember(group, auth.userId)) {
       throw new Error("You are not a member of this group");
@@ -718,6 +724,26 @@ export async function createExpense(
 
   const created = expense.toObject();
   await notifyForExpense(auth.userId, created);
+
+  // Tell the rest of the group. Best effort — a push failure must never fail
+  // the save, and the group was already loaded above.
+  if (created.type === "group" && group) {
+    try {
+      const { baseCurrency: actorBase } = await getPrefs(auth);
+      await notifyGroupExpense({
+        memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+        actorId: auth.userId,
+        actorName: created.paidBy?.name ?? auth.name,
+        groupName: group.name,
+        description: created.description,
+        amountBase: created.amountBase ?? created.amount,
+        currency: actorBase,
+      });
+    } catch {
+      /* notifications are optional */
+    }
+  }
+
   return created;
 }
 
@@ -1684,6 +1710,21 @@ export async function recordSettlementPayment(
     isSettlement: true,
   });
 
+  // Tell the group someone paid someone back — best effort.
+  try {
+    await notifyGroupPayment({
+      memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+      actorId: auth.userId,
+      fromName: from.name,
+      toName: to.name,
+      groupName: group.name,
+      amountBase: amount,
+      currency: baseCurrency,
+    });
+  } catch {
+    /* notifications are optional */
+  }
+
   // Settling the last outstanding transfer leaves everyone square, and there
   // was no way to then close the window short of also pressing "Mark as
   // Settled". Once nobody owes anybody, close it automatically.
@@ -1779,6 +1820,23 @@ async function closeActiveWindow(
 
   const balances = calculateBalances(spend as ExpenseDoc[]);
   const settlementPlan = calculateSettlements(balances);
+
+  // Closing the window affects everyone's ledger, so everyone hears about it.
+  try {
+    const full = await Group.findById(oid).lean();
+    if (full) {
+      const actor = await User.findById(auth.userId).select("name").lean();
+      await notifyGroupSettled({
+        memberIds: full.members.filter((m) => m.isActive).map((m) => m.userId),
+        actorId: auth.userId,
+        actorName: actor?.name ?? auth.name,
+        groupName: full.name,
+        expenseCount: spend.length,
+      });
+    }
+  } catch {
+    /* notifications are optional */
+  }
 
   return {
     settlementId,

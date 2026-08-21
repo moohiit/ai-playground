@@ -21,6 +21,31 @@ export async function getUserPushConfig(
   };
 }
 
+/**
+ * Push configs for several users at once.
+ *
+ * Group notifications go to everyone except the person who acted, so fetching
+ * them one at a time would be a query per member on every group expense.
+ */
+export async function getPushConfigs(
+  userIds: string[]
+): Promise<Map<string, PushConfig>> {
+  if (userIds.length === 0) return new Map();
+  await connectDB();
+  const rows = await UserPrefs.find({
+    userId: { $in: userIds },
+    expoPushToken: { $nin: [null, ""] },
+  })
+    .select("userId expoPushToken baseCurrency")
+    .lean();
+  return new Map(
+    rows.map((r) => [
+      r.userId,
+      { token: r.expoPushToken as string, baseCurrency: r.baseCurrency ?? "INR" },
+    ])
+  );
+}
+
 async function sendExpoPush(
   token: string,
   title: string,
@@ -57,7 +82,7 @@ export async function notifyGroupInvite(
     config.token,
     "Group invite 👥",
     `${inviterName} invited you to join "${groupName}" — open Groups to accept or decline.`,
-    { type: "group-invite" }
+    { type: "group-invite", screen: "groups" }
   );
 }
 
@@ -217,4 +242,114 @@ export async function notifyBillsDue(
       { screen: "recurring" }
     );
   }
+}
+
+/**
+ * Tell the rest of a group that something happened to their shared money.
+ *
+ * Every notification in this app was gated behind personal expenses, so the
+ * one case where other people genuinely need to know — someone spending from
+ * a shared pot — was silent.
+ *
+ * `amountBase` is the payer's base-currency figure. Each recipient may have a
+ * different base, so the amount is converted per recipient rather than
+ * labelled with someone else's currency.
+ */
+async function notifyGroupMembers(
+  memberIds: string[],
+  actorId: string,
+  fromCurrency: string,
+  amountBase: number | null,
+  build: (money: string) => { title: string; body: string }
+) {
+  const recipients = memberIds.filter(
+    // Never notify the person who just did it, and guests have no account.
+    (id) => id !== actorId && !id.startsWith("guest:")
+  );
+  const configs = await getPushConfigs(recipients);
+  if (configs.size === 0) return;
+
+  await Promise.all(
+    Array.from(configs.values()).map(async (config) => {
+      let money = "";
+      if (amountBase !== null) {
+        const converted = await convert(
+          amountBase,
+          fromCurrency,
+          config.baseCurrency
+        ).catch(() => amountBase);
+        money = fmt(converted, config.baseCurrency);
+      }
+      const { title, body } = build(money);
+      await sendExpoPush(config.token, title, body, { screen: "groups" }).catch(
+        () => undefined
+      );
+    })
+  );
+}
+
+/** A new expense landed in a shared group. */
+export async function notifyGroupExpense(opts: {
+  memberIds: string[];
+  actorId: string;
+  actorName: string;
+  groupName: string;
+  description: string;
+  amountBase: number;
+  currency: string;
+}) {
+  await notifyGroupMembers(
+    opts.memberIds,
+    opts.actorId,
+    opts.currency,
+    opts.amountBase,
+    (money) => ({
+      title: `${opts.groupName} 🧾`,
+      body: `${opts.actorName} added "${opts.description}" — ${money}`,
+    })
+  );
+}
+
+/** One member recorded paying another back. */
+export async function notifyGroupPayment(opts: {
+  memberIds: string[];
+  actorId: string;
+  fromName: string;
+  toName: string;
+  groupName: string;
+  amountBase: number;
+  currency: string;
+}) {
+  await notifyGroupMembers(
+    opts.memberIds,
+    opts.actorId,
+    opts.currency,
+    opts.amountBase,
+    (money) => ({
+      title: `${opts.groupName} 🤝`,
+      body: `${opts.fromName} paid ${opts.toName} ${money}`,
+    })
+  );
+}
+
+/** The group's active window was closed — everything moved to settled history. */
+export async function notifyGroupSettled(opts: {
+  memberIds: string[];
+  actorId: string;
+  actorName: string;
+  groupName: string;
+  expenseCount: number;
+}) {
+  await notifyGroupMembers(
+    opts.memberIds,
+    opts.actorId,
+    "",
+    null,
+    () => ({
+      title: `${opts.groupName} ✅`,
+      body: `${opts.actorName} settled the group — ${opts.expenseCount} ${
+        opts.expenseCount === 1 ? "expense" : "expenses"
+      } moved to settled history.`,
+    })
+  );
 }
