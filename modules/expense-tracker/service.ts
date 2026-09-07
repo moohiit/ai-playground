@@ -31,6 +31,9 @@ import {
   notifyGroupPayment,
   notifyGroupSettled,
   notifyGroupReopened,
+  notifyGroupExpenseEdited,
+  notifyGroupExpenseRemoved,
+  type ExpenseChange,
 } from "./push";
 import { evaluateBudget } from "./budget";
 import { advance, dueOccurrences, isDue } from "./recurring";
@@ -670,6 +673,96 @@ export async function deleteGroup(id: string, auth: JWTPayload) {
  *
  * Always best effort: a push failure must never fail the save.
  */
+/**
+ * Each member's share of an expense, in base currency.
+ *
+ * Splits are stored in the ENTRY currency, so they are scaled by the same
+ * base/entry ratio used everywhere else. Notifications convert from base into
+ * each recipient's own currency, so this is the right unit to hand them.
+ */
+function sharesInBase(expense: {
+  amount: number;
+  amountBase?: number | null;
+  splits?: { memberId: string; amount: number }[];
+}): Record<string, number> {
+  const baseAmt = expense.amountBase ?? expense.amount;
+  const ratio = expense.amount > 0 ? baseAmt / expense.amount : 1;
+  const out: Record<string, number> = {};
+  for (const sp of expense.splits ?? []) {
+    out[sp.memberId] = Math.round(sp.amount * ratio * 100) / 100;
+  }
+  return out;
+}
+
+/**
+ * What changed between two versions of an expense.
+ *
+ * Only fields a group member would care about, and only when they actually
+ * moved — "someone edited something" is noise; "amount 700 → 800" is a reason
+ * to look. Money stays as raw numbers in the editor's base currency so each
+ * recipient's notification can render it in their own. Ordered by significance:
+ * the notification only spells out the first few.
+ */
+function describeExpenseChanges(
+  before: {
+    amount: number;
+    amountBase?: number | null;
+    description: string;
+    category: string;
+    date: Date;
+    paidBy?: { id: string; name: string };
+    splits?: { memberId: string; name: string }[];
+  },
+  after: typeof before
+): ExpenseChange[] {
+  const changes: ExpenseChange[] = [];
+  const day = (d: Date) => new Date(d).toISOString().slice(0, 10);
+
+  const beforeBase = before.amountBase ?? before.amount;
+  const afterBase = after.amountBase ?? after.amount;
+  if (Math.abs(beforeBase - afterBase) > 0.01) {
+    changes.push({ kind: "money", label: "amount", from: beforeBase, to: afterBase });
+  }
+  if (before.description !== after.description) {
+    changes.push({
+      kind: "text",
+      label: "renamed",
+      from: before.description,
+      to: after.description,
+    });
+  }
+  if (before.paidBy?.id !== after.paidBy?.id) {
+    changes.push({
+      kind: "text",
+      label: "paid by",
+      from: before.paidBy?.name ?? "?",
+      to: after.paidBy?.name ?? "?",
+    });
+  }
+  const names = (v: typeof before) =>
+    (v.splits ?? []).map((sp) => sp.name).sort().join(", ");
+  if (names(before) !== names(after)) {
+    changes.push({
+      kind: "text",
+      label: "split",
+      from: names(before) || "nobody",
+      to: names(after) || "nobody",
+    });
+  }
+  if (before.category !== after.category) {
+    changes.push({
+      kind: "text",
+      label: "category",
+      from: before.category,
+      to: after.category,
+    });
+  }
+  if (day(before.date) !== day(after.date)) {
+    changes.push({ kind: "text", label: "date", from: day(before.date), to: day(after.date) });
+  }
+  return changes;
+}
+
 export async function notifyForExpense(
   userId: string,
   expense: {
@@ -799,6 +892,7 @@ export async function createExpense(
         description: created.description,
         amountBase: created.amountBase ?? created.amount,
         currency: actorBase,
+        sharesBase: sharesInBase(created),
       });
     } catch {
       /* notifications are optional */
@@ -972,6 +1066,22 @@ export async function updateExpense(
   const expense = await Expense.findById(id);
   if (!expense) throw new Error("Expense not found");
 
+  // Snapshot before any field is touched — the notification below reports what
+  // moved, and by then the document holds only the new values.
+  const before = {
+    amount: expense.amount,
+    amountBase: expense.amountBase,
+    description: expense.description,
+    category: expense.category,
+    date: expense.date,
+    paidBy: expense.paidBy ? { ...expense.paidBy } : undefined,
+    splits: (expense.splits ?? []).map((sp) => ({
+      memberId: sp.memberId,
+      name: sp.name,
+      amount: sp.amount,
+    })),
+  };
+
   // 1. Authorize access to the expense as it currently exists.
   if (expense.type === "group" && expense.groupId) {
     const group = await Group.findById(expense.groupId).lean();
@@ -1136,7 +1246,38 @@ export async function updateExpense(
   }
 
   await expense.save();
-  return expense.toObject();
+  const saved = expense.toObject();
+
+  // Tell the group what moved. An edit is arguably more disruptive than a new
+  // expense: the number someone already reconciled against just changed.
+  if (saved.type === "group" && saved.groupId) {
+    try {
+      const group = await Group.findById(saved.groupId).lean();
+      if (group) {
+        // amountBase and the split shares are frozen in the CREATOR's base
+        // currency, not the editor's — converting from the editor's base would
+        // misprice the notification whenever the two differ.
+        const ownerBase = await getBaseCurrency(saved.createdBy);
+        const actor = await User.findById(auth.userId).select("name").lean();
+        await notifyGroupExpenseEdited({
+          memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+          actorId: auth.userId,
+          actorName: actor?.name ?? auth.name,
+          groupName: group.name,
+          description: saved.description,
+          changes: describeExpenseChanges(before, saved),
+          amountBase: saved.amountBase ?? saved.amount,
+          currency: ownerBase,
+          sharesBefore: sharesInBase(before),
+          sharesAfter: sharesInBase(saved),
+        });
+      }
+    } catch {
+      /* notifications are optional */
+    }
+  }
+
+  return saved;
 }
 
 export async function deleteExpense(id: string, auth: JWTPayload) {
@@ -1163,7 +1304,32 @@ export async function deleteExpense(id: string, auth: JWTPayload) {
     );
   }
 
+  const removed = expense.toObject();
   await Expense.findByIdAndDelete(id);
+
+  // A vanished expense changes everyone's balance as surely as a new one.
+  if (removed.type === "group" && removed.groupId) {
+    try {
+      const group = await Group.findById(removed.groupId).lean();
+      if (group) {
+        const ownerBase = await getBaseCurrency(removed.createdBy);
+        const actor = await User.findById(auth.userId).select("name").lean();
+        await notifyGroupExpenseRemoved({
+          memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+          actorId: auth.userId,
+          actorName: actor?.name ?? auth.name,
+          groupName: group.name,
+          description: removed.description,
+          amountBase: removed.amountBase ?? removed.amount,
+          currency: ownerBase,
+          sharesBase: sharesInBase(removed),
+          reason: "deleted",
+        });
+      }
+    } catch {
+      /* notifications are optional */
+    }
+  }
 }
 
 // ── Receipt scanning ────────────────────────────────

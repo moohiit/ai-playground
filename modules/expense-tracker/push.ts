@@ -260,7 +260,17 @@ async function notifyGroupMembers(
   actorId: string,
   fromCurrency: string,
   amountBase: number | null,
-  build: (money: string) => { title: string; body: string }
+  build: (ctx: {
+    /** The group total, in this recipient's currency. */
+    money: string;
+    /** This recipient's own share, in their currency. "" when not applicable. */
+    share: string;
+    recipientId: string;
+    /** Any other amount in `fromCurrency`, rendered in this recipient's currency. */
+    toTheirs: (amount: number) => Promise<string>;
+  }) => { title: string; body: string } | Promise<{ title: string; body: string }>,
+  /** memberId -> that member's share, in `fromCurrency`. */
+  sharesBase?: Record<string, number>
 ) {
   const recipients = memberIds.filter(
     // Never notify the person who just did it, and guests have no account.
@@ -270,17 +280,22 @@ async function notifyGroupMembers(
   if (configs.size === 0) return;
 
   await Promise.all(
-    Array.from(configs.values()).map(async (config) => {
-      let money = "";
-      if (amountBase !== null) {
-        const converted = await convert(
-          amountBase,
-          fromCurrency,
+    // entries(), not values(): the message is built per recipient, so each
+    // one's own share can go in it.
+    Array.from(configs.entries()).map(async ([recipientId, config]) => {
+      const toTheirs = async (amount: number) =>
+        fmt(
+          await convert(amount, fromCurrency, config.baseCurrency).catch(
+            () => amount
+          ),
           config.baseCurrency
-        ).catch(() => amountBase);
-        money = fmt(converted, config.baseCurrency);
-      }
-      const { title, body } = build(money);
+        );
+
+      const money = amountBase !== null ? await toTheirs(amountBase) : "";
+      const own = sharesBase?.[recipientId];
+      const share = own !== undefined && own > 0 ? await toTheirs(own) : "";
+
+      const { title, body } = await build({ money, share, recipientId, toTheirs });
       await sendExpoPush(config.token, title, body, { screen: "groups" }).catch(
         () => undefined
       );
@@ -297,16 +312,23 @@ export async function notifyGroupExpense(opts: {
   description: string;
   amountBase: number;
   currency: string;
+  /** memberId -> their share of this expense, in `currency`. */
+  sharesBase?: Record<string, number>;
 }) {
   await notifyGroupMembers(
     opts.memberIds,
     opts.actorId,
     opts.currency,
     opts.amountBase,
-    (money) => ({
+    ({ money, share }) => ({
       title: `${opts.groupName} 🧾`,
-      body: `${opts.actorName} added "${opts.description}" — ${money}`,
-    })
+      // The group total answers "how big was it"; their own share answers
+      // "what does it cost me", which is the question they actually have.
+      body: share
+        ? `${opts.actorName} added "${opts.description}" — ${money}, your share ${share}`
+        : `${opts.actorName} added "${opts.description}" — ${money}`,
+    }),
+    opts.sharesBase
   );
 }
 
@@ -325,7 +347,7 @@ export async function notifyGroupPayment(opts: {
     opts.actorId,
     opts.currency,
     opts.amountBase,
-    (money) => ({
+    ({ money }) => ({
       title: `${opts.groupName} 🤝`,
       body: `${opts.fromName} paid ${opts.toName} ${money}`,
     })
@@ -368,4 +390,100 @@ export async function notifyGroupReopened(opts: {
       opts.expenseCount === 1 ? "expense is" : "expenses are"
     } active again.`,
   }));
+}
+
+/**
+ * One thing that changed on an expense, for the edit notification.
+ *
+ * Money changes carry raw numbers in the CREATOR's base currency (the currency
+ * amountBase is frozen in) so they can be rendered per recipient; everything
+ * else is already text.
+ */
+export type ExpenseChange =
+  | { kind: "text"; label: string; from: string; to: string }
+  | { kind: "money"; label: string; from: number; to: number };
+
+/**
+ * Someone edited a shared expense — say what changed, from what, and by whom.
+ *
+ * The body leads with the recipient's OWN share if it moved, because that is
+ * the change that costs them something; the rest of the diff follows. Push
+ * bodies get cut after a few lines on Android, so only the first few changes
+ * are spelled out and the remainder is counted.
+ */
+export async function notifyGroupExpenseEdited(opts: {
+  memberIds: string[];
+  actorId: string;
+  actorName: string;
+  groupName: string;
+  description: string;
+  amountBase: number;
+  currency: string;
+  changes: ExpenseChange[];
+  /** memberId -> share before the edit, in `currency`. */
+  sharesBefore: Record<string, number>;
+  /** memberId -> share after the edit, in `currency`. */
+  sharesAfter: Record<string, number>;
+}) {
+  if (opts.changes.length === 0) return;
+
+  await notifyGroupMembers(
+    opts.memberIds,
+    opts.actorId,
+    opts.currency,
+    opts.amountBase,
+    async ({ recipientId, toTheirs }) => {
+      const parts: string[] = [];
+
+      const before = opts.sharesBefore[recipientId] ?? 0;
+      const after = opts.sharesAfter[recipientId] ?? 0;
+      if (Math.abs(before - after) >= 0.01) {
+        parts.push(`your share ${await toTheirs(before)} → ${await toTheirs(after)}`);
+      }
+
+      const shown = opts.changes.slice(0, 3);
+      for (const c of shown) {
+        parts.push(
+          c.kind === "money"
+            ? `${c.label} ${await toTheirs(c.from)} → ${await toTheirs(c.to)}`
+            : `${c.label} ${c.from} → ${c.to}`
+        );
+      }
+      const more = opts.changes.length - shown.length;
+      if (more > 0) parts.push(`+${more} more`);
+
+      return {
+        title: `${opts.groupName} ✏️`,
+        body: `${opts.actorName} edited "${opts.description}" — ${parts.join(", ")}`,
+      };
+    }
+  );
+}
+
+/** An expense left the group — deleted, or moved to personal / another group. */
+export async function notifyGroupExpenseRemoved(opts: {
+  memberIds: string[];
+  actorId: string;
+  actorName: string;
+  groupName: string;
+  description: string;
+  amountBase: number;
+  currency: string;
+  /** memberId -> the share they no longer carry, in `currency`. */
+  sharesBase: Record<string, number>;
+  reason: "deleted" | "moved";
+}) {
+  await notifyGroupMembers(
+    opts.memberIds,
+    opts.actorId,
+    opts.currency,
+    opts.amountBase,
+    ({ money, share }) => ({
+      title: `${opts.groupName} 🗑️`,
+      body: `${opts.actorName} ${opts.reason === "deleted" ? "deleted" : "moved out"} "${opts.description}" — ${money}${
+        share ? `, your share was ${share}` : ""
+      }`,
+    }),
+    opts.sharesBase
+  );
 }
