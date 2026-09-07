@@ -884,10 +884,13 @@ export async function createExpense(
   if (created.type === "group" && group) {
     try {
       const { baseCurrency: actorBase } = await getPrefs(auth);
+      // Whoever ADDED it, not whoever paid: Mohit logging a bill Rahul paid
+      // should read "Mohit added". The JWT copy of a name can be stale.
+      const actor = await User.findById(auth.userId).select("name").lean();
       await notifyGroupExpense({
         memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
         actorId: auth.userId,
-        actorName: created.paidBy?.name ?? auth.name,
+        actorName: actor?.name ?? auth.name,
         groupName: group.name,
         description: created.description,
         amountBase: created.amountBase ?? created.amount,
@@ -1068,6 +1071,10 @@ export async function updateExpense(
 
   // Snapshot before any field is touched — the notification below reports what
   // moved, and by then the document holds only the new values.
+  const beforeGroupId =
+    expense.type === "group" && expense.groupId
+      ? expense.groupId.toString()
+      : null;
   const before = {
     amount: expense.amount,
     amountBase: expense.amountBase,
@@ -1248,36 +1255,103 @@ export async function updateExpense(
   await expense.save();
   const saved = expense.toObject();
 
-  // Tell the group what moved. An edit is arguably more disruptive than a new
-  // expense: the number someone already reconciled against just changed.
-  if (saved.type === "group" && saved.groupId) {
-    try {
-      const group = await Group.findById(saved.groupId).lean();
-      if (group) {
-        // amountBase and the split shares are frozen in the CREATOR's base
-        // currency, not the editor's — converting from the editor's base would
-        // misprice the notification whenever the two differ.
-        const ownerBase = await getBaseCurrency(saved.createdBy);
-        const actor = await User.findById(auth.userId).select("name").lean();
-        await notifyGroupExpenseEdited({
-          memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
-          actorId: auth.userId,
-          actorName: actor?.name ?? auth.name,
-          groupName: group.name,
-          description: saved.description,
-          changes: describeExpenseChanges(before, saved),
-          amountBase: saved.amountBase ?? saved.amount,
-          currency: ownerBase,
-          sharesBefore: sharesInBase(before),
-          sharesAfter: sharesInBase(saved),
-        });
-      }
-    } catch {
-      /* notifications are optional */
-    }
-  }
+  // Tell the group(s) what moved. An edit is arguably more disruptive than a
+  // new expense: the number someone already reconciled against just changed.
+  await notifyExpenseEdit(auth, before, beforeGroupId, saved);
 
   return saved;
+}
+
+/**
+ * Best effort; never fails the save. Three shapes of edit, as a group sees it:
+ *  - still in the same group -> "edited": what changed, and by whom
+ *  - left the group          -> "moved out", so the balances it leaves behind
+ *                               are explained (to personal, or to another
+ *                               group, which is then told "added")
+ *  - arrived from personal   -> "added"
+ */
+async function notifyExpenseEdit(
+  auth: JWTPayload,
+  before: Parameters<typeof describeExpenseChanges>[0] & {
+    splits?: { memberId: string; name: string; amount: number }[];
+  },
+  beforeGroupId: string | null,
+  saved: Parameters<typeof describeExpenseChanges>[1] & {
+    type: string;
+    groupId?: { toString(): string } | null;
+    createdBy: string;
+    splits?: { memberId: string; name: string; amount: number }[];
+  }
+) {
+  const afterGroupId =
+    saved.type === "group" && saved.groupId ? saved.groupId.toString() : null;
+  if (!beforeGroupId && !afterGroupId) return;
+
+  try {
+    // amountBase and the split shares are frozen in the CREATOR's base
+    // currency, not the editor's — converting from the editor's base would
+    // misprice the notification whenever the two differ.
+    const [ownerBase, actor] = await Promise.all([
+      getBaseCurrency(saved.createdBy),
+      User.findById(auth.userId).select("name").lean(),
+    ]);
+    const actorName = actor?.name ?? auth.name;
+    const activeIds = (g: { members: { isActive: boolean; userId: string }[] }) =>
+      g.members.filter((m) => m.isActive).map((m) => m.userId);
+
+    if (beforeGroupId && beforeGroupId === afterGroupId) {
+      const group = await Group.findById(afterGroupId).lean();
+      if (!group) return;
+      await notifyGroupExpenseEdited({
+        memberIds: activeIds(group),
+        actorId: auth.userId,
+        actorName,
+        groupName: group.name,
+        description: saved.description,
+        changes: describeExpenseChanges(before, saved),
+        amountBase: saved.amountBase ?? saved.amount,
+        currency: ownerBase,
+        sharesBefore: sharesInBase(before),
+        sharesAfter: sharesInBase(saved),
+      });
+      return;
+    }
+
+    if (beforeGroupId) {
+      const old = await Group.findById(beforeGroupId).lean();
+      if (old) {
+        await notifyGroupExpenseRemoved({
+          memberIds: activeIds(old),
+          actorId: auth.userId,
+          actorName,
+          groupName: old.name,
+          description: before.description,
+          amountBase: before.amountBase ?? before.amount,
+          currency: ownerBase,
+          sharesBase: sharesInBase(before),
+          reason: "moved",
+        });
+      }
+    }
+
+    if (afterGroupId) {
+      const target = await Group.findById(afterGroupId).lean();
+      if (target) {
+        await notifyGroupExpense({
+          memberIds: activeIds(target),
+          actorId: auth.userId,
+          actorName,
+          groupName: target.name,
+          description: saved.description,
+          amountBase: saved.amountBase ?? saved.amount,
+          currency: ownerBase,
+          sharesBase: sharesInBase(saved),
+        });
+      }
+    }
+  } catch {
+    /* notifications are optional */
+  }
 }
 
 export async function deleteExpense(id: string, auth: JWTPayload) {
