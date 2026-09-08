@@ -7,6 +7,7 @@ import { GroupDetail } from "../components/GroupDetail";
 import { cn, relativeTime } from "../../../../lib/utils";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { getBaseCurrency } from "../prefs";
+import { showAlert } from "../dialog";
 
 type Group = {
   _id: string;
@@ -67,11 +68,11 @@ export function GroupsTab() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Couldn't respond to the invite");
+        showAlert(data.error ?? "Couldn't respond to the invite");
       }
       await fetchGroups();
     } catch {
-      alert("Network error — try again.");
+      showAlert("Network error — try again.");
     } finally {
       setRespondingId(null);
     }

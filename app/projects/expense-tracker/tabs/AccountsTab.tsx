@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cn, formatDay, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
+import { showAlert, confirmDialog } from "../dialog";
 
 type Account = {
   _id: string;
@@ -97,7 +98,7 @@ export function AccountsTab() {
 
   async function handleDelete(id: string, name: string) {
     if (
-      !confirm(
+      !await confirmDialog(
         `Delete "${name}"? Its transactions stay but become unassigned, and its transfers are removed.`
       )
     )
@@ -107,7 +108,7 @@ export function AccountsTab() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error ?? "Couldn't delete that account");
+      showAlert(data.error ?? "Couldn't delete that account");
       return;
     }
     load();
@@ -115,7 +116,7 @@ export function AccountsTab() {
 
   async function handleDeleteTransfer(t: Transfer) {
     if (
-      !confirm(
+      !await confirmDialog(
         `Undo the ${formatMoney(t.amount, base)} transfer from ${t.fromName} to ${t.toName}? Both balances go back to what they were.`
       )
     )
@@ -128,7 +129,7 @@ export function AccountsTab() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error ?? "Couldn't undo that transfer");
+      showAlert(data.error ?? "Couldn't undo that transfer");
       return;
     }
     load();

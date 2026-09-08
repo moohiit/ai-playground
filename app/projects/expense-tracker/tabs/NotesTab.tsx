@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { cn, formatDay } from "../../../../lib/utils";
+import { showAlert, confirmDialog } from "../dialog";
 
 type MoneyNote = {
   _id: string;
@@ -100,8 +101,8 @@ export function NotesTab() {
   async function addNote() {
     if (savingNote) return;
     const amt = parseFloat(amount);
-    if (!personName.trim()) return alert("Who was the money given to?");
-    if (!Number.isFinite(amt) || amt <= 0) return alert("Enter an amount greater than 0");
+    if (!personName.trim()) return showAlert("Who was the money given to?");
+    if (!Number.isFinite(amt) || amt <= 0) return showAlert("Enter an amount greater than 0");
     setSavingNote(true);
     try {
       const res = await authFetch(
@@ -123,14 +124,14 @@ export function NotesTab() {
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Failed to save note");
+        showAlert(data.error ?? "Failed to save note");
         return;
       }
       resetNoteForm();
       setShowAdd(false);
       load();
     } catch {
-      alert("Network error — note not saved.");
+      showAlert("Network error — note not saved.");
     } finally {
       setSavingNote(false);
     }
@@ -145,10 +146,10 @@ export function NotesTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settled: !n.settledAt }),
       });
-      if (!res.ok) alert("Couldn't update the note");
+      if (!res.ok) showAlert("Couldn't update the note");
       await load();
     } catch {
-      alert("Network error.");
+      showAlert("Network error.");
     } finally {
       setBusyId(null);
     }
@@ -156,16 +157,16 @@ export function NotesTab() {
 
   async function deleteNote(id: string) {
     if (busyId) return;
-    if (!confirm("Delete this money note?")) return;
+    if (!await confirmDialog("Delete this money note?")) return;
     setBusyId(id);
     try {
       const res = await authFetch(`/api/projects/expense-tracker/notes/${id}`, {
         method: "DELETE",
       });
-      if (!res.ok) alert("Couldn't delete the note");
+      if (!res.ok) showAlert("Couldn't delete the note");
       await load();
     } catch {
-      alert("Network error.");
+      showAlert("Network error.");
     } finally {
       setBusyId(null);
     }
@@ -184,13 +185,13 @@ export function NotesTab() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Failed to add");
+        showAlert(data.error ?? "Failed to add");
         return;
       }
       setTodoText("");
       load();
     } catch {
-      alert("Network error — to-do not added.");
+      showAlert("Network error — to-do not added.");
     } finally {
       setAddingTodo(false);
     }
@@ -207,7 +208,7 @@ export function NotesTab() {
       });
       await load();
     } catch {
-      alert("Network error.");
+      showAlert("Network error.");
     } finally {
       setBusyId(null);
     }
@@ -222,7 +223,7 @@ export function NotesTab() {
       });
       await load();
     } catch {
-      alert("Network error.");
+      showAlert("Network error.");
     } finally {
       setBusyId(null);
     }

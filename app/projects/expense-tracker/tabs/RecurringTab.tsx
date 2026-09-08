@@ -5,6 +5,7 @@ import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { CATEGORIES, INCOME_CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { SUPPORTED_CURRENCIES, formatMoney } from "../../../../modules/expense-tracker/currencies";
+import { showAlert, confirmDialog } from "../dialog";
 
 type Rule = {
   _id: string;
@@ -69,11 +70,11 @@ export function RecurringTab() {
       const res = await authFetch(`/api/projects/expense-tracker/recurring/${id}/post`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Failed to post");
+        showAlert(data.error ?? "Failed to post");
       }
       await load();
     } catch {
-      alert("Network error — the bill was not posted.");
+      showAlert("Network error — the bill was not posted.");
     } finally {
       setBusyId(null);
     }
@@ -89,20 +90,20 @@ export function RecurringTab() {
       });
       await load();
     } catch {
-      alert("Network error — rule not updated.");
+      showAlert("Network error — rule not updated.");
     } finally {
       setBusyId(null);
     }
   }
   async function remove(id: string) {
     if (busyId) return;
-    if (!confirm("Delete this recurring rule? Already-posted transactions stay.")) return;
+    if (!await confirmDialog("Delete this recurring rule? Already-posted transactions stay.")) return;
     setBusyId(id);
     try {
       await authFetch(`/api/projects/expense-tracker/recurring/${id}`, { method: "DELETE" });
       await load();
     } catch {
-      alert("Network error — rule not deleted.");
+      showAlert("Network error — rule not deleted.");
     } finally {
       setBusyId(null);
     }

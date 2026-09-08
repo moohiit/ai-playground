@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cn, localISODate } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { formatDay } from "../../../../lib/utils";
+import { showAlert, confirmDialog } from "../dialog";
 
 type WarrantyEntry = {
   _id: string;
@@ -94,14 +95,14 @@ export function WarrantyTab() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Failed to save");
+        showAlert(data.error ?? "Failed to save");
         return; // keep the form open so nothing typed is lost
       }
       setForm({ ...EMPTY });
       setShowAdd(false);
       load();
     } catch {
-      alert("Network error — the item was not saved.");
+      showAlert("Network error — the item was not saved.");
     } finally {
       setSavingAdd(false);
     }
@@ -121,16 +122,16 @@ export function WarrantyTab() {
     const data = await res.json().catch(() => ({}));
     setImportingId(null);
     if (res.ok) {
-      alert(`Imported ${data.created} item(s)${data.skipped ? ` (${data.skipped} already tracked)` : ""}`);
+      showAlert(`Imported ${data.created} item(s)${data.skipped ? ` (${data.skipped} already tracked)` : ""}`);
       setShowImport(false);
       load();
     } else {
-      alert(data.error ?? "Import failed");
+      showAlert(data.error ?? "Import failed");
     }
   }
 
   async function remove(id: string) {
-    if (!confirm("Delete this entry?")) return;
+    if (!await confirmDialog("Delete this entry?")) return;
     await authFetch(`/api/projects/expense-tracker/warranty/${id}`, {
       method: "DELETE",
     });

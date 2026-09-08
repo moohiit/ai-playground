@@ -9,6 +9,7 @@ import { AddExpenseModal } from "../components/AddExpenseModal";
 import { categoryColor } from "../colors";
 import { getBaseCurrency } from "../prefs";
 import type { MyBalances } from "../types";
+import { showAlert, confirmDialog } from "../dialog";
 
 type Expense = {
   _id: string;
@@ -378,7 +379,7 @@ export function Dashboard() {
       (breakdown?.personalActiveCount ?? 0) + (breakdown?.personalActiveIncome ?? 0);
     if (count === 0) return;
     if (
-      !confirm(
+      !await confirmDialog(
         `Settle all ${count} active personal ${count === 1 ? "entry" : "entries"}? Income entries are included. They move to settled history.`
       )
     )
@@ -394,26 +395,26 @@ export function Dashboard() {
       setPage(1);
       await Promise.all([fetchBreakdown(), fetchExpenses()]);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Settlement failed");
+      showAlert(err instanceof Error ? err.message : "Settlement failed");
     } finally {
       setSettling(false);
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this expense?")) return;
+    if (!await confirmDialog("Delete this expense?")) return;
     try {
       const res = await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
         method: "DELETE",
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Couldn't delete the expense");
+        showAlert(data.error ?? "Couldn't delete the expense");
         return;
       }
       refreshAll();
     } catch {
-      alert("Network error — expense not deleted.");
+      showAlert("Network error — expense not deleted.");
     }
   }
 
@@ -454,7 +455,7 @@ export function Dashboard() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Export failed");
+      showAlert(err instanceof Error ? err.message : "Export failed");
     } finally {
       setExporting(false);
     }

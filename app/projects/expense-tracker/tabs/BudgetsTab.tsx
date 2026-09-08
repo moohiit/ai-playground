@@ -7,6 +7,7 @@ import { CATEGORIES } from "../../../../modules/expense-tracker/schemas";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { categoryColor } from "../colors";
 import { getBaseCurrency } from "../prefs";
+import { confirmDialog } from "../dialog";
 
 type BudgetItem = {
   _id: string;
@@ -83,7 +84,7 @@ export function BudgetsTab() {
   const usedCategories = new Set(categoryBudgets.map((b) => b.category));
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this budget?")) return;
+    if (!await confirmDialog("Delete this budget?")) return;
     await authFetch(`/api/projects/expense-tracker/budgets/${id}`, { method: "DELETE" });
     load();
   }

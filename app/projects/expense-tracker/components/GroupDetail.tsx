@@ -11,6 +11,7 @@ import type { PairBalance } from "../types";
 import type { KnownPerson } from "../types";
 import type { SplitMode } from "../../../../modules/expense-tracker/balance";
 import { SPLIT_LABEL } from "../splits";
+import { showAlert, confirmDialog } from "../dialog";
 
 // Groups are single-currency in practice (v1); format amounts with the
 // currency most of the group's expenses were entered in, instead of a
@@ -166,7 +167,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
         // Only report sharing as off if the server actually revoked it —
         // otherwise the UI would say "off" while the public link still works.
         if (!res.ok) {
-          alert("Couldn't turn off sharing — try again.");
+          showAlert("Couldn't turn off sharing — try again.");
           return;
         }
         setShareId(null);
@@ -179,10 +180,10 @@ export function GroupDetail({ groupId, onBack }: Props) {
         setShareId(data.shareId);
         setShowShare(true);
       } else {
-        alert("Couldn't create the share link — try again.");
+        showAlert("Couldn't create the share link — try again.");
       }
     } catch {
-      alert("Network error — sharing was not changed.");
+      showAlert("Network error — sharing was not changed.");
     } finally {
       setShareBusy(false);
     }
@@ -295,16 +296,16 @@ export function GroupDetail({ groupId, onBack }: Props) {
         // Most common failure: the email isn't registered. Keep the input so
         // the user can correct it instead of silently pretending success.
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Couldn't send the invite");
+        showAlert(data.error ?? "Couldn't send the invite");
         return;
       }
-      alert(
+      showAlert(
         `Invite sent to ${newMember.trim()} — they'll join once they accept it.`
       );
       setNewMember("");
       fetchAll();
     } catch {
-      alert("Network error — invite not sent.");
+      showAlert("Network error — invite not sent.");
     } finally {
       setAddingMember(false);
     }
@@ -315,7 +316,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   async function handleRemoveMember(m: Member) {
     if (removingMemberId) return;
     if (
-      !confirm(
+      !await confirmDialog(
         `Remove ${m.name} from the group?\n\nTheir past expenses and balances stay recorded — if they have any, they'll be marked as "left" and excluded from new expenses. Re-adding them brings them back.`
       )
     )
@@ -328,12 +329,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Couldn't remove member");
+        showAlert(data.error ?? "Couldn't remove member");
         return;
       }
       fetchAll();
     } catch {
-      alert("Network error — member not removed.");
+      showAlert("Network error — member not removed.");
     } finally {
       setRemovingMemberId(null);
     }
@@ -358,7 +359,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
       setNewGuest("");
       fetchAll();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add guest");
+      showAlert(err instanceof Error ? err.message : "Failed to add guest");
     } finally {
       setAddingGuest(false);
     }
@@ -374,7 +375,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
     );
     const payments = rec.transfers?.length ?? 0;
     if (
-      !confirm(
+      !await confirmDialog(
         `Reopen this settlement?\n\n${count} ${
           count === 1 ? "expense" : "expenses"
         } worth ${formatMoney(total, baseCurrency)} go back to Active, and the ` +
@@ -394,13 +395,13 @@ export function GroupDetail({ groupId, onBack }: Props) {
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error ?? "Couldn't reopen that settlement");
+        showAlert(data.error ?? "Couldn't reopen that settlement");
         return;
       }
       setTab("active");
       await fetchAll();
     } catch {
-      alert("Network error — nothing was reopened.");
+      showAlert("Network error — nothing was reopened.");
     } finally {
       setReopening(false);
     }
@@ -437,13 +438,13 @@ export function GroupDetail({ groupId, onBack }: Props) {
   }
 
   async function handleDeleteExpense(id: string) {
-    if (!confirm("Delete this expense?")) return;
+    if (!await confirmDialog("Delete this expense?")) return;
     const res = await authFetch(`/api/projects/expense-tracker/expenses/${id}`, {
       method: "DELETE",
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error ?? "Couldn't delete that expense");
+      showAlert(data.error ?? "Couldn't delete that expense");
       return;
     }
     // Removing the last row on a page leaves the user stranded on an empty
@@ -454,7 +455,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   }
 
   async function handleDeleteGroup() {
-    if (!confirm("Delete this group and all its expenses? This cannot be undone."))
+    if (!await confirmDialog("Delete this group and all its expenses? This cannot be undone."))
       return;
     const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}`, {
       method: "DELETE",
@@ -463,7 +464,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
     // refused delete look like it had worked, until the group reappeared.
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert(data.error ?? "Couldn't delete this group");
+      showAlert(data.error ?? "Couldn't delete this group");
       return;
     }
     onBack();
@@ -481,12 +482,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Couldn't rename the group");
+        showAlert(data.error ?? "Couldn't rename the group");
         return;
       }
       fetchAll();
     } catch {
-      alert("Network error — group not renamed.");
+      showAlert("Network error — group not renamed.");
     }
   }
 
@@ -495,7 +496,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
   async function handleSettlePayment(s: Settlement) {
     if (payingKey) return;
     if (
-      !confirm(
+      !await confirmDialog(
         `Record that ${s.from.name} paid ${s.to.name} ${baseMoney(s.amount)}?\n\nTheir balances offset and this row disappears.${
           settlements.length === 1
             ? " This is the last outstanding transfer, so the active expenses will move to settled history."
@@ -520,17 +521,17 @@ export function GroupDetail({ groupId, onBack }: Props) {
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error ?? "Couldn't record the payment");
+        showAlert(data.error ?? "Couldn't record the payment");
         return;
       }
       if (data.autoSettled) {
-        alert(
+        showAlert(
           `All square — that was the last payment, so ${data.settlement?.expenseCount ?? 0} expenses moved to settled history.`
         );
       }
       fetchAll();
     } catch {
-      alert("Network error — payment not recorded.");
+      showAlert("Network error — payment not recorded.");
     } finally {
       setPayingKey(null);
     }
@@ -552,16 +553,16 @@ export function GroupDetail({ groupId, onBack }: Props) {
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error ?? `Couldn't send the reminder (HTTP ${res.status})`);
+        showAlert(data.error ?? `Couldn't send the reminder (HTTP ${res.status})`);
         return;
       }
-      alert(
+      showAlert(
         `Reminder sent — ${s.from.name} has been nudged to settle ${baseMoney(s.amount)}.`
       );
       // Refetch so the new remindedAt arrives and the row flips to "Reminded".
       fetchAll();
     } catch {
-      alert("Network error — reminder not sent.");
+      showAlert("Network error — reminder not sent.");
     } finally {
       setRemindingKey(null);
     }
@@ -600,13 +601,13 @@ export function GroupDetail({ groupId, onBack }: Props) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         applyMuted(!next);
-        alert(data.error ?? `Couldn't update notifications for this group (HTTP ${res.status})`);
+        showAlert(data.error ?? `Couldn't update notifications for this group (HTTP ${res.status})`);
         return;
       }
       fetchAll();
     } catch {
       applyMuted(!next);
-      alert("Network error — notification setting not changed.");
+      showAlert("Network error — notification setting not changed.");
     } finally {
       setMuteBusy(false);
     }
@@ -614,7 +615,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
 
   async function handleSettle() {
     if (
-      !confirm(
+      !await confirmDialog(
         "Settle all current expenses? They will move to settled history and balances will reset."
       )
     )
@@ -627,13 +628,13 @@ export function GroupDetail({ groupId, onBack }: Props) {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Settlement failed");
-      alert(
+      showAlert(
         `Settled ${data.expenseCount} expenses. All balances are now cleared.`
       );
       setPage(1);
       fetchAll();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Settlement failed");
+      showAlert(err instanceof Error ? err.message : "Settlement failed");
     } finally {
       setSettling(false);
     }

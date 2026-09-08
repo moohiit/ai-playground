@@ -1,13 +1,13 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -99,11 +99,11 @@ export default function GroupsTab() {
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        Alert.alert("Error", data.error ?? "Couldn't respond to the invite");
+        showAlert("Error", data.error ?? "Couldn't respond to the invite");
       }
       await fetchGroups();
     } catch {
-      Alert.alert("Error", "Network error — try again.");
+      showAlert("Error", "Network error — try again.");
     } finally {
       setRespondingId(null);
     }

@@ -3,7 +3,6 @@ import {
 import {
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -11,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { useAuth } from "../../lib/auth";
@@ -95,7 +95,7 @@ export default function BudgetsScreen() {
   const used = new Set(cats.map((b) => b.category));
 
   function confirmDelete(b: BudgetItem) {
-    Alert.alert("Delete budget", "Remove this budget?", [
+    showAlert("Delete budget", "Remove this budget?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete", style: "destructive",
@@ -105,7 +105,7 @@ export default function BudgetsScreen() {
             if (!res.ok) throw new Error();
             load();
           } catch {
-            Alert.alert("Error", "Couldn't delete the budget.");
+            showAlert("Error", "Couldn't delete the budget.");
           }
         },
       },
@@ -247,8 +247,8 @@ function BudgetSheet({ visible, editing, hasOverall, used, onClose, onSaved }: {
 
   async function submit() {
     const amt = parseAmount(amount);
-    if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
-    if (scope === "category" && !category) return Alert.alert("Pick a category");
+    if (!amt || amt <= 0) return showAlert("Enter a valid amount");
+    if (scope === "category" && !category) return showAlert("Pick a category");
     setSaving(true);
     try {
       // Scope and category are fixed once a budget exists — the update
@@ -273,7 +273,7 @@ function BudgetSheet({ visible, editing, hasOverall, used, onClose, onSaved }: {
       }
       onSaved();
     } catch (e) {
-      Alert.alert(
+      showAlert(
         editing ? "Couldn't update budget" : "Couldn't add budget",
         e instanceof Error ? e.message : ""
       );

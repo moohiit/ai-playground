@@ -5,6 +5,7 @@ import { Stack, useRouter, type Href } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { AuthProvider, useAuth } from "../lib/auth";
+import { AppDialog } from "../components/AppDialog";
 import { setupNotificationHandler, registerPushToken } from "../lib/push";
 
 // Initialize notification handler before any screen renders
@@ -52,6 +53,7 @@ export default function RootLayout() {
     <KeyboardProvider>
       <AuthProvider>
         <PushSetup />
+        <AppDialog />
         <StatusBar style="light" />
         <Stack
           screenOptions={{

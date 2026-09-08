@@ -3,7 +3,6 @@ import {
 import {
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -11,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -65,7 +65,7 @@ export default function GoalsScreen() {
   }, [load]);
 
   function confirmDelete(g: GoalRow) {
-    Alert.alert("Delete goal", `Delete "${g.name}"?`, [
+    showAlert("Delete goal", `Delete "${g.name}"?`, [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
         try {
@@ -73,7 +73,7 @@ export default function GoalsScreen() {
           if (!res.ok) throw new Error();
           load();
         } catch {
-          Alert.alert("Error", "Couldn't delete the goal.");
+          showAlert("Error", "Couldn't delete the goal.");
         }
       } },
     ]);
@@ -204,7 +204,7 @@ function ContributeSheet({ goal, base, onClose, onSaved }: {
 
   async function submit() {
     const amt = parseAmount(amount);
-    if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
+    if (!amt || amt <= 0) return showAlert("Enter a valid amount");
     setBusy(true);
     try {
       const res = await authFetch(`/api/projects/expense-tracker/goals/${goal!._id}/contribute`, {
@@ -213,7 +213,7 @@ function ContributeSheet({ goal, base, onClose, onSaved }: {
       if (!res.ok) throw new Error("failed");
       onSaved();
     } catch {
-      Alert.alert("Couldn't update goal");
+      showAlert("Couldn't update goal");
     } finally {
       setBusy(false);
     }
@@ -274,9 +274,9 @@ function GoalSheet({ visible, editing, accounts, onClose, onSaved }: {
   }, [visible, editing]);
 
   async function submit() {
-    if (!name.trim()) return Alert.alert("Enter a name");
+    if (!name.trim()) return showAlert("Enter a name");
     const t = parseAmount(target);
-    if (!t || t <= 0) return Alert.alert("Enter a target");
+    if (!t || t <= 0) return showAlert("Enter a target");
     setBusy(true);
     try {
       // updateGoalSchema has no linkedAccountId — how a goal is funded is fixed
@@ -314,7 +314,7 @@ function GoalSheet({ visible, editing, accounts, onClose, onSaved }: {
       }
       onSaved();
     } catch (e) {
-      Alert.alert(
+      showAlert(
         editing ? "Couldn't update goal" : "Couldn't add goal",
         e instanceof Error ? e.message : ""
       );

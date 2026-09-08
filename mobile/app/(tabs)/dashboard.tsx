@@ -1,13 +1,13 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -121,12 +121,12 @@ export default function Dashboard() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        Alert.alert("Error", data.error ?? "Couldn't track this subscription");
+        showAlert("Error", data.error ?? "Couldn't track this subscription");
         return;
       }
       fetchInsights();
     } catch {
-      Alert.alert("Error", "Network error — subscription not tracked.");
+      showAlert("Error", "Network error — subscription not tracked.");
     } finally {
       setTrackingKey(null);
     }
@@ -147,7 +147,7 @@ export default function Dashboard() {
       setNlText("");
       router.push({ pathname: "/add-expense", params: { prefill: JSON.stringify(data.draft) } });
     } catch (e) {
-      Alert.alert("Couldn't read that", e instanceof Error ? e.message : "Try rephrasing");
+      showAlert("Couldn't read that", e instanceof Error ? e.message : "Try rephrasing");
     } finally {
       setNlBusy(false);
     }
@@ -198,7 +198,7 @@ export default function Dashboard() {
     const count =
       (personalActive?.totalCount ?? 0) + (personalActive?.incomeCount ?? 0);
     if (count === 0) return;
-    Alert.alert(
+    showAlert(
       "Settle personal expenses",
       `Mark all ${count} active personal ${count === 1 ? "entry" : "entries"} as settled? Income entries are included. They move to settled history.`,
       [
@@ -214,10 +214,10 @@ export default function Dashboard() {
               );
               const data = await res.json();
               if (!res.ok) throw new Error(data.error ?? "Settle failed");
-              Alert.alert("Settled", `Cleared ${data.expenseCount} personal expenses.`);
+              showAlert("Settled", `Cleared ${data.expenseCount} personal expenses.`);
               await fetchSummary();
             } catch (err) {
-              Alert.alert("Error", err instanceof Error ? err.message : "Failed");
+              showAlert("Error", err instanceof Error ? err.message : "Failed");
             } finally {
               setSettling(false);
             }

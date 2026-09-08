@@ -3,7 +3,6 @@ import {
 import {
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -11,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
@@ -117,7 +117,7 @@ export default function AccountsScreen() {
   }
 
   function confirmDelete(a: Account) {
-    Alert.alert("Delete account", `Delete "${a.name}"? Its transactions stay but become unassigned.`, [
+    showAlert("Delete account", `Delete "${a.name}"? Its transactions stay but become unassigned.`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -128,7 +128,7 @@ export default function AccountsScreen() {
             if (!res.ok) throw new Error();
             load();
           } catch {
-            Alert.alert("Error", "Couldn't delete the account.");
+            showAlert("Error", "Couldn't delete the account.");
           }
         },
       },
@@ -136,7 +136,7 @@ export default function AccountsScreen() {
   }
 
   function confirmDeleteTransfer(t: Transfer) {
-    Alert.alert(
+    showAlert(
       "Delete transfer",
       `Undo ${formatMoney(t.amount, base)} from ${t.fromName} to ${t.toName}? Both balances go back to what they were.`,
       [
@@ -150,7 +150,7 @@ export default function AccountsScreen() {
               if (!res.ok) throw new Error();
               load();
             } catch {
-              Alert.alert("Error", "Couldn't delete the transfer.");
+              showAlert("Error", "Couldn't delete the transfer.");
             }
           },
         },
@@ -332,11 +332,11 @@ function AccountSheet({ visible, editing, onClose, onSaved }: {
   }, [visible, editing]);
 
   async function submit() {
-    if (!name.trim()) return Alert.alert("Name required");
+    if (!name.trim()) return showAlert("Name required");
     // A blank field means "nothing to start with"; anything else that doesn't
     // parse is a typo worth surfacing rather than silently saving as 0.
     const openingBalance = opening.trim() === "" ? 0 : parseSignedAmount(opening);
-    if (Number.isNaN(openingBalance)) return Alert.alert("Enter a valid opening balance");
+    if (Number.isNaN(openingBalance)) return showAlert("Enter a valid opening balance");
     setSaving(true);
     try {
       const res = await authFetch(
@@ -361,7 +361,7 @@ function AccountSheet({ visible, editing, onClose, onSaved }: {
       }
       onSaved();
     } catch (e) {
-      Alert.alert(
+      showAlert(
         editing ? "Couldn't update account" : "Couldn't add account",
         e instanceof Error ? e.message : ""
       );
@@ -440,9 +440,9 @@ function TransferModal({ visible, accounts, base, onClose, onSaved }: {
   }, [visible, accounts]);
 
   async function submit() {
-    if (from === to) return Alert.alert("Pick two different accounts");
+    if (from === to) return showAlert("Pick two different accounts");
     const amt = parseAmount(amount);
-    if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
+    if (!amt || amt <= 0) return showAlert("Enter a valid amount");
     setSaving(true);
     try {
       const res = await authFetch("/api/projects/expense-tracker/transfers", {
@@ -454,7 +454,7 @@ function TransferModal({ visible, accounts, base, onClose, onSaved }: {
       setAmount("");
       onSaved();
     } catch {
-      Alert.alert("Transfer failed");
+      showAlert("Transfer failed");
     } finally {
       setSaving(false);
     }

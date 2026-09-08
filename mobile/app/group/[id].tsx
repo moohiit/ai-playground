@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,6 +11,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Line, Path } from "react-native-svg";
 import {
@@ -143,11 +143,11 @@ export default function GroupDetailScreen() {
         id = res.ok ? ((await res.json().catch(() => ({})))?.shareId ?? null) : null;
         if (id) setShareId(id);
       }
-      if (!id) return Alert.alert("Couldn't create share link");
+      if (!id) return showAlert("Couldn't create share link");
       const url = `${WEB_BASE_URL}/share/${id}`;
       await Share.share({ message: `Here's our bill split: ${url}` });
     } catch {
-      Alert.alert("Error", "Couldn't share the link — try again.");
+      showAlert("Error", "Couldn't share the link — try again.");
     } finally {
       setSharing(false);
     }
@@ -156,7 +156,7 @@ export default function GroupDetailScreen() {
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   function confirmRemoveMember(m: Member) {
-    Alert.alert(
+    showAlert(
       `Remove ${m.name}?`,
       "Their past expenses and balances stay recorded — if they have any, they'll be marked as \"left\" and excluded from new expenses. Re-adding them brings them back.",
       [
@@ -173,12 +173,12 @@ export default function GroupDetailScreen() {
               );
               if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
-                Alert.alert("Error", data.error ?? "Couldn't remove member");
+                showAlert("Error", data.error ?? "Couldn't remove member");
                 return;
               }
               fetchAll();
             } catch {
-              Alert.alert("Error", "Network error — member not removed.");
+              showAlert("Error", "Network error — member not removed.");
             } finally {
               setRemovingMemberId(null);
             }
@@ -189,7 +189,7 @@ export default function GroupDetailScreen() {
   }
 
   function stopSharing() {
-    Alert.alert("Turn off sharing", "The public link will stop working.", [
+    showAlert("Turn off sharing", "The public link will stop working.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Turn off", style: "destructive",
@@ -201,7 +201,7 @@ export default function GroupDetailScreen() {
             if (!res.ok) throw new Error();
             setShareId(null);
           } catch {
-            Alert.alert("Error", "Couldn't turn off sharing — try again.");
+            showAlert("Error", "Couldn't turn off sharing — try again.");
           }
         },
       },
@@ -322,7 +322,7 @@ export default function GroupDetailScreen() {
   }, [fetchAll]);
 
   function handleDelete(e: Expense) {
-    Alert.alert("Delete expense", `Delete "${e.description}"?`, [
+    showAlert("Delete expense", `Delete "${e.description}"?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -335,7 +335,7 @@ export default function GroupDetailScreen() {
             if (!res.ok) throw new Error();
             fetchAll();
           } catch {
-            Alert.alert("Error", "Failed to delete");
+            showAlert("Error", "Failed to delete");
           }
         },
       },
@@ -343,7 +343,7 @@ export default function GroupDetailScreen() {
   }
 
   function handleSettle() {
-    Alert.alert(
+    showAlert(
       "Settle up",
       "Settle all active expenses? They move to settled history and balances reset.",
       [
@@ -359,10 +359,10 @@ export default function GroupDetailScreen() {
               );
               const data = await res.json();
               if (!res.ok) throw new Error(data.error ?? "Settlement failed");
-              Alert.alert("Settled", `Cleared ${data.expenseCount} expenses.`);
+              showAlert("Settled", `Cleared ${data.expenseCount} expenses.`);
               fetchAll();
             } catch (err) {
-              Alert.alert(
+              showAlert(
                 "Error",
                 err instanceof Error ? err.message : "Settlement failed"
               );
@@ -390,14 +390,14 @@ export default function GroupDetailScreen() {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to send invite");
-      Alert.alert(
+      showAlert(
         "Invite sent",
         `${email} will join once they accept the invite (they'll get a notification).`
       );
       setNewMember("");
       fetchAll();
     } catch (err) {
-      Alert.alert("Error", err instanceof Error ? err.message : "Failed");
+      showAlert("Error", err instanceof Error ? err.message : "Failed");
     } finally {
       setAddingMember(false);
     }
@@ -421,7 +421,7 @@ export default function GroupDetailScreen() {
       setNewGuest("");
       fetchAll();
     } catch (err) {
-      Alert.alert("Error", err instanceof Error ? err.message : "Failed");
+      showAlert("Error", err instanceof Error ? err.message : "Failed");
     } finally {
       setAddingGuest(false);
     }
@@ -435,7 +435,7 @@ export default function GroupDetailScreen() {
       (sum, e) => sum + (e.amountBase ?? e.amount),
       0
     );
-    Alert.alert(
+    showAlert(
       "Reopen this settlement",
       `${count} ${count === 1 ? "expense" : "expenses"} worth ${formatMoney(
         total,
@@ -461,13 +461,13 @@ export default function GroupDetailScreen() {
               );
               const data = await res.json().catch(() => ({}));
               if (!res.ok) {
-                Alert.alert("Couldn't reopen", data.error ?? "Try again.");
+                showAlert("Couldn't reopen", data.error ?? "Try again.");
                 return;
               }
               setTab("active");
               await fetchAll();
             } catch {
-              Alert.alert("Error", "Network error — nothing was reopened.");
+              showAlert("Error", "Network error — nothing was reopened.");
             } finally {
               setReopening(false);
             }
@@ -481,7 +481,7 @@ export default function GroupDetailScreen() {
   const [payingKey, setPayingKey] = useState<string | null>(null);
 
   function confirmSettlePayment(s: Settlement) {
-    Alert.alert(
+    showAlert(
       "Record payment",
       `${s.from.name} paid ${s.to.name} ${baseMoney(s.amount)}?\n\nTheir balances offset and this row disappears.${
         settlements.length === 1
@@ -510,18 +510,18 @@ export default function GroupDetailScreen() {
               );
               const data = await res.json().catch(() => ({}));
               if (!res.ok) {
-                Alert.alert("Error", data.error ?? "Couldn't record the payment");
+                showAlert("Error", data.error ?? "Couldn't record the payment");
                 return;
               }
               if (data.autoSettled) {
-                Alert.alert(
+                showAlert(
                   "All square",
                   `That was the last payment — ${data.settlement?.expenseCount ?? 0} expenses moved to settled history.`
                 );
               }
               fetchAll();
             } catch {
-              Alert.alert("Error", "Network error — payment not recorded.");
+              showAlert("Error", "Network error — payment not recorded.");
             } finally {
               setPayingKey(null);
             }
@@ -549,16 +549,16 @@ export default function GroupDetailScreen() {
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        Alert.alert("Error", data.error ?? `Couldn't send the reminder (HTTP ${res.status})`);
+        showAlert("Error", data.error ?? `Couldn't send the reminder (HTTP ${res.status})`);
         return;
       }
-      Alert.alert(
+      showAlert(
         "Reminder sent",
         `${s.from.name} has been nudged to settle ${baseMoney(s.amount)}.`
       );
       fetchAll();
     } catch {
-      Alert.alert("Error", "Network error — reminder not sent.");
+      showAlert("Error", "Network error — reminder not sent.");
     } finally {
       setRemindingKey(null);
     }
@@ -571,7 +571,7 @@ export default function GroupDetailScreen() {
   async function handleRename() {
     if (renaming) return;
     const name = renameText.trim();
-    if (!name) return Alert.alert("Enter a group name");
+    if (!name) return showAlert("Enter a group name");
     setRenaming(true);
     try {
       const res = await authFetch(
@@ -584,20 +584,20 @@ export default function GroupDetailScreen() {
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        Alert.alert("Error", data.error ?? "Couldn't rename the group");
+        showAlert("Error", data.error ?? "Couldn't rename the group");
         return;
       }
       setRenameVisible(false);
       fetchAll();
     } catch {
-      Alert.alert("Error", "Network error — group not renamed.");
+      showAlert("Error", "Network error — group not renamed.");
     } finally {
       setRenaming(false);
     }
   }
 
   function handleDeleteGroup() {
-    Alert.alert(
+    showAlert(
       "Delete group",
       "Delete this group and ALL its expenses? This cannot be undone.",
       [
@@ -615,7 +615,7 @@ export default function GroupDetailScreen() {
               if (!res.ok) throw new Error();
               router.back();
             } catch {
-              Alert.alert("Error", "Failed to delete group");
+              showAlert("Error", "Failed to delete group");
             }
           },
         },
@@ -659,13 +659,13 @@ export default function GroupDetailScreen() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setLocalMuted(!next);
-        Alert.alert("Error", data.error ?? `Couldn't update notifications (HTTP ${res.status})`);
+        showAlert("Error", data.error ?? `Couldn't update notifications (HTTP ${res.status})`);
         return;
       }
       fetchAll();
     } catch {
       setLocalMuted(!next);
-      Alert.alert("Error", "Network error — notifications not updated.");
+      showAlert("Error", "Network error — notifications not updated.");
     } finally {
       setMuting(false);
     }

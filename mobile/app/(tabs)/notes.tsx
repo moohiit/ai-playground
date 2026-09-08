@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -10,6 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
@@ -127,8 +127,8 @@ export default function NotesScreen() {
   async function saveNote() {
     if (saving) return;
     const amt = parseAmount(amount);
-    if (!personName.trim()) return Alert.alert("Who was the money given to?");
-    if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
+    if (!personName.trim()) return showAlert("Who was the money given to?");
+    if (!amt || amt <= 0) return showAlert("Enter a valid amount");
     setSaving(true);
     try {
       const res = await authFetch(
@@ -150,14 +150,14 @@ export default function NotesScreen() {
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        Alert.alert("Error", data.error ?? "Failed to save note");
+        showAlert("Error", data.error ?? "Failed to save note");
         return;
       }
       resetForm();
       setShowAdd(false);
       load();
     } catch {
-      Alert.alert("Error", "Network error — note not saved.");
+      showAlert("Error", "Network error — note not saved.");
     } finally {
       setSaving(false);
     }
@@ -172,17 +172,17 @@ export default function NotesScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settled: !n.settledAt }),
       });
-      if (!res.ok) Alert.alert("Error", "Couldn't update the note");
+      if (!res.ok) showAlert("Error", "Couldn't update the note");
       await load();
     } catch {
-      Alert.alert("Error", "Network error.");
+      showAlert("Error", "Network error.");
     } finally {
       setBusyId(null);
     }
   }
 
   function confirmDeleteNote(n: MoneyNote) {
-    Alert.alert("Delete note", `Delete the note for ${n.personName}?`, [
+    showAlert("Delete note", `Delete the note for ${n.personName}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -196,7 +196,7 @@ export default function NotesScreen() {
             if (!res.ok) throw new Error();
             load();
           } catch {
-            Alert.alert("Error", "Couldn't delete the note.");
+            showAlert("Error", "Couldn't delete the note.");
           }
         },
       },
@@ -216,13 +216,13 @@ export default function NotesScreen() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        Alert.alert("Error", data.error ?? "Failed to add");
+        showAlert("Error", data.error ?? "Failed to add");
         return;
       }
       setTodoText("");
       load();
     } catch {
-      Alert.alert("Error", "Network error — to-do not added.");
+      showAlert("Error", "Network error — to-do not added.");
     } finally {
       setAddingTodo(false);
     }
@@ -239,14 +239,14 @@ export default function NotesScreen() {
       });
       await load();
     } catch {
-      Alert.alert("Error", "Network error.");
+      showAlert("Error", "Network error.");
     } finally {
       setBusyId(null);
     }
   }
 
   function confirmDeleteTodo(t: TodoItem) {
-    Alert.alert("Delete to-do", `Delete "${t.text}"?`, [
+    showAlert("Delete to-do", `Delete "${t.text}"?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -260,7 +260,7 @@ export default function NotesScreen() {
             if (!res.ok) throw new Error();
             load();
           } catch {
-            Alert.alert("Error", "Couldn't delete the to-do.");
+            showAlert("Error", "Couldn't delete the to-do.");
           }
         },
       },

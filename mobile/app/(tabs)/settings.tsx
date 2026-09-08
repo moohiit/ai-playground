@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Linking,
   Pressable,
@@ -9,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -96,7 +96,7 @@ export default function SettingsScreen() {
       invalidatePrefs();
       setNote(`Base set to ${next}. Existing entries re-converted from ${prev}.`);
     } catch {
-      Alert.alert("Couldn't change base currency", "Please try again.");
+      showAlert("Couldn't change base currency", "Please try again.");
     } finally {
       setSavingBase(false);
     }
@@ -129,9 +129,9 @@ export default function SettingsScreen() {
       const newName = data.user?.name ?? trimmed;
       setProfile((p) => (p ? { ...p, name: newName } : p));
       updateUserName(newName);
-      Alert.alert("Saved", "Your name was updated.");
+      showAlert("Saved", "Your name was updated.");
     } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Failed to update name");
+      showAlert("Error", e instanceof Error ? e.message : "Failed to update name");
     } finally {
       setSavingName(false);
     }
@@ -140,7 +140,7 @@ export default function SettingsScreen() {
   async function pickPhoto() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("Permission needed", "Allow photo access to set a picture.");
+      showAlert("Permission needed", "Allow photo access to set a picture.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -168,7 +168,7 @@ export default function SettingsScreen() {
       if (!res.ok) throw new Error(data.error ?? "Upload failed");
       setProfile((p) => (p ? { ...p, profilePhotoUrl: data.profilePhotoUrl } : p));
     } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Upload failed");
+      showAlert("Error", e instanceof Error ? e.message : "Upload failed");
     } finally {
       setPhotoBusy(false);
     }
@@ -181,7 +181,7 @@ export default function SettingsScreen() {
       if (!res.ok) throw new Error("Failed to remove photo");
       setProfile((p) => (p ? { ...p, profilePhotoUrl: null } : p));
     } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Failed to remove photo");
+      showAlert("Error", e instanceof Error ? e.message : "Failed to remove photo");
     } finally {
       setPhotoBusy(false);
     }
@@ -223,7 +223,7 @@ export default function SettingsScreen() {
   }
 
   function confirmDeleteAccount() {
-    Alert.alert(
+    showAlert(
       "Delete account",
       "This permanently deletes your account and all your data (personal expenses and groups you created). This cannot be undone.",
       [
@@ -239,7 +239,7 @@ export default function SettingsScreen() {
               await logout();
               router.replace("/login");
             } catch (err) {
-              Alert.alert(
+              showAlert(
                 "Error",
                 err instanceof Error ? err.message : "Failed to delete account"
               );

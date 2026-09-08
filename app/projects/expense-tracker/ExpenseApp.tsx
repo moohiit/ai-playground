@@ -14,6 +14,7 @@ import { ReportsTab } from "./tabs/ReportsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { WarrantyTab } from "./tabs/WarrantyTab";
 import { NotesTab } from "./tabs/NotesTab";
+import { DialogHost } from "./dialog";
 
 const TABS = [
   { id: "Dashboard", icon: DashboardIcon },
@@ -103,6 +104,7 @@ export function ExpenseApp() {
         {tab === "Notes" && <NotesTab />}
         {tab === "Settings" && <SettingsTab />}
       </div>
+      <DialogHost />
     </div>
   );
 }

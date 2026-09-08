@@ -3,7 +3,6 @@ import {
 import {
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -12,6 +11,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -80,11 +80,11 @@ export default function RecurringScreen() {
       const res = await authFetch(`/api/projects/expense-tracker/recurring/${id}/post`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        Alert.alert("Error", data.error ?? "Failed to post");
+        showAlert("Error", data.error ?? "Failed to post");
       }
       await load();
     } catch {
-      Alert.alert("Error", "Network error — the bill was not posted.");
+      showAlert("Error", "Network error — the bill was not posted.");
     } finally {
       setBusyId(null);
     }
@@ -100,17 +100,17 @@ export default function RecurringScreen() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        Alert.alert("Error", data.error ?? "Failed to update rule");
+        showAlert("Error", data.error ?? "Failed to update rule");
       }
       await load();
     } catch {
-      Alert.alert("Error", "Network error — rule not updated.");
+      showAlert("Error", "Network error — rule not updated.");
     } finally {
       setBusyId(null);
     }
   }
   function confirmDelete(r: Rule) {
-    Alert.alert("Delete rule", "Already-posted transactions stay.", [
+    showAlert("Delete rule", "Already-posted transactions stay.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete", style: "destructive",
@@ -120,7 +120,7 @@ export default function RecurringScreen() {
             if (!res.ok) throw new Error();
             load();
           } catch {
-            Alert.alert("Error", "Couldn't delete the rule.");
+            showAlert("Error", "Couldn't delete the rule.");
           }
         },
       },
@@ -267,12 +267,12 @@ function RuleSheet({ visible, editing, accounts, onClose, onSaved }: {
 
   async function submit() {
     const amt = parseAmount(amount);
-    if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
-    if (!description.trim()) return Alert.alert("Enter a description");
+    if (!amt || amt <= 0) return showAlert("Enter a valid amount");
+    if (!description.trim()) return showAlert("Enter a description");
     // An end date before the first/next run leaves the rule with no occurrences
     // at all — the engine just retires it on the next sweep.
     if (endDate && endDate < startDate) {
-      return Alert.alert(editing ? "End date is before the next run" : "End date is before the start date");
+      return showAlert(editing ? "End date is before the next run" : "End date is before the start date");
     }
     setSaving(true);
     try {
@@ -306,7 +306,7 @@ function RuleSheet({ visible, editing, accounts, onClose, onSaved }: {
       }
       onSaved();
     } catch (e) {
-      Alert.alert(
+      showAlert(
         editing ? "Couldn't update rule" : "Couldn't add rule",
         e instanceof Error ? e.message : ""
       );

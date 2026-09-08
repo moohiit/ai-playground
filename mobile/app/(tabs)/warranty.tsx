@@ -3,7 +3,6 @@ import {
 import {
   KeyboardAvoidingView,
   Platform,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -11,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -118,14 +118,14 @@ export default function WarrantyScreen() {
       // saved and everything the user typed was gone.
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        Alert.alert("Couldn't save", data.error ?? "Check the dates and try again.");
+        showAlert("Couldn't save", data.error ?? "Check the dates and try again.");
         return;
       }
       setForm({ ...EMPTY });
       setShowAdd(false);
       load();
     } catch {
-      Alert.alert("Error", "Failed to save. Please try again.");
+      showAlert("Error", "Failed to save. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -137,7 +137,7 @@ export default function WarrantyScreen() {
     try {
       await doImport(expenseId, desc);
     } catch {
-      Alert.alert("Error", "Network error — nothing was imported.");
+      showAlert("Error", "Network error — nothing was imported.");
     } finally {
       setSaving(false);
     }
@@ -154,19 +154,19 @@ export default function WarrantyScreen() {
     );
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      Alert.alert(
+      showAlert(
         "Imported",
         `Added ${data.created} item(s) from "${desc}"${data.skipped ? `. ${data.skipped} already tracked.` : "."}`
       );
       setShowImport(false);
       load();
     } else {
-      Alert.alert("Error", data.error ?? "Import failed");
+      showAlert("Error", data.error ?? "Import failed");
     }
   }
 
   function confirmDelete(w: WarrantyEntry) {
-    Alert.alert("Delete", `Delete "${w.label}"?`, [
+    showAlert("Delete", `Delete "${w.label}"?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -180,7 +180,7 @@ export default function WarrantyScreen() {
             if (!res.ok) throw new Error();
             load();
           } catch {
-            Alert.alert("Error", "Couldn't delete the item.");
+            showAlert("Error", "Couldn't delete the item.");
           }
         },
       },

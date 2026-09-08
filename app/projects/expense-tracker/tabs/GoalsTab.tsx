@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
+import { showAlert, confirmDialog } from "../dialog";
 
 type Goal = {
   _id: string;
@@ -67,7 +68,7 @@ export function GoalsTab() {
   async function contribute(g: Goal, amount: number) {
     if (busyId) return;
     if (!Number.isFinite(amount) || amount <= 0) {
-      alert("Enter a positive amount");
+      showAlert("Enter a positive amount");
       return;
     }
     setBusyId(g._id);
@@ -79,24 +80,24 @@ export function GoalsTab() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error ?? "Failed to add contribution");
+        showAlert(data.error ?? "Failed to add contribution");
       }
       await load();
     } catch {
-      alert("Network error — contribution not saved.");
+      showAlert("Network error — contribution not saved.");
     } finally {
       setBusyId(null);
     }
   }
   async function remove(id: string) {
     if (busyId) return;
-    if (!confirm("Delete this goal?")) return;
+    if (!await confirmDialog("Delete this goal?")) return;
     setBusyId(id);
     try {
       await authFetch(`/api/projects/expense-tracker/goals/${id}`, { method: "DELETE" });
       await load();
     } catch {
-      alert("Network error — goal not deleted.");
+      showAlert("Network error — goal not deleted.");
     } finally {
       setBusyId(null);
     }

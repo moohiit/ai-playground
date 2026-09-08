@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -9,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -170,7 +170,7 @@ export default function ExpensesScreen() {
     try {
       await exportExpensesCsv({ authFetch, params });
     } catch {
-      Alert.alert("Export failed", "Could not export expenses. Try again.");
+      showAlert("Export failed", "Could not export expenses. Try again.");
     } finally {
       setExporting(false);
     }
@@ -184,7 +184,7 @@ export default function ExpensesScreen() {
   }
 
   function handleDelete(e: Expense) {
-    Alert.alert("Delete expense", `Delete "${e.description}"?`, [
+    showAlert("Delete expense", `Delete "${e.description}"?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -197,7 +197,7 @@ export default function ExpensesScreen() {
             if (!res.ok) throw new Error();
             fetchExpenses();
           } catch {
-            Alert.alert("Error", "Failed to delete expense");
+            showAlert("Error", "Failed to delete expense");
           }
         },
       },

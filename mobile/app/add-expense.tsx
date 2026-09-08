@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Text,
   View,
 } from "react-native";
+import { showAlert } from "../lib/dialog";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -274,7 +274,7 @@ export default function AddExpenseScreen() {
   }
 
   function onScanPress() {
-    Alert.alert("Scan receipt", "Choose a source", [
+    showAlert("Scan receipt", "Choose a source", [
       { text: "Camera", onPress: () => pickAndScan("camera") },
       { text: "Photo library", onPress: () => pickAndScan("library") },
       { text: "Cancel", style: "cancel" },

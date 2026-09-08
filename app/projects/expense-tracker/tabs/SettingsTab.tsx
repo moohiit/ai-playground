@@ -8,6 +8,7 @@ import {
   SUPPORTED_CURRENCIES,
   currencySymbol,
 } from "../../../../modules/expense-tracker/currencies";
+import { showAlert, confirmDialog } from "../dialog";
 
 type Prefs = {
   baseCurrency: string;
@@ -78,7 +79,7 @@ export function SettingsTab() {
 
   async function deleteAccount() {
     if (
-      !confirm(
+      !await confirmDialog(
         "Permanently delete your account and all your data (personal expenses and groups you created)? This cannot be undone."
       )
     )
@@ -91,7 +92,7 @@ export function SettingsTab() {
       logout();
       window.location.href = "/login";
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to delete account");
+      showAlert(e instanceof Error ? e.message : "Failed to delete account");
       setDeleting(false);
     }
   }

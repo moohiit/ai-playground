@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "../../../../lib/authContext";
 import { formatDay, localISODate } from "../../../../lib/utils";
 import type { Summary } from "../types";
+import { showAlert } from "../dialog";
 
 
 
@@ -291,7 +292,7 @@ export function ExportPdfButton({ summary, groupId, groupName, base, filters }: 
       doc.save(fileName);
     } catch (err) {
       console.error("PDF export failed:", err);
-      alert("Failed to export PDF. Check console for details.");
+      showAlert("Failed to export PDF. Check console for details.");
     } finally {
       setExporting(false);
     }
