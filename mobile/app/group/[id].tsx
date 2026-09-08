@@ -549,7 +549,7 @@ export default function GroupDetailScreen() {
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        Alert.alert("Error", data.error ?? "Couldn't send the reminder");
+        Alert.alert("Error", data.error ?? `Couldn't send the reminder (HTTP ${res.status})`);
         return;
       }
       Alert.alert(
@@ -659,7 +659,7 @@ export default function GroupDetailScreen() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setLocalMuted(!next);
-        Alert.alert("Error", data.error ?? "Couldn't update notifications");
+        Alert.alert("Error", data.error ?? `Couldn't update notifications (HTTP ${res.status})`);
         return;
       }
       fetchAll();

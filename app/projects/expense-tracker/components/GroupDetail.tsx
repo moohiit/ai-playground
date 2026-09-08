@@ -552,7 +552,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error ?? "Couldn't send the reminder");
+        alert(data.error ?? `Couldn't send the reminder (HTTP ${res.status})`);
         return;
       }
       alert(
@@ -600,7 +600,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         applyMuted(!next);
-        alert(data.error ?? "Couldn't update notifications for this group");
+        alert(data.error ?? `Couldn't update notifications for this group (HTTP ${res.status})`);
         return;
       }
       fetchAll();
