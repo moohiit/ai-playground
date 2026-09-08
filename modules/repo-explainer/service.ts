@@ -1,4 +1,5 @@
 import { completeJSON } from "@/lib/llm";
+import { ApiError } from "@/lib/apiError";
 import {
   parseRepoUrl,
   geminiRepoSchema,
@@ -52,9 +53,14 @@ async function githubFetch(url: string): Promise<any> {
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) {
-    if (res.status === 403) throw new Error("GitHub API rate limit exceeded. Try again later.");
-    if (res.status === 404) throw new Error("Repository not found or is private.");
-    if (res.status === 422) throw new Error("Repository is too large or has no default branch.");
+    // GitHub uses 403 for the primary rate limit and 429 for secondary limits.
+    if (res.status === 403 || res.status === 429) {
+      throw new ApiError(503, "GitHub API rate limit reached. Please try again later.");
+    }
+    if (res.status === 404) throw new ApiError(404, "Repository not found or is private.");
+    if (res.status === 422) {
+      throw new ApiError(400, "Repository is too large or has no default branch.");
+    }
     throw new Error(`GitHub API error: ${res.status}`);
   }
   return res.json();
@@ -137,7 +143,15 @@ export async function analyzeRepo(repoUrl: string): Promise<{
   const raw = await completeJSON<unknown>(
     buildAnalyzePrompt(owner, repo, treeString, fileContents),
     geminiRepoSchema,
-    { system: SYSTEM_PROMPT, maxOutputTokens: 8192 }
+    {
+      system: SYSTEM_PROMPT,
+      maxOutputTokens: 8192,
+      // Big prompts get shed with 503s on the free tier, and each model has its
+      // own 20 requests/day quota. Fall back once, keeping total attempts well
+      // inside the route's 60 s maxDuration.
+      fallbackModels: ["gemini-2.5-flash"],
+      retryBudgetMs: 30_000,
+    }
   );
 
   const parsed = repoAnalysisSchema.safeParse(raw);
