@@ -258,6 +258,13 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-09-09 — **v1.11.0 — the app updates itself.**
+  Google Play in-app updates (expo-in-app-updates): on launch and on foreground the app asks
+  Play for a newer build and starts the flexible flow; below the backend minimum from
+  GET /app-version (MIN_SUPPORTED_MOBILE_VERSION in appVersion.ts) the update is immediate.
+  R8 now optimizes as well as shrinks (withR8Optimize plugin swaps in
+  proguard-android-optimize.txt). EAS submits to internal testing; promotion stays manual.
+
 - 2026-09-08 — **v1.10.0 — the group hears everything, and asks nicely.**
   Group pushes carry the reader's own share next to the total. An edit says what changed,
   from what and by whom (`describeExpenseChanges`), leading with the reader's share; a
