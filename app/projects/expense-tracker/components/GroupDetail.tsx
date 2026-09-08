@@ -30,6 +30,8 @@ type Member = {
   name: string;
   isActive: boolean;
   isGuest?: boolean;
+  // Per-member notification preference for this group.
+  muted?: boolean;
 };
 type Group = { _id: string; name: string; description: string; createdBy: string; members: Member[]; shareId?: string | null };
 type Balance = {
@@ -43,6 +45,9 @@ type Settlement = {
   from: { id: string; name: string };
   to: { id: string; name: string };
   amount: number;
+  // When the creditor last nudged the debtor about this transfer; null/absent
+  // if never. Reminders are rate-limited to one per 24h server-side.
+  remindedAt?: string | null;
 };
 type Expense = {
   _id: string;
@@ -531,6 +536,82 @@ export function GroupDetail({ groupId, onBack }: Props) {
     }
   }
 
+  const [remindingKey, setRemindingKey] = useState<string | null>(null);
+
+  async function handleRemind(s: Settlement) {
+    if (remindingKey) return;
+    setRemindingKey(`${s.from.id}→${s.to.id}`);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/remind`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ debtorId: s.from.id }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error ?? "Couldn't send the reminder");
+        return;
+      }
+      alert(
+        `Reminder sent — ${s.from.name} has been nudged to settle ${baseMoney(s.amount)}.`
+      );
+      // Refetch so the new remindedAt arrives and the row flips to "Reminded".
+      fetchAll();
+    } catch {
+      alert("Network error — reminder not sent.");
+    } finally {
+      setRemindingKey(null);
+    }
+  }
+
+  const muted = group?.members.find((m) => m.userId === user?.userId)?.muted ?? false;
+  const [muteBusy, setMuteBusy] = useState(false);
+
+  async function handleToggleMute() {
+    if (muteBusy || !group) return;
+    const next = !muted;
+    setMuteBusy(true);
+    // Optimistic flip on the local member row; reverted below if the server
+    // refuses, since a stale bell would misreport what notifications do.
+    const applyMuted = (value: boolean) =>
+      setGroup((g) =>
+        g
+          ? {
+              ...g,
+              members: g.members.map((m) =>
+                m.userId === user?.userId ? { ...m, muted: value } : m
+              ),
+            }
+          : g
+      );
+    applyMuted(next);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/mute`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ muted: next }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        applyMuted(!next);
+        alert(data.error ?? "Couldn't update notifications for this group");
+        return;
+      }
+      fetchAll();
+    } catch {
+      applyMuted(!next);
+      alert("Network error — notification setting not changed.");
+    } finally {
+      setMuteBusy(false);
+    }
+  }
+
   async function handleSettle() {
     if (
       !confirm(
@@ -619,6 +700,18 @@ export function GroupDetail({ groupId, onBack }: Props) {
             )}
           >
             {shareId ? "🔗 Shared" : "Share"}
+          </button>
+          <button
+            onClick={handleToggleMute}
+            disabled={muteBusy}
+            title={muted ? "Unmute notifications for this group" : "Mute notifications for this group"}
+            aria-label={muted ? "Unmute notifications for this group" : "Mute notifications for this group"}
+            className={cn(
+              "inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/40 px-2.5 py-2 transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50",
+              muted ? "text-zinc-500" : "text-zinc-200"
+            )}
+          >
+            {muted ? <BellOffIcon /> : <BellIcon />}
           </button>
           <button
             onClick={handleDeleteGroup}
@@ -712,6 +805,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
                 onSettle={handleSettle}
                 onSettlePayment={handleSettlePayment}
                 payingKey={payingKey}
+                onRemind={handleRemind}
+                remindingKey={remindingKey}
+                userId={user?.userId}
                 cur={baseCurrency}
               />
             )}
@@ -1101,6 +1197,9 @@ function SettleUpSection({
   onSettle,
   onSettlePayment,
   payingKey,
+  onRemind,
+  remindingKey,
+  userId,
   cur,
 }: {
   settlements: Settlement[];
@@ -1108,9 +1207,15 @@ function SettleUpSection({
   onSettle: () => void;
   onSettlePayment: (s: Settlement) => void;
   payingKey: string | null;
+  onRemind: (s: Settlement) => void;
+  remindingKey: string | null;
+  userId?: string;
   cur: string;
 }) {
   const money = (n: number) => formatMoney(n, cur);
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const recentlyReminded = (at?: string | null) =>
+    !!at && Date.now() - new Date(at).getTime() < DAY_MS;
   return (
     <section className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-b from-amber-500/10 to-amber-500/5 p-5 backdrop-blur-sm">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/70 to-transparent" />
@@ -1133,6 +1238,11 @@ function SettleUpSection({
       <div className="flex flex-col gap-2">
         {settlements.map((s, i) => {
           const rowKey = `${s.from.id}→${s.to.id}`;
+          // Only the creditor can nudge, and only a real account can be
+          // notified — guests have no inbox to nudge.
+          const canRemind =
+            !!userId && s.to.id === userId && !s.from.id.startsWith("guest:");
+          const reminded = recentlyReminded(s.remindedAt);
           return (
             <div
               key={rowKey}
@@ -1155,6 +1265,23 @@ function SettleUpSection({
               >
                 {payingKey === rowKey ? "…" : "Settle"}
               </button>
+              {canRemind && (
+                <button
+                  onClick={() => onRemind(s)}
+                  disabled={reminded || remindingKey !== null}
+                  title={
+                    reminded
+                      ? `${s.from.name} was reminded in the last 24 hours`
+                      : `Remind ${s.from.name} to settle up`
+                  }
+                  className={cn(
+                    "shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/20 disabled:opacity-50",
+                    reminded && "cursor-not-allowed"
+                  )}
+                >
+                  {remindingKey === rowKey ? "…" : reminded ? "Reminded" : "Remind"}
+                </button>
+              )}
             </div>
           );
         })}
@@ -1629,6 +1756,27 @@ function ReportIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
       <path d="M22 12A10 10 0 0 0 12 2v10z" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function BellOffIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      <path d="M18.63 13A17.89 17.89 0 0 1 18 8" />
+      <path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14" />
+      <path d="M18 8a6 6 0 0 0-9.33-5" />
+      <line x1="1" y1="1" x2="23" y2="23" />
     </svg>
   );
 }

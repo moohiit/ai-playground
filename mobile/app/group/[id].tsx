@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Line, Path } from "react-native-svg";
 import {
   Redirect,
   useFocusEffect,
@@ -50,6 +51,38 @@ function dominantCurrency(expenses: { currency?: string }[]): string {
     counts.set(c, (counts.get(c) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "INR";
+}
+
+// Outline bell / bell-off (Feather's paths). The app has no icon font, and
+// react-native-svg is already a dependency, so the two glyphs are drawn inline.
+function BellIcon({ off, color }: { off: boolean; color: string }) {
+  return (
+    <Svg
+      width={20}
+      height={20}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {off ? (
+        <>
+          <Path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          <Path d="M18.63 13A17.89 17.89 0 0 1 18 8" />
+          <Path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14" />
+          <Path d="M18 8a6 6 0 0 0-9.33-5" />
+          <Line x1={1} y1={1} x2={23} y2={23} />
+        </>
+      ) : (
+        <>
+          <Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <Path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </>
+      )}
+    </Svg>
+  );
 }
 
 export default function GroupDetailScreen() {
@@ -498,6 +531,39 @@ export default function GroupDetailScreen() {
     );
   }
 
+  // Nudge a debtor to pay up. Only offered to the creditor, and only for
+  // members with an account — a guest has nothing to be notified on.
+  const [remindingKey, setRemindingKey] = useState<string | null>(null);
+
+  async function sendReminder(s: Settlement) {
+    const rowKey = `${s.from.id}→${s.to.id}`;
+    setRemindingKey(rowKey);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/remind`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ debtorId: s.from.id }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        Alert.alert("Error", data.error ?? "Couldn't send the reminder");
+        return;
+      }
+      Alert.alert(
+        "Reminder sent",
+        `${s.from.name} has been nudged to settle ${baseMoney(s.amount)}.`
+      );
+      fetchAll();
+    } catch {
+      Alert.alert("Error", "Network error — reminder not sent.");
+    } finally {
+      setRemindingKey(null);
+    }
+  }
+
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameText, setRenameText] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -557,6 +623,54 @@ export default function GroupDetailScreen() {
     );
   }
 
+  // Per-member notification mute. The flag lives on the viewer's own member
+  // row; it is flipped locally first so the bell responds at once.
+  const muted =
+    group?.members.find((m) => m.userId === user?.userId)?.muted ?? false;
+  const [muting, setMuting] = useState(false);
+
+  function setLocalMuted(value: boolean) {
+    setGroup((g) =>
+      g
+        ? {
+            ...g,
+            members: g.members.map((m) =>
+              m.userId === user?.userId ? { ...m, muted: value } : m
+            ),
+          }
+        : g
+    );
+  }
+
+  async function toggleMute() {
+    if (muting) return;
+    const next = !muted;
+    setMuting(true);
+    setLocalMuted(next);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/mute`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ muted: next }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setLocalMuted(!next);
+        Alert.alert("Error", data.error ?? "Couldn't update notifications");
+        return;
+      }
+      fetchAll();
+    } catch {
+      setLocalMuted(!next);
+      Alert.alert("Error", "Network error — notifications not updated.");
+    } finally {
+      setMuting(false);
+    }
+  }
+
   if (!user) return <Redirect href="/login" />;
 
   return (
@@ -580,6 +694,18 @@ export default function GroupDetailScreen() {
           {user?.userId === group?.createdBy && (
             <Text className="text-xs text-zinc-500">✎</Text>
           )}
+        </Pressable>
+        <Pressable
+          onPress={toggleMute}
+          disabled={muting}
+          hitSlop={12}
+          className="mr-3"
+          accessibilityRole="button"
+          accessibilityLabel={muted ? "Unmute group notifications" : "Mute group notifications"}
+        >
+          {/* zinc-500 when muted, zinc-200 otherwise — hex because SVG props
+              take colours, not classes. */}
+          <BellIcon off={muted} color={muted ? "#71717a" : "#e4e4e7"} />
         </Pressable>
         <Pressable
           onPress={() =>
@@ -779,6 +905,14 @@ export default function GroupDetailScreen() {
                 <View className="gap-2">
                   {settlements.map((s) => {
                     const rowKey = `${s.from.id}→${s.to.id}`;
+                    // Only the person owed can nudge, and only someone with
+                    // an account can be nudged.
+                    const canRemind =
+                      s.to.id === user?.userId && !s.from.id.startsWith("guest:");
+                    const recentlyReminded =
+                      !!s.remindedAt &&
+                      Date.now() - new Date(s.remindedAt).getTime() < 24 * 60 * 60 * 1000;
+                    const remindDisabled = recentlyReminded || remindingKey !== null;
                     return (
                       <View
                         // A minimal-transfer plan never repeats a payer→payee pair.
@@ -795,6 +929,23 @@ export default function GroupDetailScreen() {
                         <Text className="ml-auto text-sm text-zinc-100">
                           {baseMoney(s.amount)}
                         </Text>
+                        {canRemind && (
+                          <Pressable
+                            onPress={() => sendReminder(s)}
+                            disabled={remindDisabled}
+                            className={`rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 ${
+                              remindDisabled ? "opacity-50" : ""
+                            }`}
+                          >
+                            <Text className="text-[11px] font-semibold text-amber-300">
+                              {remindingKey === rowKey
+                                ? "…"
+                                : recentlyReminded
+                                ? "Reminded"
+                                : "Remind"}
+                            </Text>
+                          </Pressable>
+                        )}
                         <Pressable
                           onPress={() => confirmSettlePayment(s)}
                           disabled={payingKey !== null}

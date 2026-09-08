@@ -99,6 +99,9 @@ export type Member = {
   email: string;
   isActive: boolean;
   isGuest?: boolean;
+  // Only ever set on the viewer's own row: they've silenced this group's
+  // notifications. Absent (= false) on rows written before muting existed.
+  muted?: boolean;
 };
 
 export type Group = {
@@ -125,6 +128,9 @@ export type Settlement = {
   from: { id: string; name: string };
   to: { id: string; name: string };
   amount: number;
+  // When the creditor last nudged this debtor; null/absent if never. The API
+  // refuses a second reminder inside 24 hours, so the client greys it out.
+  remindedAt?: string | null;
 };
 
 export type SettlementTransfer = {
