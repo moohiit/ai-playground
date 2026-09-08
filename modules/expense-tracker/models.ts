@@ -7,6 +7,9 @@ export type MemberDoc = {
   isActive: boolean;
   // Guest members have no account: a synthetic userId (`guest:...`) and no email.
   isGuest?: boolean;
+  // This member has switched off pushes about activity in this group. Direct
+  // messages to them (a personal "please settle", being removed) still land.
+  muted?: boolean;
 };
 
 export type GroupDoc = {
@@ -17,6 +20,9 @@ export type GroupDoc = {
   members: MemberDoc[];
   // Phase 4B: random token for a public read-only "who owes whom" link (null = off).
   shareId: string | null;
+  // When the daily job last suggested settling up; it waits 30 days before
+  // saying so again.
+  settleNudgedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -28,6 +34,7 @@ const memberSchema = new Schema<MemberDoc>(
     email: { type: String, default: "" },
     isActive: { type: Boolean, default: true },
     isGuest: { type: Boolean, default: false },
+    muted: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -39,6 +46,7 @@ const groupSchema = new Schema<GroupDoc>(
     createdBy: { type: String, required: true, index: true },
     members: { type: [memberSchema], default: [] },
     shareId: { type: String, default: null, index: true },
+    settleNudgedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -682,3 +690,38 @@ const groupSettlementSchema = new Schema<GroupSettlementDoc>(
 export const GroupSettlement: Model<GroupSettlementDoc> =
   (mongoose.models.GroupSettlement as Model<GroupSettlementDoc>) ||
   mongoose.model<GroupSettlementDoc>("GroupSettlement", groupSettlementSchema);
+
+// ── Debt reminders ──────────────────────────────────
+// One row per (group, debtor, creditor): when the creditor last pressed
+// "Remind", and when the daily job last nudged on its own. Both are rate
+// limits — a person can be asked once a day, the job asks once a week.
+export type DebtReminderDoc = {
+  _id: Types.ObjectId;
+  groupId: Types.ObjectId;
+  debtorId: string;
+  creditorId: string;
+  manualAt: Date | null;
+  autoAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const debtReminderSchema = new Schema<DebtReminderDoc>(
+  {
+    groupId: { type: Schema.Types.ObjectId, ref: "Group", required: true },
+    debtorId: { type: String, required: true },
+    creditorId: { type: String, required: true },
+    manualAt: { type: Date, default: null },
+    autoAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+
+debtReminderSchema.index(
+  { groupId: 1, debtorId: 1, creditorId: 1 },
+  { unique: true }
+);
+
+export const DebtReminder: Model<DebtReminderDoc> =
+  (mongoose.models.DebtReminder as Model<DebtReminderDoc>) ||
+  mongoose.model<DebtReminderDoc>("DebtReminder", debtReminderSchema);

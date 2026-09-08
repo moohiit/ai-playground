@@ -314,6 +314,8 @@ export async function notifyGroupExpense(opts: {
   currency: string;
   /** memberId -> their share of this expense, in `currency`. */
   sharesBase?: Record<string, number>;
+  /** Far above what this group usually spends — worth a second look. */
+  unusual?: boolean;
 }) {
   await notifyGroupMembers(
     opts.memberIds,
@@ -324,9 +326,11 @@ export async function notifyGroupExpense(opts: {
       title: `${opts.groupName} 🧾`,
       // The group total answers "how big was it"; their own share answers
       // "what does it cost me", which is the question they actually have.
-      body: share
-        ? `${opts.actorName} added "${opts.description}" — ${money}, your share ${share}`
-        : `${opts.actorName} added "${opts.description}" — ${money}`,
+      body:
+        (share
+          ? `${opts.actorName} added "${opts.description}" — ${money}, your share ${share}`
+          : `${opts.actorName} added "${opts.description}" — ${money}`) +
+        (opts.unusual ? " · well above this group's usual 👀" : ""),
     }),
     opts.sharesBase
   );
@@ -485,5 +489,133 @@ export async function notifyGroupExpenseRemoved(opts: {
       }`,
     }),
     opts.sharesBase
+  );
+}
+
+/**
+ * A creditor pressed "Remind". The debtor hears it even with the group muted:
+ * it is addressed to them, and the person asking expects it to land.
+ */
+export async function notifyDebtReminder(opts: {
+  debtorId: string;
+  creditorId: string;
+  creditorName: string;
+  groupName: string;
+  amountBase: number;
+  currency: string;
+}) {
+  await notifyGroupMembers(
+    [opts.debtorId],
+    opts.creditorId,
+    opts.currency,
+    opts.amountBase,
+    ({ money }) => ({
+      title: `${opts.groupName} 💸`,
+      body: `${opts.creditorName} is asking you to settle ${money} in ${opts.groupName}.`,
+    })
+  );
+}
+
+/**
+ * The daily job's nudge: one push per debtor per group, however many people
+ * they owe in it — a settle-up plan can route one person's debt to three
+ * creditors, and three pushes from one group in a morning reads as nagging.
+ */
+export async function notifyDebtNudge(opts: {
+  debtorId: string;
+  groupName: string;
+  currency: string;
+  daysQuiet: number;
+  creditors: { name: string; amount: number }[];
+}) {
+  const total = opts.creditors.reduce((sum, c) => sum + c.amount, 0);
+  await notifyGroupMembers(
+    [opts.debtorId],
+    "",
+    opts.currency,
+    total,
+    async ({ money, toTheirs }) => {
+      let owed: string;
+      if (opts.creditors.length === 1) {
+        owed = `You owe ${opts.creditors[0].name} ${money} in ${opts.groupName}`;
+      } else {
+        const parts = await Promise.all(
+          opts.creditors.map(async (c) => `${c.name} ${await toTheirs(c.amount)}`)
+        );
+        owed = `You owe ${money} across ${opts.creditors.length} people in ${opts.groupName} (${parts.join(", ")})`;
+      }
+      return {
+        title: `${opts.groupName} 💸`,
+        body: `${owed} — nothing has moved for ${opts.daysQuiet} days.`,
+      };
+    }
+  );
+}
+
+/** Someone joined, was added, or was removed. The wording is per recipient
+ *  so an inviter can hear "accepted your invite" while others hear "joined". */
+export async function notifyGroupMemberEvent(opts: {
+  memberIds: string[];
+  actorId: string;
+  groupName: string;
+  body: (recipientId: string) => string;
+}) {
+  await notifyGroupMembers(opts.memberIds, opts.actorId, "", null, ({ recipientId }) => ({
+    title: `${opts.groupName} 👥`,
+    body: opts.body(recipientId),
+  }));
+}
+
+/** Monday morning: what the group spent last week, and where the reader stands. */
+export async function notifyGroupDigest(opts: {
+  recipientId: string;
+  groupName: string;
+  count: number;
+  totalBase: number;
+  shareBase: number;
+  /** The reader's current net position in the group: + owed, − owing. */
+  netBase: number;
+  currency: string;
+}) {
+  await notifyGroupMembers(
+    [opts.recipientId],
+    "",
+    opts.currency,
+    opts.totalBase,
+    async ({ money, share, toTheirs }) => {
+      const standing =
+        opts.netBase > 0.01
+          ? `You're owed ${await toTheirs(opts.netBase)}.`
+          : opts.netBase < -0.01
+          ? `You owe ${await toTheirs(-opts.netBase)}.`
+          : "You're all square.";
+      return {
+        title: `${opts.groupName} 📊`,
+        body: `Last week: ${opts.count} ${opts.count === 1 ? "expense" : "expenses"}, ${money} total${
+          share ? `, your share ${share}` : ""
+        }. ${standing}`,
+      };
+    },
+    { [opts.recipientId]: opts.shareBase }
+  );
+}
+
+/** A month of silence with money still outstanding: suggest closing the books. */
+export async function notifySettleUpSuggestion(opts: {
+  memberIds: string[];
+  groupName: string;
+  outstandingBase: number;
+  currency: string;
+  daysQuiet: number;
+}) {
+  await notifyGroupMembers(
+    opts.memberIds,
+    "",
+    opts.currency,
+    opts.outstandingBase,
+    ({ money }) => ({
+      title: `${opts.groupName} 🤝`,
+      body: `${opts.groupName} has been quiet for ${opts.daysQuiet} days with ${money} still unsettled — time to settle up?`,
+    })
   );
 }

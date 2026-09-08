@@ -18,7 +18,9 @@ import {
   Todo,
   GroupInvite,
   GroupSettlement,
+  DebtReminder,
   type ExpenseDoc,
+  type MemberDoc,
   type GroupDoc,
   type RecurringRuleDoc,
 } from "./models";
@@ -33,6 +35,11 @@ import {
   notifyGroupReopened,
   notifyGroupExpenseEdited,
   notifyGroupExpenseRemoved,
+  notifyDebtReminder,
+  notifyDebtNudge,
+  notifyGroupMemberEvent,
+  notifyGroupDigest,
+  notifySettleUpSuggestion,
   type ExpenseChange,
 } from "./push";
 import { evaluateBudget } from "./budget";
@@ -74,6 +81,36 @@ function activeMemberFilter(userId: string) {
  * crept in). Snap both ends to whole UTC days so the range means the days the
  * user picked, wherever they are.
  */
+const DAY_MS = 86_400_000;
+
+/**
+ * Who to push about activity in a group: active, has an account, and has not
+ * muted the group. Every "the group hears about it" call site goes through
+ * this, so the mute is honoured in one place.
+ */
+function notifiableMembers(group: {
+  members: readonly Pick<MemberDoc, "userId" | "isActive" | "muted">[];
+}): string[] {
+  return group.members
+    .filter(
+      (m) => m.isActive !== false && !m.muted && !m.userId.startsWith("guest:")
+    )
+    .map((m) => m.userId);
+}
+
+/**
+ * A group as one member should see it: every row, but only their own `muted`
+ * flag. Who has silenced a group is nobody else's business.
+ */
+function forViewer<G extends { members: MemberDoc[] }>(group: G, viewerId: string): G {
+  const members = group.members.map((m) => {
+    if (m.userId === viewerId) return m;
+    const { muted: _muted, ...rest } = m;
+    return rest as MemberDoc;
+  });
+  return { ...group, members };
+}
+
 function dayStart(iso: string): Date {
   const d = new Date(iso);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -296,7 +333,7 @@ export async function createGroup(input: CreateGroupInput, auth: JWTPayload) {
     )
   );
 
-  return { ...group.toObject(), invitedCount: invites.length };
+  return { ...forViewer(group.toObject(), auth.userId), invitedCount: invites.length };
 }
 
 export async function listGroups(auth: JWTPayload) {
@@ -319,7 +356,7 @@ export async function listGroups(auth: JWTPayload) {
     .map((g) => {
       const last = lastById.get(g._id.toString()) ?? 0;
       return {
-        ...g,
+        ...forViewer(g, auth.userId),
         // null for a group with no expenses yet — clients show "no expenses yet".
         lastExpenseAt: last ? new Date(last).toISOString() : null,
       };
@@ -400,7 +437,7 @@ export async function getGroup(id: string, auth: JWTPayload) {
   if (!isActiveMember(group, auth.userId)) {
     throw new Error("You are not a member of this group");
   }
-  return group;
+  return forViewer(group, auth.userId);
 }
 
 export async function updateGroup(
@@ -425,7 +462,7 @@ export async function updateGroup(
       { $set: { groupName: group.name } }
     );
   }
-  return group.toObject();
+  return forViewer(group.toObject(), auth.userId);
 }
 
 // Adding a registered user now sends an INVITE they must accept (in-app +
@@ -541,13 +578,49 @@ export async function respondToInvite(
       });
     }
     await group.save();
-    return { status: "accepted" as const, group: group.toObject() };
+
+    // The group hears who arrived; whoever invited them hears it landed.
+    try {
+      const joined = user?.name ?? auth.name;
+      const inviterId = invite.invitedBy?.id;
+      await notifyGroupMemberEvent({
+        memberIds: notifiableMembers(group),
+        actorId: auth.userId,
+        groupName: group.name,
+        body: (recipientId) =>
+          recipientId === inviterId
+            ? `${joined} accepted your invite to ${group.name}`
+            : `${joined} joined ${group.name}`,
+      });
+    } catch {
+      /* notifications are optional */
+    }
+    return { status: "accepted" as const, group: forViewer(group.toObject(), auth.userId) };
   } catch (err) {
     await GroupInvite.updateOne(
       { _id: invite._id, status: "accepted" },
       { $set: { status: "pending", respondedAt: null } }
     ).catch(() => undefined);
     throw err;
+  }
+}
+
+/** "Mohit added Cal as a guest" — best effort, after the save. */
+async function announceGuest(
+  group: { name: string; members: MemberDoc[] },
+  guestName: string,
+  auth: JWTPayload
+) {
+  try {
+    const actor = await User.findById(auth.userId).select("name").lean();
+    await notifyGroupMemberEvent({
+      memberIds: notifiableMembers(group),
+      actorId: auth.userId,
+      groupName: group.name,
+      body: () => `${actor?.name ?? auth.name} added ${guestName} as a guest`,
+    });
+  } catch {
+    /* notifications are optional */
   }
 }
 
@@ -579,7 +652,8 @@ export async function addGuestMember(
     }
     sameName.isActive = true;
     await group.save();
-    return group.toObject();
+    await announceGuest(group, trimmed, auth);
+    return forViewer(group.toObject(), auth.userId);
   }
 
   // A registered member with this name is a different person from a guest of
@@ -603,7 +677,8 @@ export async function addGuestMember(
     isGuest: true,
   });
   await group.save();
-  return group.toObject();
+  await announceGuest(group, trimmed, auth);
+  return forViewer(group.toObject(), auth.userId);
 }
 
 export async function removeMember(
@@ -620,6 +695,10 @@ export async function removeMember(
   if (memberId === group.createdBy) {
     throw new Error("The group creator can't be removed — delete the group instead");
   }
+  const target = group.members.find((m) => m.userId === memberId);
+  if (!target) throw new Error("Member not found in this group");
+  const removedName = target.name;
+  const removedIsGuest = Boolean(target.isGuest);
 
   // If the member appears in any of this group's expenses (as payer or in a
   // split), hard-removing them would orphan that history: their name would
@@ -645,7 +724,31 @@ export async function removeMember(
     ) as typeof group.members;
   }
   await group.save();
-  return group.toObject();
+
+  try {
+    const actor = await User.findById(auth.userId).select("name").lean();
+    const actorName = actor?.name ?? auth.name;
+    await Promise.all([
+      notifyGroupMemberEvent({
+        memberIds: notifiableMembers(group).filter((id) => id !== memberId),
+        actorId: auth.userId,
+        groupName: group.name,
+        body: () => `${actorName} removed ${removedName} from ${group.name}`,
+      }),
+      // Told directly, muted or not: being removed is about them, not the group.
+      removedIsGuest
+        ? Promise.resolve()
+        : notifyGroupMemberEvent({
+            memberIds: [memberId],
+            actorId: auth.userId,
+            groupName: group.name,
+            body: () => `${actorName} removed you from ${group.name}`,
+          }),
+    ]);
+  } catch {
+    /* notifications are optional */
+  }
+  return forViewer(group.toObject(), auth.userId);
 }
 
 export async function deleteGroup(id: string, auth: JWTPayload) {
@@ -658,6 +761,7 @@ export async function deleteGroup(id: string, auth: JWTPayload) {
   await Expense.deleteMany({ groupId: id });
   await GroupInvite.deleteMany({ groupId: id });
   await GroupSettlement.deleteMany({ groupId: id });
+  await DebtReminder.deleteMany({ groupId: id });
   await Group.findByIdAndDelete(id);
 }
 
@@ -887,8 +991,26 @@ export async function createExpense(
       // Whoever ADDED it, not whoever paid: Mohit logging a bill Rahul paid
       // should read "Mohit added". The JWT copy of a name can be stale.
       const actor = await User.findById(auth.userId).select("name").lean();
+      // Three times the group's recent median, with enough history to have a
+      // median at all: an extra zero, or a genuinely big spend, either way
+      // worth a second look before anyone reconciles against it.
+      let unusual = false;
+      const prior = await Expense.find({
+        groupId: group._id,
+        type: "group",
+        isSettlement: { $ne: true },
+        _id: { $ne: expense._id },
+        createdAt: { $gte: new Date(Date.now() - 90 * DAY_MS) },
+      })
+        .select("amount amountBase")
+        .lean();
+      if (prior.length >= 5) {
+        const sorted = prior.map((e) => e.amountBase ?? e.amount).sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+        unusual = median > 0 && (created.amountBase ?? created.amount) >= 3 * median;
+      }
       await notifyGroupExpense({
-        memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+        memberIds: notifiableMembers(group),
         actorId: auth.userId,
         actorName: actor?.name ?? auth.name,
         groupName: group.name,
@@ -896,6 +1018,7 @@ export async function createExpense(
         amountBase: created.amountBase ?? created.amount,
         currency: actorBase,
         sharesBase: sharesInBase(created),
+        unusual,
       });
     } catch {
       /* notifications are optional */
@@ -1296,8 +1419,7 @@ async function notifyExpenseEdit(
       User.findById(auth.userId).select("name").lean(),
     ]);
     const actorName = actor?.name ?? auth.name;
-    const activeIds = (g: { members: { isActive: boolean; userId: string }[] }) =>
-      g.members.filter((m) => m.isActive).map((m) => m.userId);
+    const activeIds = notifiableMembers;
 
     if (beforeGroupId && beforeGroupId === afterGroupId) {
       const group = await Group.findById(afterGroupId).lean();
@@ -1389,7 +1511,7 @@ export async function deleteExpense(id: string, auth: JWTPayload) {
         const ownerBase = await getBaseCurrency(removed.createdBy);
         const actor = await User.findById(auth.userId).select("name").lean();
         await notifyGroupExpenseRemoved({
-          memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+          memberIds: notifiableMembers(group),
           actorId: auth.userId,
           actorName: actor?.name ?? auth.name,
           groupName: group.name,
@@ -1757,7 +1879,10 @@ export async function getSummary(
 export async function getGroupBalances(
   groupId: string,
   auth: JWTPayload
-): Promise<{ balances: MemberBalance[]; settlements: Settlement[] }> {
+): Promise<{
+  balances: MemberBalance[];
+  settlements: (Settlement & { remindedAt?: string | null })[];
+}> {
   await connectDB();
 
   const group = await Group.findById(groupId).lean();
@@ -1772,7 +1897,20 @@ export async function getGroupBalances(
     $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
   }).lean();
   const balances = calculateBalances(expenses as ExpenseDoc[]);
-  const settlements = calculateSettlements(balances);
+  const plan = calculateSettlements(balances);
+
+  // When the viewer is owed, say when they last pressed "Remind" on each
+  // debtor, so the client can show "Reminded" instead of offering it again.
+  const reminders = await DebtReminder.find({
+    groupId: oid,
+    creditorId: auth.userId,
+  }).lean();
+  const manualByDebtor = new Map(reminders.map((r) => [r.debtorId, r.manualAt]));
+  const settlements = plan.map((s) =>
+    s.to.id === auth.userId
+      ? { ...s, remindedAt: manualByDebtor.get(s.from.id)?.toISOString() ?? null }
+      : s
+  );
 
   return { balances, settlements };
 }
@@ -2014,7 +2152,7 @@ export async function recordSettlementPayment(
   // Tell the group someone paid someone back — best effort.
   try {
     await notifyGroupPayment({
-      memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+      memberIds: notifiableMembers(group),
       actorId: auth.userId,
       fromName: from.name,
       toName: to.name,
@@ -2128,7 +2266,7 @@ async function closeActiveWindow(
     if (full) {
       const actor = await User.findById(auth.userId).select("name").lean();
       await notifyGroupSettled({
-        memberIds: full.members.filter((m) => m.isActive).map((m) => m.userId),
+        memberIds: notifiableMembers(full),
         actorId: auth.userId,
         actorName: actor?.name ?? auth.name,
         groupName: full.name,
@@ -2273,7 +2411,7 @@ export async function reopenSettlement(groupId: string, auth: JWTPayload) {
   try {
     const actor = await User.findById(auth.userId).select("name").lean();
     await notifyGroupReopened({
-      memberIds: group.members.filter((m) => m.isActive).map((m) => m.userId),
+      memberIds: notifiableMembers(group),
       actorId: auth.userId,
       actorName: actor?.name ?? auth.name,
       groupName: group.name,
@@ -3776,4 +3914,293 @@ export async function removeTodo(id: string, auth: JWTPayload) {
   });
   if (res.deletedCount === 0) throw new Error("To-do not found");
   return { deleted: true };
+}
+
+// ── Group notification controls ─────────────────────
+
+/** Switch pushes about this group's activity on or off for the caller. */
+export async function setGroupMuted(
+  groupId: string,
+  muted: boolean,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const group = await Group.findById(groupId).lean();
+  if (!group || !isActiveMember(group, auth.userId)) {
+    throw new Error("Group not found or access denied");
+  }
+  await Group.updateOne(
+    { _id: group._id, "members.userId": auth.userId },
+    { $set: { "members.$.muted": muted } }
+  );
+  return { muted };
+}
+
+/**
+ * "Remind": the caller, who is owed, asks one debtor to settle. Only a debt
+ * the current plan actually contains can be reminded, and only once a day
+ * per debtor — the button is a nudge, not a channel for pestering.
+ */
+export async function remindDebt(
+  groupId: string,
+  debtorId: string,
+  auth: JWTPayload
+) {
+  await connectDB();
+  const group = await Group.findById(groupId).lean();
+  if (!group || !isActiveMember(group, auth.userId)) {
+    throw new Error("Group not found or access denied");
+  }
+  if (debtorId.startsWith("guest:")) {
+    throw new Error("Guests have no account to notify");
+  }
+  if (!isActiveMember(group, debtorId)) {
+    throw new Error("Member not found in this group");
+  }
+
+  const { settlements } = await getGroupBalances(groupId, auth);
+  const row = settlements.find(
+    (t) => t.from.id === debtorId && t.to.id === auth.userId
+  );
+  if (!row) throw new Error("Nothing outstanding from them to you");
+
+  const recent = await DebtReminder.findOne({
+    groupId: group._id,
+    debtorId,
+    creditorId: auth.userId,
+    manualAt: { $gte: new Date(Date.now() - DAY_MS) },
+  }).lean();
+  if (recent) throw new Error("Already reminded in the last 24 hours");
+
+  // Transfers are in the creator's base currency (calculateBalances works on
+  // amountBase), so that is what the amount is converted from.
+  const [currency, me] = await Promise.all([
+    getBaseCurrency(group.createdBy),
+    User.findById(auth.userId).select("name").lean(),
+  ]);
+  await notifyDebtReminder({
+    debtorId,
+    creditorId: auth.userId,
+    creditorName: me?.name ?? auth.name,
+    groupName: group.name,
+    amountBase: row.amount,
+    currency,
+  });
+
+  const sentAt = new Date();
+  await DebtReminder.updateOne(
+    { groupId: group._id, debtorId, creditorId: auth.userId },
+    { $set: { manualAt: sentAt } },
+    { upsert: true }
+  );
+  return { ok: true as const, remindedAt: sentAt.toISOString() };
+}
+
+// ── Daily group jobs (cron) ─────────────────────────
+
+/**
+ * Runs once a day from the cron route. Three nudges, each rate-limited so a
+ * dormant group is not pestered:
+ *  - Monday digest: last week's activity per group, with the reader's share
+ *    and where they stand.
+ *  - Debt nudge: after 7 quiet days each debtor hears what they owe — one
+ *    push per group listing everyone they owe in it — at most once a week
+ *    per creditor (a person's own "Remind" counts too).
+ *  - Settle-up suggestion: after 30 quiet days with money outstanding, the
+ *    whole group hears it once, then not for another 30 days.
+ * "Quiet" is measured from the newest unsettled row, payments included, so
+ * any movement resets the clock. Muted members hear none of these.
+ */
+export type PlannedPush = {
+  kind: "digest" | "nudge" | "settleUp";
+  group: string;
+  to: string;
+  amount?: number;
+  days?: number;
+};
+
+export async function runDailyGroupJobs(
+  now = new Date(),
+  opts: { dryRun?: boolean } = {}
+) {
+  await connectDB();
+  // Dry run: say what would go out and touch nothing — the rules can be
+  // checked against real data without a single push leaving.
+  const dry = opts.dryRun === true;
+  const planned: PlannedPush[] = [];
+  const unsettled = {
+    $or: [{ settledAt: null }, { settledAt: { $exists: false } }],
+  };
+  const open = await Expense.aggregate<{
+    _id: mongoose.Types.ObjectId;
+    lastAt: Date;
+  }>([
+    { $match: { type: "group", groupId: { $ne: null }, ...unsettled } },
+    { $group: { _id: "$groupId", lastAt: { $max: "$createdAt" } } },
+  ]);
+  const lastById = new Map(open.map((r) => [r._id.toString(), r.lastAt]));
+
+  const weekAgo = new Date(now.getTime() - 7 * DAY_MS);
+  const digestDay = now.getUTCDay() === 1;
+  const activeThisWeek = new Set<string>(
+    digestDay
+      ? (
+          await Expense.distinct("groupId", {
+            type: "group",
+            isSettlement: { $ne: true },
+            createdAt: { $gte: weekAgo },
+          })
+        )
+          .filter(Boolean)
+          .map((id) => String(id))
+      : []
+  );
+
+  const ids = new Set<string>([...lastById.keys(), ...activeThisWeek]);
+  const groups = await Group.find({
+    _id: { $in: Array.from(ids).map((id) => new mongoose.Types.ObjectId(id)) },
+  }).lean();
+
+  const done = { digests: 0, nudges: 0, settleUps: 0 };
+  for (const group of groups) {
+    try {
+      const gid = group._id.toString();
+      const recipients = notifiableMembers(group);
+      if (recipients.length === 0) continue;
+
+      const currency = await getBaseCurrency(group.createdBy);
+      const openRows = await Expense.find({
+        groupId: group._id,
+        type: "group",
+        ...unsettled,
+      }).lean();
+      const balances = calculateBalances(openRows as ExpenseDoc[]);
+      const settlements = calculateSettlements(balances);
+
+      if (digestDay && activeThisWeek.has(gid)) {
+        const week = await Expense.find({
+          groupId: group._id,
+          type: "group",
+          isSettlement: { $ne: true },
+          createdAt: { $gte: weekAgo },
+        }).lean();
+        const total = week.reduce((sum, e) => sum + (e.amountBase ?? e.amount), 0);
+        const shares: Record<string, number> = {};
+        for (const e of week) {
+          for (const [id, v] of Object.entries(sharesInBase(e))) {
+            shares[id] = (shares[id] ?? 0) + v;
+          }
+        }
+        if (dry) {
+          for (const to of recipients) {
+            planned.push({ kind: "digest", group: group.name, to, amount: shares[to] ?? 0 });
+          }
+        } else {
+          await Promise.all(
+            recipients.map((recipientId) =>
+              notifyGroupDigest({
+                recipientId,
+                groupName: group.name,
+                count: week.length,
+                totalBase: total,
+                shareBase: shares[recipientId] ?? 0,
+                netBase:
+                  balances.find((b) => b.memberId === recipientId)?.netBalance ?? 0,
+                currency,
+              })
+            )
+          );
+        }
+        done.digests += 1;
+      }
+
+      if (settlements.length === 0) continue;
+      const lastAt = lastById.get(gid);
+      if (!lastAt) continue;
+      const quietDays = Math.floor(
+        (now.getTime() - new Date(lastAt).getTime()) / DAY_MS
+      );
+      if (quietDays < 7) continue;
+
+      const lastSuggested = group.settleNudgedAt
+        ? new Date(group.settleNudgedAt).getTime()
+        : 0;
+      if (quietDays >= 30 && now.getTime() - lastSuggested >= 30 * DAY_MS) {
+        const outstanding = settlements.reduce((sum, t) => sum + t.amount, 0);
+        if (dry) {
+          for (const to of recipients) {
+            planned.push({ kind: "settleUp", group: group.name, to, amount: outstanding, days: quietDays });
+          }
+        } else {
+          await notifySettleUpSuggestion({
+            memberIds: recipients,
+            groupName: group.name,
+            outstandingBase: outstanding,
+            currency,
+            daysQuiet: quietDays,
+          });
+          await Group.updateOne({ _id: group._id }, { $set: { settleNudgedAt: now } });
+          // The suggestion already covers every debt in the group; hold the
+          // individual nudges for a week rather than doubling up.
+          await Promise.all(
+            settlements.map((t) =>
+              DebtReminder.updateOne(
+                { groupId: group._id, debtorId: t.from.id, creditorId: t.to.id },
+                { $set: { autoAt: now } },
+                { upsert: true }
+              )
+            )
+          );
+        }
+        done.settleUps += 1;
+        continue;
+      }
+
+      // Collect each debtor's still-unreminded debts first, then send one
+      // push per debtor that names everyone they owe.
+      const weekAgoMs = now.getTime() - 7 * DAY_MS;
+      const byDebtor = new Map<string, typeof settlements>();
+      for (const t of settlements) {
+        if (!recipients.includes(t.from.id)) continue;
+        const prior = await DebtReminder.findOne({
+          groupId: group._id,
+          debtorId: t.from.id,
+          creditorId: t.to.id,
+        }).lean();
+        const lastSent = Math.max(
+          prior?.manualAt ? new Date(prior.manualAt).getTime() : 0,
+          prior?.autoAt ? new Date(prior.autoAt).getTime() : 0
+        );
+        if (lastSent >= weekAgoMs) continue;
+        byDebtor.set(t.from.id, [...(byDebtor.get(t.from.id) ?? []), t]);
+      }
+      for (const [debtorId, owed] of byDebtor) {
+        const total = owed.reduce((sum, t) => sum + t.amount, 0);
+        if (dry) {
+          planned.push({ kind: "nudge", group: group.name, to: debtorId, amount: total, days: quietDays });
+        } else {
+          await notifyDebtNudge({
+            debtorId,
+            groupName: group.name,
+            currency,
+            daysQuiet: quietDays,
+            creditors: owed.map((t) => ({ name: t.to.name, amount: t.amount })),
+          });
+          await Promise.all(
+            owed.map((t) =>
+              DebtReminder.updateOne(
+                { groupId: group._id, debtorId, creditorId: t.to.id },
+                { $set: { autoAt: now } },
+                { upsert: true }
+              )
+            )
+          );
+        }
+        done.nudges += 1;
+      }
+    } catch (err) {
+      console.error("[group-jobs]", group._id.toString(), err);
+    }
+  }
+  return { ...done, planned };
 }

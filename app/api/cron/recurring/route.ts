@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
-import { runDueRecurring } from "@/modules/expense-tracker/service";
+import { runDueRecurring, runDailyGroupJobs } from "@/modules/expense-tracker/service";
 import { connectDB } from "@/lib/db";
 import { RecurringRule } from "@/modules/expense-tracker/models";
 import { getUserPushConfig, notifyBillsDue } from "@/modules/expense-tracker/push";
@@ -62,7 +62,17 @@ export async function GET(req: Request) {
       console.error("[cron/recurring] push notifications failed", err);
     }
 
-    return NextResponse.json({ ok: true, ...result });
+    // Group nudges ride the same daily tick: Monday digest, week-old debts,
+    // month-old unsettled groups. Isolated so a failure here never masks the
+    // recurring run above.
+    let groupJobs: Awaited<ReturnType<typeof runDailyGroupJobs>> | null = null;
+    try {
+      groupJobs = await runDailyGroupJobs(now);
+    } catch (err) {
+      console.error("[cron/recurring] group jobs failed", err);
+    }
+
+    return NextResponse.json({ ok: true, ...result, groupJobs });
   } catch (err) {
     console.error("[cron/recurring]", err);
     return NextResponse.json({ error: "Cron run failed" }, { status: 500 });

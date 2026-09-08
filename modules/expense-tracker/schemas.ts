@@ -666,3 +666,9 @@ export const settlePaymentSchema = z
   .strict();
 
 export type SettlePaymentInput = z.infer<typeof settlePaymentSchema>;
+
+export const muteGroupSchema = z.object({ muted: z.boolean() }).strict();
+
+export const remindDebtSchema = z
+  .object({ debtorId: z.string().min(1, "debtorId is required") })
+  .strict();
