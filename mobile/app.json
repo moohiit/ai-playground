@@ -57,7 +57,8 @@
             "enableShrinkResourcesInReleaseBuilds": true
           }
         }
-      ]
+      ],
+      "./plugins/withR8Optimize"
     ],
     "experiments": {
       "typedRoutes": true
