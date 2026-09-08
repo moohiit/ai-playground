@@ -37,6 +37,12 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./expense-tracker-498305-f2a598e1c5a0.json",
+        "track": "production",
+        "releaseStatus": "draft"
+      }
+    }
   }
 }

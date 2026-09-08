@@ -258,6 +258,25 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-09-08 — **v1.10.0 — the group hears everything, and asks nicely.**
+  Group pushes carry the reader's own share next to the total. An edit says what changed,
+  from what and by whom (`describeExpenseChanges`), leading with the reader's share; a
+  deletion, or a move out of the group, says what share the member no longer carries.
+  `POST /groups/:id/remind` lets a creditor nudge one debtor, once a day, for a debt in the
+  current plan; `remindedAt` on `GET /reports/balances/:groupId` rows greys the button.
+  `PUT /groups/:id/mute` silences a group per member (`members[].muted`, honoured by every
+  group push through `notifiableMembers`; only the viewer's own flag leaves the server).
+  Member events push: joined, accepted your invite, removed you, removed X, added a guest.
+  An add at three times the group's 90-day median is flagged as well above the usual.
+  `runDailyGroupJobs` on the daily cron: Monday digest with share and standing, a 7-day
+  debt nudge (one push per debtor per group, weekly at most), a 30-day settle-up
+  suggestion (monthly at most), with a `dryRun` mode that reports without sending.
+
+  Clients: Remind button and mute bell on both group screens; every system alert replaced
+  by in-app dialogs (mobile `showAlert` + `AppDialog`, web `showAlert`/`confirmDialog` +
+  `DialogHost`). Android: R8 with resource shrinking, orientation unlocked, edge-to-edge
+  as SDK 54 enforces.
+
 - 2026-08-21 — **v1.9.0 — unequal splits, cross-group balances, and an audit sweep.**
   Group expenses can be divided by shares, exact amounts, percentages, or per receipt
   line (`splitMode` + `splitValues` on `Expense`; `items[].assignedTo` drives the
