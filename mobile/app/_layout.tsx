@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { AuthProvider, useAuth } from "../lib/auth";
 import { AppDialog } from "../components/AppDialog";
+import { useInAppUpdates } from "../lib/inAppUpdates";
 import { setupNotificationHandler, registerPushToken } from "../lib/push";
 
 // Initialize notification handler before any screen renders
@@ -48,12 +49,19 @@ function PushSetup() {
   return null;
 }
 
+// Asks Play whether a newer build is live; see lib/inAppUpdates.ts.
+function UpdateCheck() {
+  useInAppUpdates();
+  return null;
+}
+
 export default function RootLayout() {
   return (
     <KeyboardProvider>
       <AuthProvider>
         <PushSetup />
         <AppDialog />
+        <UpdateCheck />
         <StatusBar style="light" />
         <Stack
           screenOptions={{
