@@ -258,6 +258,12 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-09-11 — **v1.12.0 — links open the app.** Android app links for aiplayground.mohitpatel.org:
+  share links (/share/<id>) and the web app (/projects/expense-tracker) open in Splitzy when it
+  is installed, the browser otherwise. Domain proof at public/.well-known/assetlinks.json (Play
+  app-signing certificate, verified by Google), android.intentFilters with autoVerify,
+  +native-intent.ts mapping URLs to app routes, and a read-only share/[shareId] screen.
+
 - 2026-09-11 — **v1.11.1 — hotfix: login works again.** Build 15 shipped with R8 optimization
   and every SecureStore call failed converting its options record (NullPointerException in the
   Kotlin record converter), so tokens could neither be read nor written and everyone landed on
