@@ -10,7 +10,8 @@
  * Play itself decides whether an update exists; this only decides how hard
  * to ask.
  */
-export const MIN_SUPPORTED_MOBILE_VERSION = "1.9.0";
+// 1.11.0 (build 15) cannot read or write SecureStore; it must not stay installed.
+export const MIN_SUPPORTED_MOBILE_VERSION = "1.11.1";
 
 /** Numeric compare of dotted versions: negative if a < b, 0 if equal. */
 export function compareVersions(a: string, b: string): number {
