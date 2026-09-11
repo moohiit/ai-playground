@@ -258,6 +258,12 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-09-11 — **v1.11.1 — hotfix: login works again.** Build 15 shipped with R8 optimization
+  and every SecureStore call failed converting its options record (NullPointerException in the
+  Kotlin record converter), so tokens could neither be read nor written and everyone landed on
+  the login screen. R8 is off again, as in 1.9.0; it returns only after a fresh-install login is
+  verified on a preview build with the right keep rules.
+
 - 2026-09-09 — **v1.11.0 — the app updates itself.**
   Google Play in-app updates (expo-in-app-updates): on launch and on foreground the app asks
   Play for a newer build and starts the flexible flow; below the backend minimum from

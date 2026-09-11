@@ -3,7 +3,7 @@
     "name": "Splitzy AI",
     "slug": "expense-tracker",
     "scheme": "expensetracker",
-    "version": "1.11.0",
+    "version": "1.11.1",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -53,12 +53,11 @@
         "expo-build-properties",
         {
           "android": {
-            "enableMinifyInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableMinifyInReleaseBuilds": false,
+            "enableShrinkResourcesInReleaseBuilds": false
           }
         }
-      ],
-      "./plugins/withR8Optimize"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
