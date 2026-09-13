@@ -763,7 +763,7 @@ export function GroupDetail({ groupId, onBack }: Props) {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={cn(
-              "relative flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all sm:flex-none",
+              "relative flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-medium transition-all sm:gap-2 sm:px-4 sm:flex-none",
               tab === t.key
                 ? "bg-gradient-to-br from-brand-600 to-brand-500 text-white shadow-lg shadow-brand-500/30"
                 : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
@@ -885,14 +885,14 @@ export function GroupDetail({ groupId, onBack }: Props) {
             )}
 
             <section className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                 <h3 className="text-sm font-semibold text-zinc-100">
                   {pair ? "Shared expenses" : "Active Expenses"}{" "}
                   <span className="ml-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
                     {pair ? visibleExpenses.length : expenseTotal}
                   </span>
                 </h3>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   {/* Settling is otherwise only reachable from the Settle Up
                       panel, which is hidden once every balance is square. */}
                   {settlements.length === 0 && expenses.length > 0 && (
@@ -1077,7 +1077,7 @@ function MembersSection({
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-brand-500/30 to-fuchsia-500/20 text-[10px] font-semibold text-zinc-200">
                 {m.name.charAt(0).toUpperCase()}
               </span>
-              <span className="text-sm text-zinc-200">{m.name}</span>
+              <span className="min-w-0 break-words text-sm text-zinc-200">{m.name}</span>
               {m.isGuest && (
                 <span className="rounded-full border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-zinc-400">
                   guest
@@ -1091,7 +1091,7 @@ function MembersSection({
               {bal && (
                 <span
                   className={cn(
-                    "font-mono text-xs tabular-nums",
+                    "ml-auto whitespace-nowrap font-mono text-xs tabular-nums",
                     bal.netBalance > 0.01
                       ? "text-emerald-400"
                       : bal.netBalance < -0.01
@@ -1247,22 +1247,26 @@ function SettleUpSection({
           return (
             <div
               key={rowKey}
-              className="animate-fade-up flex items-center gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2 text-sm"
+              className="animate-fade-up flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/20 bg-zinc-950/40 px-3 py-2 text-sm"
               style={{ animationDelay: `${i * 50}ms` }}
             >
-              <span className="min-w-0 truncate font-medium text-red-400">{s.from.name}</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-zinc-500">
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
-              <span className="min-w-0 truncate font-medium text-emerald-400">{s.to.name}</span>
-              <span className="ml-auto whitespace-nowrap font-mono tabular-nums text-zinc-100">
+              {/* Phones give the two names a line of their own — squeezed onto
+                  one row with the amount and buttons they read as "Ra… → Pri…". */}
+              <span className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto">
+                <span className="min-w-0 truncate font-medium text-red-400">{s.from.name}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-zinc-500">
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+                <span className="min-w-0 truncate font-medium text-emerald-400">{s.to.name}</span>
+              </span>
+              <span className="whitespace-nowrap font-mono tabular-nums text-zinc-100 sm:ml-auto">
                 {money(s.amount)}
               </span>
               <button
                 onClick={() => onSettlePayment(s)}
                 disabled={payingKey !== null}
                 title={`Record that ${s.from.name} paid ${s.to.name}`}
-                className="shrink-0 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                className="ml-auto shrink-0 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 sm:ml-0"
               >
                 {payingKey === rowKey ? "…" : "Settle"}
               </button>
@@ -1312,11 +1316,11 @@ function ExpenseRow({
     : 0;
   return (
     <div
-      className="animate-fade-up group flex items-center justify-between gap-3 rounded-lg border border-zinc-800/80 bg-gradient-to-b from-zinc-900/40 to-zinc-950/40 px-4 py-3 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-zinc-700"
+      className="animate-fade-up group flex flex-col gap-2 rounded-lg border border-zinc-800/80 bg-gradient-to-b from-zinc-900/40 to-zinc-950/40 px-4 py-3 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-zinc-700 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
       style={{ animationDelay: `${index * 30}ms` }}
     >
       <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-zinc-100">
             {e.isSettlement ? "↔ " : ""}{e.description}
           </span>
@@ -1352,8 +1356,10 @@ function ExpenseRow({
           </span>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-3">
-        <span className="flex flex-col items-end">
+      {/* On phones the amount and actions sit on their own line, so a long
+          description is not squeezed into a three-word column. */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-800/60 pt-2 sm:justify-start sm:border-0 sm:pt-0">
+        <span className="flex flex-col items-start sm:items-end">
           <span className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
             {money(e.amount)}
           </span>
@@ -1368,20 +1374,22 @@ function ExpenseRow({
             </span>
           )}
         </span>
-        {!e.isSettlement && (
+        <span className="flex items-center gap-3">
+          {!e.isSettlement && (
+            <button
+              onClick={onEdit}
+              className="text-[11px] text-zinc-500 transition-colors hover:text-brand-400"
+            >
+              Edit
+            </button>
+          )}
           <button
-            onClick={onEdit}
-            className="text-[11px] text-zinc-500 transition-colors hover:text-brand-400"
+            onClick={onDelete}
+            className="text-[11px] text-zinc-500 transition-colors hover:text-red-400"
           >
-            Edit
+            {e.isSettlement ? "Undo" : "Delete"}
           </button>
-        )}
-        <button
-          onClick={onDelete}
-          className="text-[11px] text-zinc-500 transition-colors hover:text-red-400"
-        >
-          {e.isSettlement ? "Undo" : "Delete"}
-        </button>
+        </span>
       </div>
     </div>
   );

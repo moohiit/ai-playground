@@ -676,14 +676,18 @@ function TopGroupsCard({ summary }: { summary: Summary }) {
   return (
     <ChartPanel title="Top Groups" accent="from-brand-500/40">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        {/* The share bar is the first thing to go on a phone — the figures
+            beside it must stay readable without a sideways scroll. */}
+        <table className="w-full text-xs sm:text-sm">
           <thead>
-            <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
+            <tr className="text-[10px] uppercase tracking-wider text-zinc-500 sm:text-[11px]">
               <th className="pb-2 text-left font-semibold">Group</th>
               <th className="pb-2 text-right font-semibold">Entries</th>
               <th className="pb-2 text-right font-semibold">Total</th>
               <th className="pb-2 text-right font-semibold">My Share</th>
-              <th className="pb-2 pl-4 text-left font-semibold">Share of Total</th>
+              <th className="hidden pb-2 pl-4 text-left font-semibold sm:table-cell">
+                Share of Total
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -703,7 +707,7 @@ function TopGroupsCard({ summary }: { summary: Summary }) {
                 <td className="py-2.5 text-right font-mono tabular-nums text-fuchsia-300">
                   {fmt(g.myShare)}
                 </td>
-                <td className="w-1/3 py-2.5 pl-4">
+                <td className="hidden w-1/3 py-2.5 pl-4 sm:table-cell">
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800/80">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-brand-500 to-fuchsia-500"
@@ -845,15 +849,19 @@ function CategoryBreakdownCard({ summary }: { summary: Summary }) {
   return (
     <ChartPanel title="Category Breakdown" accent="from-emerald-500/40">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-xs sm:text-sm">
           <thead>
-            <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
+            <tr className="text-[10px] uppercase tracking-wider text-zinc-500 sm:text-[11px]">
               <th className="pb-2 text-left font-semibold">Category</th>
               <th className="pb-2 text-right font-semibold">Count</th>
               <th className="pb-2 text-right font-semibold">Total</th>
               <th className="pb-2 text-right font-semibold">My Share</th>
-              <th className="pb-2 text-right font-semibold">% of Total</th>
-              <th className="pb-2 pl-4 text-left font-semibold">Share</th>
+              <th className="hidden pb-2 text-right font-semibold sm:table-cell">
+                % of Total
+              </th>
+              <th className="hidden pb-2 pl-4 text-left font-semibold sm:table-cell">
+                Share
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -875,10 +883,10 @@ function CategoryBreakdownCard({ summary }: { summary: Summary }) {
                   <td className="py-2.5 text-right font-mono tabular-nums text-emerald-300">
                     {fmt(c.myShare)}
                   </td>
-                  <td className="py-2.5 text-right tabular-nums text-zinc-400">
+                  <td className="hidden py-2.5 text-right tabular-nums text-zinc-400 sm:table-cell">
                     {pct.toFixed(1)}%
                   </td>
-                  <td className="w-1/4 py-2.5 pl-4">
+                  <td className="hidden w-1/4 py-2.5 pl-4 sm:table-cell">
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800/80">
                       <div
                         className="h-full rounded-full"

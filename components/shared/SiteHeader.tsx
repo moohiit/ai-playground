@@ -46,7 +46,7 @@ export function SiteHeader() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 -mx-6 px-6 transition-[transform,background-color,border-color] duration-300 will-change-transform",
+        "sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 transition-[transform,background-color,border-color] duration-300 will-change-transform",
         scrolled
           ? "border-b border-zinc-800/60 bg-zinc-950/70 backdrop-blur-xl"
           : "border-b border-transparent bg-transparent",
@@ -54,15 +54,18 @@ export function SiteHeader() {
       )}
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between py-4">
-        <Link href="/" className="text-lg font-semibold tracking-tight">
+        <Link
+          href="/"
+          className="shrink-0 whitespace-nowrap text-base font-semibold tracking-tight sm:text-lg"
+        >
           AI <span className="text-brand-500">Playground</span>
         </Link>
-        <nav className="flex items-center gap-4 text-sm text-zinc-400">
+        <nav className="flex min-w-0 items-center gap-3 text-sm text-zinc-400 sm:gap-4">
           <a
             href="https://github.com/moohiit/ai-playground"
             target="_blank"
             rel="noreferrer"
-            className="hover:text-zinc-100"
+            className="shrink-0 hover:text-zinc-100"
           >
             GitHub
           </a>
