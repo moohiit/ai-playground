@@ -48,10 +48,10 @@ export function NavAuth() {
     .join("");
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex min-w-0 items-center gap-3">
       <Link
         href="/profile"
-        className="group flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 pl-1 pr-3 py-1 text-xs text-zinc-300 transition hover:border-brand-500/40 hover:text-brand-300"
+        className="group flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/60 px-1 py-1 text-xs text-zinc-300 transition hover:border-brand-500/40 hover:text-brand-300 sm:pl-1 sm:pr-3"
       >
         {photoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -65,7 +65,9 @@ export function NavAuth() {
             {initials || "?"}
           </span>
         )}
-        <span className="max-w-[120px] truncate">{user.name}</span>
+        {/* On phones the avatar stands in for the name — the full row
+            (logo + GitHub + name + Logout) does not fit a 360px screen. */}
+        <span className="hidden max-w-[120px] truncate sm:inline">{user.name}</span>
       </Link>
       <button
         onClick={logout}

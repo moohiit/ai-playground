@@ -24,7 +24,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="min-h-screen antialiased">
         <Providers>
-          <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6">
+          <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 sm:px-6">
             <SiteHeader />
             <main className="flex-1 py-8">{children}</main>
             <footer className="border-t border-zinc-800 py-6 text-center text-xs text-zinc-500">

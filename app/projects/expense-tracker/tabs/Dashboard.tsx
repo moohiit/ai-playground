@@ -1294,13 +1294,19 @@ function BreakdownFigure({
   hint?: string;
 }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+    <div className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
       <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
-      <div className="mt-0.5 text-xl font-bold tabular-nums text-brand-300">{overall}</div>
+      {/* Two of these share a phone-width row, so lakh-sized amounts get a
+          smaller type size and wrap rather than run past the card. */}
+      <div className="mt-0.5 text-base font-bold tabular-nums text-brand-300 [overflow-wrap:anywhere] sm:text-xl">
+        {overall}
+      </div>
       {mine !== undefined && (
         <div className="mt-1 flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          <span className="text-sm font-semibold tabular-nums text-emerald-300">{mine}</span>
+          <span className="text-sm font-semibold tabular-nums text-emerald-300 [overflow-wrap:anywhere]">
+            {mine}
+          </span>
           <span className="text-[11px] text-zinc-500">mine</span>
         </div>
       )}

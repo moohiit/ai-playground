@@ -61,9 +61,13 @@ export default function ExpenseTrackerPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(appJsonLd) }}
       />
-      <div className="pointer-events-none absolute inset-x-0 -top-20 -z-10 h-[380px] bg-grid bg-radial-fade opacity-70" />
-      <div className="pointer-events-none absolute -top-16 left-1/4 -z-10 h-[320px] w-[320px] rounded-full bg-emerald-500/15 blur-3xl animate-blob" />
-      <div className="pointer-events-none absolute -top-10 right-10 -z-10 h-[280px] w-[280px] rounded-full bg-brand-500/15 blur-3xl animate-blob [animation-delay:-6s]" />
+      {/* Decoration only, and wider than a phone — kept in a clipping layer so
+          it can never push the page sideways. */}
+      <div className="pointer-events-none absolute inset-x-0 -top-20 -z-10 h-[400px] overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-[380px] bg-grid bg-radial-fade opacity-70" />
+        <div className="absolute left-1/4 top-4 h-[320px] w-[320px] rounded-full bg-emerald-500/15 blur-3xl animate-blob" />
+        <div className="absolute right-10 top-10 h-[280px] w-[280px] rounded-full bg-brand-500/15 blur-3xl animate-blob [animation-delay:-6s]" />
+      </div>
 
       <header className="flex flex-col gap-3 animate-fade-up">
         <Link

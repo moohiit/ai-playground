@@ -19,6 +19,21 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
+/* Phones must never scroll sideways: the pages are laid out to fit the
+   viewport, and the decorative blurred blobs deliberately spill past its
+   edges. `clip` keeps `position: sticky` working (unlike `hidden`, which
+   would turn the root into a scroll container); older engines fall back to
+   `hidden`, which stops the drift just the same. */
+html {
+  overflow-x: hidden;
+}
+
+@supports (overflow-x: clip) {
+  html {
+    overflow-x: clip;
+  }
+}
+
 * {
   border-color: rgb(229 231 235 / 0.5);
 }
