@@ -691,3 +691,19 @@ export async function notifyGroupDeleted(opts: {
     data: groupLink("group-deleted"),
   }));
 }
+
+/** A member wants the group gone and only the creator can do it. Sent to the
+ *  creator alone, muted or not: it is a question put to them personally. */
+export async function notifyGroupDeleteRequest(opts: {
+  creatorId: string;
+  requesterId: string;
+  requesterName: string;
+  groupName: string;
+  groupId?: string;
+}) {
+  await notifyGroupMembers([opts.creatorId], opts.requesterId, "", null, () => ({
+    title: `${opts.groupName} 🗑️`,
+    body: `${opts.requesterName} is asking you to delete "${opts.groupName}". Open the group's settings to delete it or dismiss the request.`,
+    data: groupLink("delete-request", opts.groupId),
+  }));
+}

@@ -38,6 +38,7 @@ import {
   notifyDebtReminder,
   notifyDebtNudge,
   notifyGroupDeleted,
+  notifyGroupDeleteRequest,
   notifyGroupMemberEvent,
   notifyGroupDigest,
   notifySettleUpSuggestion,
@@ -716,6 +717,9 @@ export async function removeMember(
       { "splits.memberId": memberId },
     ],
   });
+
+  // Someone no longer in the group has no say in whether it is deleted.
+  group.deleteRequests = (group.deleteRequests ?? []).filter((r) => r.userId !== memberId);
 
   if (hasExpenses) {
     const member = group.members.find((m) => m.userId === memberId);
@@ -3950,6 +3954,66 @@ export async function removeTodo(id: string, auth: JWTPayload) {
 // ── Group notification controls ─────────────────────
 
 /** Switch pushes about this group's activity on or off for the caller. */
+/**
+ * A member asks the creator to delete the group.
+ *
+ * Deleting is the creator's alone — it takes every member's history with it —
+ * so everyone else gets a way to ask instead of a button that only errors.
+ * One open request per member; the creator is told each time.
+ */
+export async function requestGroupDeletion(groupId: string, auth: JWTPayload) {
+  await connectDB();
+  const group = await Group.findById(groupId);
+  if (!group || !isActiveMember(group, auth.userId)) {
+    throw new Error("Group not found or access denied");
+  }
+  if (group.createdBy === auth.userId) {
+    // handleRouteError maps messages to statuses by keyword and this one has
+    // none, so it carries its own rather than surfacing as a 500.
+    throw Object.assign(
+      new Error("You created this group — you can delete it yourself"),
+      { status: 400 }
+    );
+  }
+  const requests = group.deleteRequests ?? [];
+  if (requests.some((r) => r.userId === auth.userId)) {
+    throw new Error("You already asked for this group to be deleted");
+  }
+
+  const me = await User.findById(auth.userId).select("name").lean();
+  const name = me?.name ?? auth.name;
+  group.deleteRequests = [...requests, { userId: auth.userId, name, requestedAt: new Date() }];
+  await group.save();
+
+  try {
+    await notifyGroupDeleteRequest({
+      creatorId: group.createdBy,
+      requesterId: auth.userId,
+      requesterName: name,
+      groupName: group.name,
+      groupId: group._id.toString(),
+    });
+  } catch {
+    /* notifications are optional */
+  }
+  return { deleteRequests: group.toObject().deleteRequests ?? [] };
+}
+
+/** A member withdraws their own request; the creator dismisses all of them. */
+export async function clearGroupDeletionRequest(groupId: string, auth: JWTPayload) {
+  await connectDB();
+  const group = await Group.findById(groupId);
+  if (!group || !isActiveMember(group, auth.userId)) {
+    throw new Error("Group not found or access denied");
+  }
+  group.deleteRequests =
+    group.createdBy === auth.userId
+      ? []
+      : (group.deleteRequests ?? []).filter((r) => r.userId !== auth.userId);
+  await group.save();
+  return { deleteRequests: group.toObject().deleteRequests ?? [] };
+}
+
 export async function setGroupMuted(
   groupId: string,
   muted: boolean,

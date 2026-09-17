@@ -23,6 +23,9 @@ export type GroupDoc = {
   // When the daily job last suggested settling up; it waits 30 days before
   // saying so again.
   settleNudgedAt?: Date | null;
+  // Members who asked the creator to delete the group. Only the creator can
+  // delete; this is how everyone else says "we are done with this one".
+  deleteRequests?: { userId: string; name: string; requestedAt: Date }[];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -47,6 +50,19 @@ const groupSchema = new Schema<GroupDoc>(
     members: { type: [memberSchema], default: [] },
     shareId: { type: String, default: null, index: true },
     settleNudgedAt: { type: Date, default: null },
+    deleteRequests: {
+      type: [
+        new Schema(
+          {
+            userId: { type: String, required: true },
+            name: { type: String, required: true },
+            requestedAt: { type: Date, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );
