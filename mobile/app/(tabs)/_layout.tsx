@@ -1,11 +1,11 @@
 import { Redirect, Tabs } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, View, type ColorValue } from "react-native";
 import Svg, { Circle, Line, Path, Polyline, Rect } from "react-native-svg";
 import { useAuth } from "../../lib/auth";
 
 // ── SVG tab icons ──────────────────────────────────────────────────────────
 
-function DashboardIcon({ color }: { color: string }) {
+function DashboardIcon({ color }: { color: ColorValue }) {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Rect x="3" y="3" width="7" height="9" rx="1" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
@@ -16,7 +16,7 @@ function DashboardIcon({ color }: { color: string }) {
   );
 }
 
-function ExpensesIcon({ color }: { color: string }) {
+function ExpensesIcon({ color }: { color: ColorValue }) {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
@@ -28,7 +28,7 @@ function ExpensesIcon({ color }: { color: string }) {
   );
 }
 
-function BudgetsIcon({ color }: { color: string }) {
+function BudgetsIcon({ color }: { color: ColorValue }) {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path d="M21.21 15.89A10 10 0 1 1 8 2.83" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
@@ -37,7 +37,7 @@ function BudgetsIcon({ color }: { color: string }) {
   );
 }
 
-function GroupsIcon({ color }: { color: string }) {
+function GroupsIcon({ color }: { color: ColorValue }) {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
@@ -48,7 +48,7 @@ function GroupsIcon({ color }: { color: string }) {
   );
 }
 
-function MoreIcon({ color }: { color: string }) {
+function MoreIcon({ color }: { color: ColorValue }) {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Circle cx="12" cy="12" r="1" fill={color} />
