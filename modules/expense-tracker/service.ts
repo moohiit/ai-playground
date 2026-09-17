@@ -140,6 +140,28 @@ function toObjectId(id: string, label = "ID"): mongoose.Types.ObjectId {
  * of the new "Mohit Patel". Call this after a profile-name change to rewrite
  * every copy for that user. Assumes the DB connection is already open.
  */
+/**
+ * A user changed their email: bring the copies that groups and pending invites
+ * keep into line. Without this the old address lived on in every group they
+ * had joined, and anything keyed on it — inviting them from a suggestion,
+ * linking a money note — failed with "user not found".
+ */
+export async function propagateUserEmail(userId: string, rawEmail: string) {
+  const email = rawEmail.trim().toLowerCase();
+  if (!email) return;
+  await Promise.all([
+    Group.updateMany(
+      { "members.userId": userId },
+      { $set: { "members.$[m].email": email } },
+      { arrayFilters: [{ "m.userId": userId }] }
+    ),
+    GroupInvite.updateMany(
+      { invitedUserId: userId, status: "pending" },
+      { $set: { invitedEmail: email } }
+    ),
+  ]);
+}
+
 export async function propagateUserName(userId: string, rawName: string) {
   const name = rawName.trim();
   if (!name) return;
@@ -428,9 +450,24 @@ export async function listKnownPeople(
     }
   }
 
-  return Array.from(people.values()).sort(
-    (a, b) => b.sharedGroups - a.sharedGroups || a.name.localeCompare(b.name)
-  );
+  // The group copies say WHO these people are; what to call them and where to
+  // reach them comes from their accounts. A group keeps the name and email a
+  // member had when they joined, and the email here is not decoration — it is
+  // what gets sent back when a suggestion is picked, so a stale one turns into
+  // "user not found". People whose account is gone are not suggestions at all.
+  const accounts = await User.find({ _id: { $in: Array.from(people.keys()) } })
+    .select("name email")
+    .lean();
+  const live = new Map(accounts.map((u) => [u._id.toString(), u]));
+
+  return Array.from(people.values())
+    .flatMap((p) => {
+      const account = live.get(p.userId);
+      return account ? [{ ...p, name: account.name, email: account.email }] : [];
+    })
+    .sort(
+      (a, b) => b.sharedGroups - a.sharedGroups || a.name.localeCompare(b.name)
+    );
 }
 
 export async function getGroup(id: string, auth: JWTPayload) {

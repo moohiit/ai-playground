@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { signToken } from "@/lib/auth";
 import { User } from "@/models/User";
 import { ApiError, handleRouteError } from "@/lib/apiError";
+import { propagateUserEmail } from "@/modules/expense-tracker/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,6 +86,12 @@ export async function POST(req: Request) {
     }
 
     await user.save();
+
+    if (mode === "email-change") {
+      // Best effort: the change itself has succeeded and must not be undone by
+      // a failure to tidy the copies groups keep.
+      await propagateUserEmail(user._id.toString(), user.email).catch(() => undefined);
+    }
 
     const jwt = signToken({
       userId: user._id.toString(),
