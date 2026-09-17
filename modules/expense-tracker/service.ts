@@ -37,6 +37,7 @@ import {
   notifyGroupExpenseRemoved,
   notifyDebtReminder,
   notifyDebtNudge,
+  notifyGroupDeleted,
   notifyGroupMemberEvent,
   notifyGroupDigest,
   notifySettleUpSuggestion,
@@ -587,6 +588,7 @@ export async function respondToInvite(
         memberIds: notifiableMembers(group),
         actorId: auth.userId,
         groupName: group.name,
+        groupId: group._id.toString(),
         body: (recipientId) =>
           recipientId === inviterId
             ? `${joined} accepted your invite to ${group.name}`
@@ -607,7 +609,7 @@ export async function respondToInvite(
 
 /** "Mohit added Cal as a guest" — best effort, after the save. */
 async function announceGuest(
-  group: { name: string; members: MemberDoc[] },
+  group: { _id: { toString(): string }; name: string; members: MemberDoc[] },
   guestName: string,
   auth: JWTPayload
 ) {
@@ -617,6 +619,7 @@ async function announceGuest(
       memberIds: notifiableMembers(group),
       actorId: auth.userId,
       groupName: group.name,
+      groupId: group._id.toString(),
       body: () => `${actor?.name ?? auth.name} added ${guestName} as a guest`,
     });
   } catch {
@@ -733,6 +736,7 @@ export async function removeMember(
         memberIds: notifiableMembers(group).filter((id) => id !== memberId),
         actorId: auth.userId,
         groupName: group.name,
+        groupId: group._id.toString(),
         body: () => `${actorName} removed ${removedName} from ${group.name}`,
       }),
       // Told directly, muted or not: being removed is about them, not the group.
@@ -742,6 +746,7 @@ export async function removeMember(
             memberIds: [memberId],
             actorId: auth.userId,
             groupName: group.name,
+            // No groupId: they can no longer open it, so the tap lands on the list.
             body: () => `${actorName} removed you from ${group.name}`,
           }),
     ]);
@@ -763,6 +768,19 @@ export async function deleteGroup(id: string, auth: JWTPayload) {
   await GroupSettlement.deleteMany({ groupId: id });
   await DebtReminder.deleteMany({ groupId: id });
   await Group.findByIdAndDelete(id);
+
+  // A group vanishing from someone's list, balances and all, deserves a word.
+  try {
+    const actor = await User.findById(auth.userId).select("name").lean();
+    await notifyGroupDeleted({
+      memberIds: group.members.filter((m) => m.isActive !== false).map((m) => m.userId),
+      actorId: auth.userId,
+      actorName: actor?.name ?? auth.name,
+      groupName: group.name,
+    });
+  } catch {
+    /* notifications are optional */
+  }
 }
 
 // ── Expenses ────────────────────────────────────────
@@ -883,7 +901,12 @@ export async function notifyForExpense(
     const config = await getUserPushConfig(userId);
     if (!config) return;
     await Promise.all([
-      checkAndNotifyBudget(userId, config, expense.category),
+      checkAndNotifyBudget(
+        userId,
+        config,
+        expense.category,
+        expense.amountBase ?? expense.amount
+      ),
       checkAndNotifyAnomaly(
         userId,
         config,
@@ -1014,6 +1037,7 @@ export async function createExpense(
         actorId: auth.userId,
         actorName: actor?.name ?? auth.name,
         groupName: group.name,
+        groupId: group._id.toString(),
         description: created.description,
         amountBase: created.amountBase ?? created.amount,
         currency: actorBase,
@@ -1429,6 +1453,7 @@ async function notifyExpenseEdit(
         actorId: auth.userId,
         actorName,
         groupName: group.name,
+        groupId: group._id.toString(),
         description: saved.description,
         changes: describeExpenseChanges(before, saved),
         amountBase: saved.amountBase ?? saved.amount,
@@ -1447,6 +1472,7 @@ async function notifyExpenseEdit(
           actorId: auth.userId,
           actorName,
           groupName: old.name,
+          groupId: old._id.toString(),
           description: before.description,
           amountBase: before.amountBase ?? before.amount,
           currency: ownerBase,
@@ -1464,6 +1490,7 @@ async function notifyExpenseEdit(
           actorId: auth.userId,
           actorName,
           groupName: target.name,
+          groupId: target._id.toString(),
           description: saved.description,
           amountBase: saved.amountBase ?? saved.amount,
           currency: ownerBase,
@@ -1515,6 +1542,7 @@ export async function deleteExpense(id: string, auth: JWTPayload) {
           actorId: auth.userId,
           actorName: actor?.name ?? auth.name,
           groupName: group.name,
+          groupId: group._id.toString(),
           description: removed.description,
           amountBase: removed.amountBase ?? removed.amount,
           currency: ownerBase,
@@ -2157,6 +2185,7 @@ export async function recordSettlementPayment(
       fromName: from.name,
       toName: to.name,
       groupName: group.name,
+      groupId: group._id.toString(),
       amountBase: amount,
       currency: baseCurrency,
     });
@@ -2270,6 +2299,7 @@ async function closeActiveWindow(
         actorId: auth.userId,
         actorName: actor?.name ?? auth.name,
         groupName: full.name,
+        groupId: full._id.toString(),
         expenseCount: spend.length,
       });
     }
@@ -2415,6 +2445,7 @@ export async function reopenSettlement(groupId: string, auth: JWTPayload) {
       actorId: auth.userId,
       actorName: actor?.name ?? auth.name,
       groupName: group.name,
+      groupId: group._id.toString(),
       expenseCount: rows.length,
     });
   } catch {
@@ -3983,6 +4014,7 @@ export async function remindDebt(
     creditorId: auth.userId,
     creditorName: me?.name ?? auth.name,
     groupName: group.name,
+    groupId: group._id.toString(),
     amountBase: row.amount,
     currency,
   });
@@ -4101,6 +4133,7 @@ export async function runDailyGroupJobs(
               notifyGroupDigest({
                 recipientId,
                 groupName: group.name,
+                groupId: group._id.toString(),
                 count: week.length,
                 totalBase: total,
                 shareBase: shares[recipientId] ?? 0,
@@ -4135,6 +4168,7 @@ export async function runDailyGroupJobs(
           await notifySettleUpSuggestion({
             memberIds: recipients,
             groupName: group.name,
+            groupId: group._id.toString(),
             outstandingBase: outstanding,
             currency,
             daysQuiet: quietDays,
@@ -4182,6 +4216,7 @@ export async function runDailyGroupJobs(
           await notifyDebtNudge({
             debtorId,
             groupName: group.name,
+            groupId: group._id.toString(),
             currency,
             daysQuiet: quietDays,
             creditors: owed.map((t) => ({ name: t.to.name, amount: t.amount })),

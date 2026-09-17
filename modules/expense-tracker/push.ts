@@ -66,6 +66,20 @@ async function sendExpoPush(
   });
 }
 
+export type GroupTab = "active" | "settled" | "report";
+
+/**
+ * What a tap on a group push should open. `screen: "groups"` is what app
+ * versions up to 1.12 understand (they open the list); newer ones see
+ * `groupId` and go straight to that group, on `tab`. No groupId — the group is
+ * gone, or the reader is no longer in it — means the list for everyone.
+ */
+function groupLink(type: string, groupId?: string, tab: GroupTab = "active") {
+  return groupId
+    ? { type, screen: "groups", groupId, tab }
+    : { type, screen: "groups" };
+}
+
 function fmt(n: number, currency: string) {
   return `${Math.round(n).toLocaleString("en")} ${currency}`;
 }
@@ -89,7 +103,9 @@ export async function notifyGroupInvite(
 export async function checkAndNotifyBudget(
   userId: string,
   config: PushConfig,
-  category: string
+  category: string,
+  /** The expense that was just saved, in base currency. */
+  amountBase: number
 ) {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -141,6 +157,9 @@ export async function checkAndNotifyBudget(
         : (catTotals.get(category) ?? 0);
     const status = budgetStatus(spent, budget.amount);
     if (status === "ok") continue;
+    // Only when THIS expense is the one that crossed the line. `spent` already
+    // includes it; without this every purchase after 80% re-sent the warning.
+    if (budgetStatus(spent - amountBase, budget.amount) === status) continue;
 
     const label = budget.scope === "overall" ? "Overall" : category;
     const pct = Math.round((spent / budget.amount) * 100);
@@ -150,14 +169,14 @@ export async function checkAndNotifyBudget(
         config.token,
         "Budget Warning ⚠️",
         `${label} budget at ${pct}% — ${fmt(spent, config.baseCurrency)} of ${fmt(budget.amount, config.baseCurrency)}`,
-        { screen: "budgets" }
+        { type: "budget", screen: "budgets" }
       );
     } else {
       await sendExpoPush(
         config.token,
         "Budget Exceeded 🚨",
         `${label} budget exceeded! ${fmt(spent, config.baseCurrency)} of ${fmt(budget.amount, config.baseCurrency)}`,
-        { screen: "budgets" }
+        { type: "budget", screen: "budgets" }
       );
     }
   }
@@ -175,6 +194,9 @@ export async function checkAndNotifyAnomaly(
 
   const recent = await Expense.find({
     createdBy: userId,
+    // Personal only: a group bill the user logged is the whole table's total,
+    // not their own spending, and it dragged the baseline up.
+    type: "personal",
     category,
     // Same legacy-row treatment as above — excluding them shrank the sample
     // and suppressed the anomaly alert entirely for users with older data.
@@ -205,7 +227,7 @@ export async function checkAndNotifyAnomaly(
       config.token,
       "Unusual Expense Detected 👀",
       `${description} (${fmt(amountBase, config.baseCurrency)}) is much higher than your usual ${category} spend`,
-      { screen: "expenses" }
+      { type: "anomaly", screen: "expenses" }
     );
   }
 }
@@ -232,14 +254,14 @@ export async function notifyBillsDue(
       config.token,
       "Bill Due 📋",
       `${r.template.description} — ${fmt(amount, config.baseCurrency)} is due`,
-      { screen: "recurring" }
+      { type: "bills-due", screen: "recurring" }
     );
   } else {
     await sendExpoPush(
       config.token,
       `${rules.length} Bills Due 📋`,
       rules.map((r) => r.template.description).join(", "),
-      { screen: "recurring" }
+      { type: "bills-due", screen: "recurring" }
     );
   }
 }
@@ -255,6 +277,8 @@ export async function notifyBillsDue(
  * different base, so the amount is converted per recipient rather than
  * labelled with someone else's currency.
  */
+type PushParts = { title: string; body: string; data?: Record<string, unknown> };
+
 async function notifyGroupMembers(
   memberIds: string[],
   actorId: string,
@@ -268,7 +292,7 @@ async function notifyGroupMembers(
     recipientId: string;
     /** Any other amount in `fromCurrency`, rendered in this recipient's currency. */
     toTheirs: (amount: number) => Promise<string>;
-  }) => { title: string; body: string } | Promise<{ title: string; body: string }>,
+  }) => PushParts | Promise<PushParts>,
   /** memberId -> that member's share, in `fromCurrency`. */
   sharesBase?: Record<string, number>
 ) {
@@ -295,8 +319,8 @@ async function notifyGroupMembers(
       const own = sharesBase?.[recipientId];
       const share = own !== undefined && own > 0 ? await toTheirs(own) : "";
 
-      const { title, body } = await build({ money, share, recipientId, toTheirs });
-      await sendExpoPush(config.token, title, body, { screen: "groups" }).catch(
+      const { title, body, data } = await build({ money, share, recipientId, toTheirs });
+      await sendExpoPush(config.token, title, body, data ?? groupLink("group")).catch(
         () => undefined
       );
     })
@@ -309,6 +333,8 @@ export async function notifyGroupExpense(opts: {
   actorId: string;
   actorName: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   description: string;
   amountBase: number;
   currency: string;
@@ -324,6 +350,7 @@ export async function notifyGroupExpense(opts: {
     opts.amountBase,
     ({ money, share }) => ({
       title: `${opts.groupName} 🧾`,
+      data: groupLink("expense-added", opts.groupId),
       // The group total answers "how big was it"; their own share answers
       // "what does it cost me", which is the question they actually have.
       body:
@@ -343,6 +370,8 @@ export async function notifyGroupPayment(opts: {
   fromName: string;
   toName: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   amountBase: number;
   currency: string;
 }) {
@@ -353,6 +382,7 @@ export async function notifyGroupPayment(opts: {
     opts.amountBase,
     ({ money }) => ({
       title: `${opts.groupName} 🤝`,
+      data: groupLink("payment", opts.groupId),
       body: `${opts.fromName} paid ${opts.toName} ${money}`,
     })
   );
@@ -364,6 +394,8 @@ export async function notifyGroupSettled(opts: {
   actorId: string;
   actorName: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   expenseCount: number;
 }) {
   await notifyGroupMembers(
@@ -373,6 +405,7 @@ export async function notifyGroupSettled(opts: {
     null,
     () => ({
       title: `${opts.groupName} ✅`,
+      data: groupLink("settled", opts.groupId, "settled"),
       body: `${opts.actorName} settled the group — ${opts.expenseCount} ${
         opts.expenseCount === 1 ? "expense" : "expenses"
       } moved to settled history.`,
@@ -386,10 +419,13 @@ export async function notifyGroupReopened(opts: {
   actorId: string;
   actorName: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   expenseCount: number;
 }) {
   await notifyGroupMembers(opts.memberIds, opts.actorId, "", null, () => ({
     title: `${opts.groupName} ↩️`,
+    data: groupLink("reopened", opts.groupId),
     body: `${opts.actorName} reopened the last settlement — ${opts.expenseCount} ${
       opts.expenseCount === 1 ? "expense is" : "expenses are"
     } active again.`,
@@ -420,6 +456,8 @@ export async function notifyGroupExpenseEdited(opts: {
   actorId: string;
   actorName: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   description: string;
   amountBase: number;
   currency: string;
@@ -458,6 +496,7 @@ export async function notifyGroupExpenseEdited(opts: {
 
       return {
         title: `${opts.groupName} ✏️`,
+        data: groupLink("expense-edited", opts.groupId),
         body: `${opts.actorName} edited "${opts.description}" — ${parts.join(", ")}`,
       };
     }
@@ -470,6 +509,8 @@ export async function notifyGroupExpenseRemoved(opts: {
   actorId: string;
   actorName: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   description: string;
   amountBase: number;
   currency: string;
@@ -484,6 +525,7 @@ export async function notifyGroupExpenseRemoved(opts: {
     opts.amountBase,
     ({ money, share }) => ({
       title: `${opts.groupName} 🗑️`,
+      data: groupLink("expense-removed", opts.groupId),
       body: `${opts.actorName} ${opts.reason === "deleted" ? "deleted" : "moved out"} "${opts.description}" — ${money}${
         share ? `, your share was ${share}` : ""
       }`,
@@ -501,6 +543,8 @@ export async function notifyDebtReminder(opts: {
   creditorId: string;
   creditorName: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   amountBase: number;
   currency: string;
 }) {
@@ -511,6 +555,7 @@ export async function notifyDebtReminder(opts: {
     opts.amountBase,
     ({ money }) => ({
       title: `${opts.groupName} 💸`,
+      data: groupLink("debt-reminder", opts.groupId),
       body: `${opts.creditorName} is asking you to settle ${money} in ${opts.groupName}.`,
     })
   );
@@ -524,6 +569,8 @@ export async function notifyDebtReminder(opts: {
 export async function notifyDebtNudge(opts: {
   debtorId: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   currency: string;
   daysQuiet: number;
   creditors: { name: string; amount: number }[];
@@ -546,6 +593,7 @@ export async function notifyDebtNudge(opts: {
       }
       return {
         title: `${opts.groupName} 💸`,
+        data: groupLink("debt-nudge", opts.groupId),
         body: `${owed} — nothing has moved for ${opts.daysQuiet} days.`,
       };
     }
@@ -558,10 +606,13 @@ export async function notifyGroupMemberEvent(opts: {
   memberIds: string[];
   actorId: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   body: (recipientId: string) => string;
 }) {
   await notifyGroupMembers(opts.memberIds, opts.actorId, "", null, ({ recipientId }) => ({
     title: `${opts.groupName} 👥`,
+    data: groupLink("member-event", opts.groupId),
     body: opts.body(recipientId),
   }));
 }
@@ -570,6 +621,8 @@ export async function notifyGroupMemberEvent(opts: {
 export async function notifyGroupDigest(opts: {
   recipientId: string;
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   count: number;
   totalBase: number;
   shareBase: number;
@@ -591,6 +644,7 @@ export async function notifyGroupDigest(opts: {
           : "You're all square.";
       return {
         title: `${opts.groupName} 📊`,
+        data: groupLink("digest", opts.groupId, "report"),
         body: `Last week: ${opts.count} ${opts.count === 1 ? "expense" : "expenses"}, ${money} total${
           share ? `, your share ${share}` : ""
         }. ${standing}`,
@@ -604,6 +658,8 @@ export async function notifyGroupDigest(opts: {
 export async function notifySettleUpSuggestion(opts: {
   memberIds: string[];
   groupName: string;
+  /** Opens this group when the push is tapped. */
+  groupId?: string;
   outstandingBase: number;
   currency: string;
   daysQuiet: number;
@@ -615,7 +671,23 @@ export async function notifySettleUpSuggestion(opts: {
     opts.outstandingBase,
     ({ money }) => ({
       title: `${opts.groupName} 🤝`,
+      data: groupLink("settle-suggestion", opts.groupId),
       body: `${opts.groupName} has been quiet for ${opts.daysQuiet} days with ${money} still unsettled — time to settle up?`,
     })
   );
+}
+
+/** The whole group is gone. Told to everyone, muted or not: there is nothing
+ *  left to mute, and balances they were tracking have vanished with it. */
+export async function notifyGroupDeleted(opts: {
+  memberIds: string[];
+  actorId: string;
+  actorName: string;
+  groupName: string;
+}) {
+  await notifyGroupMembers(opts.memberIds, opts.actorId, "", null, () => ({
+    title: `${opts.groupName} 🗑️`,
+    body: `${opts.actorName} deleted the group "${opts.groupName}" and everything in it.`,
+    data: groupLink("group-deleted"),
+  }));
 }
