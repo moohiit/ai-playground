@@ -751,3 +751,33 @@ debtReminderSchema.index(
 export const DebtReminder: Model<DebtReminderDoc> =
   (mongoose.models.DebtReminder as Model<DebtReminderDoc>) ||
   mongoose.model<DebtReminderDoc>("DebtReminder", debtReminderSchema);
+
+// One browser that agreed to receive push. A user can have several (laptop,
+// work PC); an endpoint identifies a browser profile, so it is unique, and a
+// different account signing in on the same browser takes it over.
+export type WebPushSubscriptionDoc = {
+  _id: Types.ObjectId;
+  userId: string;
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  userAgent: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const webPushSubscriptionSchema = new Schema<WebPushSubscriptionDoc>(
+  {
+    userId: { type: String, required: true, index: true },
+    endpoint: { type: String, required: true, unique: true },
+    keys: {
+      p256dh: { type: String, required: true },
+      auth: { type: String, required: true },
+    },
+    userAgent: { type: String, default: "" },
+  },
+  { timestamps: true }
+);
+
+export const WebPushSubscription: Model<WebPushSubscriptionDoc> =
+  (mongoose.models.WebPushSubscription as Model<WebPushSubscriptionDoc>) ||
+  mongoose.model<WebPushSubscriptionDoc>("WebPushSubscription", webPushSubscriptionSchema);

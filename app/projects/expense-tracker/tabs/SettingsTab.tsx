@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BrowserNotifications } from "../components/BrowserNotifications";
 import { cn } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { invalidatePrefs } from "../prefs";
@@ -154,6 +155,14 @@ export function SettingsTab() {
             {note}
           </p>
         )}
+      </SettingCard>
+
+      {/* Browser notifications */}
+      <SettingCard
+        title="Browser notifications"
+        description="Get group activity, reminders and budget alerts in this browser, even when Splitzy isn't open. Set separately for each browser you use."
+      >
+        <BrowserNotifications />
       </SettingCard>
 
       {/* Week start */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "../../../lib/utils";
 import { useAuth } from "../../../lib/authContext";
 import { Dashboard } from "./tabs/Dashboard";
@@ -34,6 +34,33 @@ type Tab = (typeof TABS)[number]["id"];
 export function ExpenseApp() {
   const { user, loading } = useAuth();
   const [tab, setTab] = useState<Tab>("Dashboard");
+  // A clicked notification names a tab and, for group pushes, a group.
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const go = (tabName: string | null, group: string | null) => {
+      const match = TABS.find((t) => t.id === tabName);
+      if (!match) return;
+      setTab(match.id);
+      setOpenGroupId(group && /^[a-f0-9]{24}$/i.test(group) ? group : null);
+    };
+
+    // Opened fresh from a notification: /projects/expense-tracker?tab=…&group=…
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab")) {
+      go(params.get("tab"), params.get("group"));
+      // One-shot: drop the params so a reload doesn't jump back here.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
+    // Already open: the service worker focuses this tab and says where to go.
+    if (!("serviceWorker" in navigator)) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "splitzy-navigate") go(e.data.tab ?? null, e.data.group ?? null);
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, []);
 
   if (loading) {
     return (
@@ -98,7 +125,9 @@ export function ExpenseApp() {
         {tab === "Goals" && <GoalsTab />}
         {tab === "Recurring" && <RecurringTab />}
         {tab === "Coach" && <CoachTab />}
-        {tab === "Groups" && <GroupsTab />}
+        {tab === "Groups" && (
+          <GroupsTab openGroupId={openGroupId} onOpened={() => setOpenGroupId(null)} />
+        )}
         {tab === "Reports" && <ReportsTab />}
         {tab === "Warranties" && <WarrantyTab />}
         {tab === "Notes" && <NotesTab />}

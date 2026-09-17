@@ -1,24 +1,18 @@
 import { connectDB } from "@/lib/db";
-import { Budget, Expense, UserPrefs } from "./models";
+import { Budget, Expense, UserPrefs, WebPushSubscription } from "./models";
+import { sendWebPush, type WebSub } from "./webPush";
 import { budgetStatus } from "./budget";
 import { convert } from "./rates";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
-export type PushConfig = { token: string; baseCurrency: string };
+/** Everywhere one user can be reached: their phone, and any browsers that opted in. */
+export type PushConfig = { token: string | null; baseCurrency: string; web: WebSub[] };
 
 export async function getUserPushConfig(
   userId: string
 ): Promise<PushConfig | null> {
-  await connectDB();
-  const prefs = await UserPrefs.findOne({ userId })
-    .select("expoPushToken baseCurrency")
-    .lean();
-  if (!prefs?.expoPushToken) return null;
-  return {
-    token: prefs.expoPushToken,
-    baseCurrency: prefs.baseCurrency ?? "INR",
-  };
+  return (await getPushConfigs([userId])).get(userId) ?? null;
 }
 
 /**
@@ -26,24 +20,55 @@ export async function getUserPushConfig(
  *
  * Group notifications go to everyone except the person who acted, so fetching
  * them one at a time would be a query per member on every group expense.
+ * Someone with no phone token but a subscribed browser still gets a config —
+ * a web-only user is as reachable as anyone.
  */
 export async function getPushConfigs(
   userIds: string[]
 ): Promise<Map<string, PushConfig>> {
   if (userIds.length === 0) return new Map();
   await connectDB();
-  const rows = await UserPrefs.find({
-    userId: { $in: userIds },
-    expoPushToken: { $nin: [null, ""] },
-  })
-    .select("userId expoPushToken baseCurrency")
-    .lean();
-  return new Map(
-    rows.map((r) => [
-      r.userId,
-      { token: r.expoPushToken as string, baseCurrency: r.baseCurrency ?? "INR" },
-    ])
-  );
+  const [prefs, subs] = await Promise.all([
+    UserPrefs.find({ userId: { $in: userIds } })
+      .select("userId expoPushToken baseCurrency")
+      .lean(),
+    WebPushSubscription.find({ userId: { $in: userIds } })
+      .select("userId endpoint keys")
+      .lean(),
+  ]);
+
+  const webByUser = new Map<string, WebSub[]>();
+  for (const s of subs) {
+    const list = webByUser.get(s.userId) ?? [];
+    list.push({ endpoint: s.endpoint, keys: s.keys });
+    webByUser.set(s.userId, list);
+  }
+  const prefsByUser = new Map(prefs.map((r) => [r.userId, r]));
+
+  const out = new Map<string, PushConfig>();
+  for (const userId of userIds) {
+    const pref = prefsByUser.get(userId);
+    const token = pref?.expoPushToken || null;
+    const web = webByUser.get(userId) ?? [];
+    if (!token && web.length === 0) continue;
+    out.set(userId, { token, baseCurrency: pref?.baseCurrency ?? "INR", web });
+  }
+  return out;
+}
+
+/** One notification, to every place this user can be reached. Never throws. */
+async function deliver(
+  config: PushConfig,
+  title: string,
+  body: string,
+  data: Record<string, unknown> = {}
+) {
+  await Promise.all([
+    config.token
+      ? sendExpoPush(config.token, title, body, data).catch(() => undefined)
+      : Promise.resolve(),
+    sendWebPush(config.web, title, body, data).catch(() => undefined),
+  ]);
 }
 
 async function sendExpoPush(
@@ -92,8 +117,7 @@ export async function notifyGroupInvite(
 ) {
   const config = await getUserPushConfig(userId);
   if (!config) return;
-  await sendExpoPush(
-    config.token,
+  await deliver(config,
     "Group invite 👥",
     `${inviterName} invited you to join "${groupName}" — open Groups to accept or decline.`,
     { type: "group-invite", screen: "groups" }
@@ -165,15 +189,13 @@ export async function checkAndNotifyBudget(
     const pct = Math.round((spent / budget.amount) * 100);
 
     if (status === "warn") {
-      await sendExpoPush(
-        config.token,
+      await deliver(config,
         "Budget Warning ⚠️",
         `${label} budget at ${pct}% — ${fmt(spent, config.baseCurrency)} of ${fmt(budget.amount, config.baseCurrency)}`,
         { type: "budget", screen: "budgets" }
       );
     } else {
-      await sendExpoPush(
-        config.token,
+      await deliver(config,
         "Budget Exceeded 🚨",
         `${label} budget exceeded! ${fmt(spent, config.baseCurrency)} of ${fmt(budget.amount, config.baseCurrency)}`,
         { type: "budget", screen: "budgets" }
@@ -223,8 +245,7 @@ export async function checkAndNotifyAnomaly(
       : (amounts[mid - 1] + amounts[mid]) / 2;
 
   if (median > 0 && amountBase >= median * 3) {
-    await sendExpoPush(
-      config.token,
+    await deliver(config,
       "Unusual Expense Detected 👀",
       `${description} (${fmt(amountBase, config.baseCurrency)}) is much higher than your usual ${category} spend`,
       { type: "anomaly", screen: "expenses" }
@@ -250,15 +271,13 @@ export async function notifyBillsDue(
       r.template.currency || config.baseCurrency,
       config.baseCurrency
     ).catch(() => r.template.amount);
-    await sendExpoPush(
-      config.token,
+    await deliver(config,
       "Bill Due 📋",
       `${r.template.description} — ${fmt(amount, config.baseCurrency)} is due`,
       { type: "bills-due", screen: "recurring" }
     );
   } else {
-    await sendExpoPush(
-      config.token,
+    await deliver(config,
       `${rules.length} Bills Due 📋`,
       rules.map((r) => r.template.description).join(", "),
       { type: "bills-due", screen: "recurring" }
@@ -320,9 +339,7 @@ async function notifyGroupMembers(
       const share = own !== undefined && own > 0 ? await toTheirs(own) : "";
 
       const { title, body, data } = await build({ money, share, recipientId, toTheirs });
-      await sendExpoPush(config.token, title, body, data ?? groupLink("group")).catch(
-        () => undefined
-      );
+      await deliver(config, title, body, data ?? groupLink("group"));
     })
   );
 }
@@ -747,5 +764,5 @@ export async function notifyMoneyNote(opts: {
         ? `${opts.actorName} noted giving you ${money}${what}${due}.`
         : `${opts.actorName} noted taking ${money}${what} from you${due}.`;
   }
-  await sendExpoPush(config.token, title, body, { type: `note-${opts.kind}`, screen: "notes" });
+  await deliver(config, title, body, { type: `note-${opts.kind}`, screen: "notes" });
 }

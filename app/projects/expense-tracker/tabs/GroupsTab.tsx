@@ -26,7 +26,14 @@ type Invite = {
   createdAt: string;
 };
 
-export function GroupsTab() {
+export function GroupsTab({
+  openGroupId,
+  onOpened,
+}: {
+  /** A group to open straight away — set when a notification was clicked. */
+  openGroupId?: string | null;
+  onOpened?: () => void;
+} = {}) {
   const { authFetch } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   // Net position per group, so a card answers "am I owed here?" without
@@ -38,6 +45,12 @@ export function GroupsTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [respondingId, setRespondingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openGroupId) return;
+    setSelectedId(openGroupId);
+    onOpened?.();
+  }, [openGroupId, onOpened]);
 
   async function fetchGroups() {
     setLoading(true);

@@ -150,6 +150,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    // Browser push belongs to whoever is signed in. Hand the subscription back
+    // before the token goes, or the next person at this computer keeps seeing
+    // this account's notifications. Best effort, never blocks signing out.
+    const leaving = localStorage.getItem("auth_token");
+    if (leaving && typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+      void navigator.serviceWorker
+        .getRegistration("/")
+        .then((reg) => reg?.pushManager.getSubscription())
+        .then(async (sub) => {
+          if (!sub) return;
+          await fetch("/api/push/web", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${leaving}` },
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+          }).catch(() => undefined);
+          await sub.unsubscribe().catch(() => undefined);
+        })
+        .catch(() => undefined);
+    }
     localStorage.removeItem("auth_token");
     // The prefs cache is per session — leaving it would format the next
     // account's money in this one's base currency.
