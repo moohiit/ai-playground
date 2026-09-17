@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { cn, formatDay } from "../../../../lib/utils";
 import { useAuth } from "../../../../lib/authContext";
 import { formatMoney } from "../../../../modules/expense-tracker/currencies";
 import { AddExpenseModal } from "./AddExpenseModal";
 import { GroupReport } from "./GroupReport";
+import { GroupSettingsModal } from "./GroupSettingsModal";
 import { getBaseCurrency } from "../prefs";
 import type { PairBalance } from "../types";
 import type { KnownPerson } from "../types";
@@ -34,7 +36,16 @@ type Member = {
   // Per-member notification preference for this group.
   muted?: boolean;
 };
-type Group = { _id: string; name: string; description: string; createdBy: string; members: Member[]; shareId?: string | null };
+type Group = {
+  _id: string;
+  name: string;
+  description: string;
+  createdBy: string;
+  members: Member[];
+  shareId?: string | null;
+  // Members who asked the creator to delete the group (only the creator can).
+  deleteRequests?: { userId: string; name: string; requestedAt: string }[];
+};
 type Balance = {
   memberId: string;
   name: string;
@@ -123,8 +134,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const [newGuest, setNewGuest] = useState("");
   const [addingGuest, setAddingGuest] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
-  const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Group settings modal: rename, members, mute, share link, delete.
+  const [showSettings, setShowSettings] = useState(false);
 
   const shareUrl =
     typeof window !== "undefined" && shareId
@@ -171,14 +183,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
           return;
         }
         setShareId(null);
-        setShowShare(false);
         return;
       }
       const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}/share`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (data.shareId) {
         setShareId(data.shareId);
-        setShowShare(true);
       } else {
         showAlert("Couldn't create the share link — try again.");
       }
@@ -470,10 +480,12 @@ export function GroupDetail({ groupId, onBack }: Props) {
     onBack();
   }
 
-  async function handleRenameGroup() {
-    if (!group) return;
-    const name = prompt("Group name", group.name)?.trim();
-    if (!name || name === group.name) return;
+  /** Resolves true once the server accepted the name, so the settings modal
+   *  knows whether to leave its edit field open. */
+  async function renameGroup(rawName: string): Promise<boolean> {
+    if (!group) return false;
+    const name = rawName.trim();
+    if (!name || name === group.name) return false;
     try {
       const res = await authFetch(`/api/projects/expense-tracker/groups/${groupId}`, {
         method: "PUT",
@@ -483,11 +495,86 @@ export function GroupDetail({ groupId, onBack }: Props) {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         showAlert(data.error ?? "Couldn't rename the group");
+        return false;
+      }
+      // Reflect the new name at once; the refetch below confirms it.
+      setGroup((g) => (g ? { ...g, name } : g));
+      fetchAll();
+      return true;
+    } catch {
+      showAlert("Network error — group not renamed.");
+      return false;
+    }
+  }
+
+  // The pencil opens Settings, where renaming is an inline field. It used to
+  // call the browser's prompt(), the last system dialog left in the app.
+  function handleRenameGroup() {
+    if (group) setShowSettings(true);
+  }
+
+  const [deleteRequestBusy, setDeleteRequestBusy] = useState(false);
+  const creatorName =
+    group?.members.find((m) => m.userId === group?.createdBy)?.name ?? "the creator";
+
+  /** A non-creator cannot delete the group; they can ask the creator to. */
+  async function handleRequestDelete() {
+    if (deleteRequestBusy) return;
+    if (
+      !await confirmDialog(
+        `Ask ${creatorName} to delete this group?\n\nOnly they can delete it. They'll get a notification with your request.`,
+        { title: "Request deletion", confirmText: "Send request" }
+      )
+    )
+      return;
+    setDeleteRequestBusy(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/delete-request`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showAlert(data.error ?? `Couldn't send the request (HTTP ${res.status})`);
+        return;
+      }
+      showAlert(`${creatorName} has been notified.`, "Request sent");
+      fetchAll();
+    } catch {
+      showAlert("Network error — request not sent.");
+    } finally {
+      setDeleteRequestBusy(false);
+    }
+  }
+
+  /** Same endpoint for both roles: a member withdraws their own request, the
+   *  creator dismisses every pending one. */
+  async function handleClearDeleteRequests() {
+    if (deleteRequestBusy) return;
+    const isCreator = user?.userId === group?.createdBy;
+    setDeleteRequestBusy(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/delete-request`,
+        { method: "DELETE" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showAlert(
+          data.error ??
+            `Couldn't ${isCreator ? "dismiss the requests" : "withdraw the request"} (HTTP ${res.status})`
+        );
         return;
       }
       fetchAll();
     } catch {
-      showAlert("Network error — group not renamed.");
+      showAlert(
+        isCreator
+          ? "Network error — requests not dismissed."
+          : "Network error — request not withdrawn."
+      );
+    } finally {
+      setDeleteRequestBusy(false);
     }
   }
 
@@ -655,6 +742,10 @@ export function GroupDetail({ groupId, onBack }: Props) {
   const showPagination = !pair && expenseTotal > PAGE_SIZE;
   const rangeStart = expenseTotal === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(expenseTotal, page * PAGE_SIZE);
+  const isCreator = user?.userId === group.createdBy;
+  const deleteRequests = group.deleteRequests ?? [];
+  // Only the creator can act on these, so only they get the gear badge.
+  const pendingDeleteRequests = isCreator ? deleteRequests.length : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -683,25 +774,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
             <p className="text-xs text-zinc-500">{group.description}</p>
           )}
         </div>
+        {/* Add Expense lives on the Active tab (heading row + phone FAB);
+            share, members and delete live in the settings modal. */}
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setShowAdd(true)}
-            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-r from-brand-600 via-brand-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-500/30 transition-transform hover:scale-[1.03]"
-          >
-            <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-            <span className="relative">+ Add Expense</span>
-          </button>
-          <button
-            onClick={() => (shareId ? setShowShare((v) => !v) : toggleShare())}
-            className={cn(
-              "rounded-lg border px-4 py-2 text-sm transition-colors",
-              shareId
-                ? "border-brand-500/40 bg-brand-500/10 text-brand-300 hover:bg-brand-500/20"
-                : "border-zinc-700 bg-zinc-900/40 text-zinc-300 hover:border-zinc-500"
-            )}
-          >
-            {shareId ? "🔗 Shared" : "Share"}
-          </button>
           <button
             onClick={handleToggleMute}
             disabled={muteBusy}
@@ -715,41 +790,28 @@ export function GroupDetail({ groupId, onBack }: Props) {
             {muted ? <BellOffIcon /> : <BellIcon />}
           </button>
           <button
-            onClick={handleDeleteGroup}
-            className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-2 text-sm text-red-400 transition-colors hover:border-red-500/60 hover:bg-red-500/10"
+            onClick={() => setShowSettings(true)}
+            title={
+              pendingDeleteRequests > 0
+                ? "Group settings — members asked you to delete this group"
+                : "Group settings"
+            }
+            aria-label={
+              pendingDeleteRequests > 0
+                ? "Group settings — members asked you to delete this group"
+                : "Group settings"
+            }
+            aria-haspopup="dialog"
+            className="relative inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/40 px-2.5 py-2 text-zinc-200 transition-colors hover:border-zinc-500"
           >
-            Delete Group
+            <GearIcon />
+            {/* The creator has no other cue that someone asked for deletion. */}
+            {pendingDeleteRequests > 0 && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-zinc-950 bg-amber-400" />
+            )}
           </button>
         </div>
       </div>
-
-      {showShare && shareId && (
-        <div className="rounded-xl border border-brand-500/30 bg-brand-500/[0.06] p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold text-zinc-100">Public split link</div>
-            <button onClick={toggleShare} className="text-xs text-red-400 hover:text-red-300">
-              Turn off
-            </button>
-          </div>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            Anyone with this link sees a read-only "who owes whom" — no login, no amounts editable.
-          </p>
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              readOnly
-              value={shareUrl}
-              onFocus={(e) => e.target.select()}
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-xs text-zinc-300"
-            />
-            <button
-              onClick={copyShare}
-              className="shrink-0 rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-4 py-2 text-xs font-semibold text-white"
-            >
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-        </div>
-      )}
 
       <nav className="relative flex gap-1 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-1 backdrop-blur-sm">
         {(
@@ -781,27 +843,14 @@ export function GroupDetail({ groupId, onBack }: Props) {
             <MembersSection
               members={group.members}
               balances={balances}
-              suggestions={suggestions}
-              suggestionsOpen={memberFocused}
-              setSuggestionsOpen={setMemberFocused}
-              newMember={newMember}
-              setNewMember={setNewMember}
-              onAdd={handleAddMember}
-              adding={addingMember}
-              newGuest={newGuest}
-              setNewGuest={setNewGuest}
-              onAddGuest={handleAddGuest}
-              addingGuest={addingGuest}
               cur={baseCurrency}
-              canManage={user?.userId === group.createdBy}
-              creatorId={group.createdBy}
-              onRemove={handleRemoveMember}
-              removingId={removingMemberId}
+              onManage={() => setShowSettings(true)}
             />
 
             {settlements.length > 0 && (
               <SettleUpSection
                 settlements={settlements}
+                balances={balances}
                 settling={settling}
                 onSettle={handleSettle}
                 onSettlePayment={handleSettlePayment}
@@ -884,7 +933,9 @@ export function GroupDetail({ groupId, onBack }: Props) {
               </section>
             )}
 
-            <section className="flex flex-col gap-3">
+            {/* Bottom room on phones so the floating Add button never sits on
+                the last row or the pagination. */}
+            <section className="flex flex-col gap-3 pb-20 sm:pb-0">
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                 <h3 className="text-sm font-semibold text-zinc-100">
                   {pair ? "Shared expenses" : "Active Expenses"}{" "}
@@ -930,6 +981,14 @@ export function GroupDetail({ groupId, onBack }: Props) {
                       {rangeStart}–{rangeEnd} of {expenseTotal}
                     </span>
                   )}
+                  {/* sm and up; phones get the floating button below. */}
+                  <button
+                    onClick={() => setShowAdd(true)}
+                    className="group relative hidden items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-r from-brand-600 via-brand-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-500/30 transition-transform hover:scale-[1.03] sm:inline-flex"
+                  >
+                    <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+                    <span className="relative">+ Add Expense</span>
+                  </button>
                 </div>
               </div>
 
@@ -987,6 +1046,62 @@ export function GroupDetail({ groupId, onBack }: Props) {
         )}
       </div>
 
+      {/* Phones only. Portalled to <body>: an ancestor keeps a transform from
+          its entrance animation, which would otherwise anchor `fixed` to that
+          box instead of the viewport. */}
+      {tab === "active" &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => setShowAdd(true)}
+            aria-label="Add expense"
+            title="Add expense"
+            className="fixed bottom-6 right-6 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-brand-600 via-brand-500 to-fuchsia-500 text-white shadow-lg shadow-brand-500/40 transition-transform hover:scale-105 active:scale-95 sm:hidden"
+          >
+            <PlusIcon />
+          </button>,
+          document.body
+        )}
+
+      {showSettings && (
+        <GroupSettingsModal
+          onClose={() => setShowSettings(false)}
+          viewerId={user?.userId}
+          creatorId={group.createdBy}
+          groupName={group.name}
+          onRename={renameGroup}
+          members={group.members}
+          onRemoveMember={handleRemoveMember}
+          removingId={removingMemberId}
+          suggestions={suggestions}
+          suggestionsOpen={memberFocused}
+          setSuggestionsOpen={setMemberFocused}
+          newMember={newMember}
+          setNewMember={setNewMember}
+          onAddMember={handleAddMember}
+          addingMember={addingMember}
+          newGuest={newGuest}
+          setNewGuest={setNewGuest}
+          onAddGuest={handleAddGuest}
+          addingGuest={addingGuest}
+          muted={muted}
+          muteBusy={muteBusy}
+          onToggleMute={handleToggleMute}
+          shareId={shareId}
+          shareUrl={shareUrl}
+          shareBusy={shareBusy}
+          onToggleShare={toggleShare}
+          onCopyShare={copyShare}
+          copied={copied}
+          deleteRequests={deleteRequests}
+          deleteRequestBusy={deleteRequestBusy}
+          onDeleteGroup={handleDeleteGroup}
+          onRequestDelete={handleRequestDelete}
+          onClearDeleteRequests={handleClearDeleteRequests}
+        />
+      )}
+
       {showAdd && (
         <AddExpenseModal
           preselectedGroupId={groupId}
@@ -1012,51 +1127,35 @@ export function GroupDetail({ groupId, onBack }: Props) {
   );
 }
 
+/** Read-only on the Active tab: who is in the group and where each stands.
+ *  Inviting, adding guests and removing members happen in the settings modal. */
 function MembersSection({
   members,
   balances,
-  suggestions,
-  suggestionsOpen,
-  setSuggestionsOpen,
-  newMember,
-  setNewMember,
-  onAdd,
-  adding,
-  newGuest,
-  setNewGuest,
-  onAddGuest,
-  addingGuest,
   cur,
-  canManage,
-  creatorId,
-  onRemove,
-  removingId,
+  onManage,
 }: {
   members: Member[];
   balances: Balance[];
-  suggestions: KnownPerson[];
-  suggestionsOpen: boolean;
-  setSuggestionsOpen: (v: boolean) => void;
-  newMember: string;
-  setNewMember: (v: string) => void;
-  onAdd: () => void;
-  adding: boolean;
-  newGuest: string;
-  setNewGuest: (v: string) => void;
-  onAddGuest: () => void;
-  addingGuest: boolean;
   cur: string;
-  canManage: boolean;
-  creatorId: string;
-  onRemove: (m: Member) => void;
-  removingId: string | null;
+  onManage: () => void;
 }) {
   const money = (n: number) => formatMoney(n, cur);
   return (
     <section className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900/60 to-zinc-950/40 p-5 backdrop-blur-sm">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500/60 to-transparent" />
-      <h3 className="mb-3 text-sm font-semibold text-zinc-100">Members</h3>
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-zinc-100">Members</h3>
+        <button
+          type="button"
+          onClick={onManage}
+          aria-haspopup="dialog"
+          className="text-xs font-medium text-brand-400 transition-colors hover:text-brand-300"
+        >
+          Manage
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2">
         {members.map((m) => {
           const bal = balances.find((b) => b.memberId === m.userId);
           const tone = !m.isActive
@@ -1102,91 +1201,9 @@ function MembersSection({
                   {bal.netBalance > 0 ? "+" : ""}{money(bal.netBalance)}
                 </span>
               )}
-              {canManage && m.isActive && m.userId !== creatorId && (
-                <button
-                  onClick={() => onRemove(m)}
-                  disabled={removingId !== null}
-                  title={`Remove ${m.name} (their expenses stay)`}
-                  className="ml-0.5 rounded p-0.5 text-zinc-600 transition-colors hover:text-red-400 disabled:opacity-40"
-                >
-                  {removingId === m.userId ? "…" : "✕"}
-                </button>
-              )}
             </div>
           );
         })}
-      </div>
-      <div className="flex gap-2">
-        <input
-          type="email"
-          value={newMember}
-          onChange={(e) => setNewMember(e.target.value)}
-          placeholder="Invite member by email"
-          className="flex-1 rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-          onFocus={() => setSuggestionsOpen(true)}
-          // Delayed so a click on a suggestion registers before the list
-          // unmounts — otherwise blur removes it mid-click.
-          onBlur={() => setTimeout(() => setSuggestionsOpen(false), 150)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") onAdd();
-            if (e.key === "Escape") setSuggestionsOpen(false);
-          }}
-        />
-        <button
-          onClick={onAdd}
-          disabled={adding || !newMember.trim()}
-          className="rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5 text-xs font-semibold text-brand-500 transition-all hover:-translate-y-0.5 hover:bg-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-        >
-          {adding ? "Inviting..." : "Invite"}
-        </button>
-      </div>
-      {/* Suggestions narrow as you type, so the field still accepts an
-          address nobody in your groups has. */}
-      {suggestionsOpen && suggestions.length > 0 && (
-        <div className="mt-1 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/90">
-          {suggestions.map((p, i) => (
-            <button
-              key={p.userId}
-              type="button"
-              onClick={() => {
-                setNewMember(p.email);
-                setSuggestionsOpen(false);
-              }}
-              className={cn(
-                "flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-brand-500/10",
-                i > 0 && "border-t border-zinc-800/60"
-              )}
-            >
-              <span className="min-w-0">
-                <span className="block text-xs text-zinc-200">{p.name}</span>
-                <span className="block truncate text-[10px] text-zinc-500">
-                  {p.email}
-                </span>
-              </span>
-              <span className="shrink-0 text-[10px] text-zinc-600">
-                {p.sharedGroups} shared
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-2 flex gap-2">
-        <input
-          type="text"
-          value={newGuest}
-          onChange={(e) => setNewGuest(e.target.value)}
-          placeholder="Add a guest by name (no account)"
-          className="flex-1 rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-          onKeyDown={(e) => e.key === "Enter" && onAddGuest()}
-        />
-        <button
-          onClick={onAddGuest}
-          disabled={addingGuest || !newGuest.trim()}
-          className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition-all hover:-translate-y-0.5 hover:bg-zinc-800/70 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-        >
-          {addingGuest ? "Adding..." : "Add guest"}
-        </button>
       </div>
     </section>
   );
@@ -1194,6 +1211,7 @@ function MembersSection({
 
 function SettleUpSection({
   settlements,
+  balances,
   settling,
   onSettle,
   onSettlePayment,
@@ -1204,6 +1222,7 @@ function SettleUpSection({
   cur,
 }: {
   settlements: Settlement[];
+  balances: Balance[];
   settling: boolean;
   onSettle: () => void;
   onSettlePayment: (s: Settlement) => void;
@@ -1217,26 +1236,73 @@ function SettleUpSection({
   const DAY_MS = 24 * 60 * 60 * 1000;
   const recentlyReminded = (at?: string | null) =>
     !!at && Date.now() - new Date(at).getTime() < DAY_MS;
+
+  // Open when the plan involves the viewer — they have something to do here;
+  // otherwise it is other people's business and starts folded away. Decided
+  // once on mount, then the viewer's toggle wins.
+  const [open, setOpen] = useState(
+    () =>
+      !!userId &&
+      settlements.some((s) => s.from.id === userId || s.to.id === userId)
+  );
+
+  const myNet = userId
+    ? (balances.find((b) => b.memberId === userId)?.netBalance ?? 0)
+    : null;
+  const count = settlements.length;
+  const summary =
+    `${count} ${count === 1 ? "payment" : "payments"} to settle` +
+    (myNet === null
+      ? ""
+      : myNet < -0.01
+        ? ` · you owe ${money(-myNet)}`
+        : myNet > 0.01
+          ? ` · you're owed ${money(myNet)}`
+          : " · you're all square");
+
   return (
     <section className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-b from-amber-500/10 to-amber-500/5 p-5 backdrop-blur-sm">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/70 to-transparent" />
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-300">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="1" x2="12" y2="23" />
-            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-          </svg>
-          Settle Up
+      <div className={cn("flex items-center justify-between gap-3", open && "mb-3")}>
+        <h3 className="min-w-0 flex-1 text-sm font-semibold text-amber-300">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls="settle-up-rows"
+            className="flex w-full min-w-0 flex-col gap-1 rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
+          >
+            <span className="flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="1" x2="12" y2="23" />
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              </svg>
+              Settle Up
+              <ChevronDownIcon
+                className={cn(
+                  "text-amber-300/70 transition-transform duration-200",
+                  open && "rotate-180"
+                )}
+              />
+            </span>
+            {!open && (
+              <span className="text-xs font-normal text-zinc-400">{summary}</span>
+            )}
+          </button>
         </h3>
         <button
-          onClick={onSettle}
+          onClick={(e) => {
+            // Settling is not a request to fold or unfold the panel.
+            e.stopPropagation();
+            onSettle();
+          }}
           disabled={settling}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-1.5 text-xs font-semibold text-black shadow-lg shadow-amber-500/30 transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-1.5 text-xs font-semibold text-black shadow-lg shadow-amber-500/30 transition-transform hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
         >
           {settling ? "Settling..." : "Mark as Settled"}
         </button>
       </div>
-      <div className="flex flex-col gap-2">
+      <div id="settle-up-rows" hidden={!open} className={cn(open && "flex flex-col gap-2")}>
         {settlements.map((s, i) => {
           const rowKey = `${s.from.id}→${s.to.id}`;
           // Only the creditor can nudge, and only a real account can be
@@ -1774,6 +1840,31 @@ function BellIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ className }: { className?: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }

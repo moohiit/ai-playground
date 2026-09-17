@@ -12,8 +12,9 @@ import {
   View,
 } from "react-native";
 import { showAlert } from "../../lib/dialog";
-import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Line, Path } from "react-native-svg";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Line, Path } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   Redirect,
   useFocusEffect,
@@ -31,8 +32,15 @@ import type {
   KnownPerson,
   PairBalance,
 } from "../../lib/types";
-import { AppBackground, GradientButton, Input, KeyboardAwareScreen } from "../../components/ui";
+import {
+  AppBackground,
+  BRAND_GRADIENT,
+  GradientButton,
+  Input,
+  KeyboardAwareScreen,
+} from "../../components/ui";
 import { GroupReportView } from "../../components/GroupReportView";
+import { GroupSettingsSheet } from "../../components/GroupSettingsSheet";
 import { WEB_BASE_URL } from "../../lib/api";
 import { formatMoney } from "../../lib/currency";
 import { SPLIT_LABEL } from "../../lib/splits";
@@ -85,12 +93,68 @@ function BellIcon({ off, color }: { off: boolean; color: string }) {
   );
 }
 
+// Gear, plus and chevron — same approach as the bell (Feather's paths).
+function GearIcon({ color }: { color: string }) {
+  return (
+    <Svg
+      width={20}
+      height={20}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Circle cx={12} cy={12} r={3} />
+      <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </Svg>
+  );
+}
+
+function PlusIcon({ color }: { color: string }) {
+  return (
+    <Svg
+      width={26}
+      height={26}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Line x1={12} y1={5} x2={12} y2={19} />
+      <Line x1={5} y1={12} x2={19} y2={12} />
+    </Svg>
+  );
+}
+
+/** Points down when collapsed, flips up when expanded. */
+function ChevronIcon({ up, color }: { up: boolean; color: string }) {
+  return (
+    <Svg
+      width={18}
+      height={18}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d={up ? "M18 15l-6-6-6 6" : "M6 9l6 6 6-6"} />
+    </Svg>
+  );
+}
+
 export default function GroupDetailScreen() {
   // `tab` comes from a tapped notification (lib/notificationRoute.ts).
   const { id, tab: initialTab } = useLocalSearchParams<{ id: string; tab?: string }>();
   const groupId = id ?? "";
   const { user, authFetch } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [group, setGroup] = useState<Group | null>(null);
   const [balances, setBalances] = useState<Balance[]>([]);
@@ -235,6 +299,27 @@ export default function GroupDetailScreen() {
   // Settle-up rows are listed here but are not spending — the Total beside
   // this count excludes them, so the count must too.
   const spendCount = expenses.filter((e) => !e.isSettlement).length;
+
+  // Settle Up panel: open by default only when the plan involves the viewer —
+  // otherwise it is other people's business and just pushes the expenses
+  // down. null = untouched, so the default can follow the data as it loads;
+  // once tapped, the explicit choice wins.
+  const [settleOpen, setSettleOpen] = useState<boolean | null>(null);
+  const settleInvolvesMe = settlements.some(
+    (s) => s.from.id === user?.userId || s.to.id === user?.userId
+  );
+  const settleExpanded = settleOpen ?? settleInvolvesMe;
+  const myNet =
+    balances.find((b) => b.memberId === user?.userId)?.netBalance ?? 0;
+  const settleSummary = `${settlements.length} ${
+    settlements.length === 1 ? "payment" : "payments"
+  } to settle · ${
+    myNet < -0.01
+      ? `you owe ${baseMoney(-myNet)}`
+      : myNet > 0.01
+        ? `you're owed ${baseMoney(myNet)}`
+        : "you're all square"
+  }`;
 
   // Matching on name and address, because people search for whichever they
   // remember. Capped so the list never pushes the form off-screen.
@@ -616,9 +701,78 @@ export default function GroupDetailScreen() {
               );
               // Don't navigate away on failure — the group still exists.
               if (!res.ok) throw new Error();
+              // The button lives in the settings sheet; close it so the
+              // modal is not left presenting over the screen being popped.
+              setSettingsVisible(false);
               router.back();
             } catch {
               showAlert("Error", "Failed to delete group");
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  // Group settings sheet (name, members, notifications, share link, deletion).
+  const [settingsVisible, setSettingsVisible] = useState(false);
+
+  function openRename() {
+    setRenameText(group?.name ?? "");
+    setRenameVisible(true);
+  }
+
+  // Only the creator can delete a group; everyone else can ask them to.
+  const creatorName =
+    group?.members.find((m) => m.userId === group.createdBy)?.name ??
+    "the creator";
+  const [deleteRequestBusy, setDeleteRequestBusy] = useState(false);
+
+  /** POST files the viewer's request. DELETE withdraws it — or, for the
+   *  creator, clears everyone's. Resolves true when the server accepted. */
+  async function sendDeleteRequest(method: "POST" | "DELETE"): Promise<boolean> {
+    if (deleteRequestBusy) return false;
+    setDeleteRequestBusy(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/groups/${groupId}/delete-request`,
+        { method }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showAlert(
+          "Error",
+          data.error ??
+            `Couldn't ${
+              method === "POST" ? "send the request" : "update the request"
+            } (HTTP ${res.status})`
+        );
+        return false;
+      }
+      if (Array.isArray(data.deleteRequests)) {
+        setGroup((g) => (g ? { ...g, deleteRequests: data.deleteRequests } : g));
+      }
+      fetchAll();
+      return true;
+    } catch {
+      showAlert("Error", "Network error — try again.");
+      return false;
+    } finally {
+      setDeleteRequestBusy(false);
+    }
+  }
+
+  function confirmRequestDelete() {
+    showAlert(
+      "Ask to delete this group?",
+      `${creatorName} will be notified that you'd like this group deleted. Only they can delete it.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Send request",
+          onPress: async () => {
+            if (await sendDeleteRequest("POST")) {
+              showAlert("Request sent", `${creatorName} has been notified.`);
             }
           },
         },
@@ -686,10 +840,7 @@ export default function GroupDetailScreen() {
         <Pressable
           className="flex-1 flex-row items-center justify-center gap-1.5 px-3"
           disabled={user?.userId !== group?.createdBy}
-          onPress={() => {
-            setRenameText(group?.name ?? "");
-            setRenameVisible(true);
-          }}
+          onPress={openRename}
         >
           <Text className="text-center text-base font-semibold text-zinc-100" numberOfLines={1}>
             {group?.name ?? "Group"}
@@ -711,12 +862,13 @@ export default function GroupDetailScreen() {
           <BellIcon off={muted} color={muted ? "#71717a" : "#e4e4e7"} />
         </Pressable>
         <Pressable
-          onPress={() =>
-            router.push({ pathname: "/add-expense", params: { groupId } })
-          }
+          onPress={() => setSettingsVisible(true)}
+          disabled={!group}
           hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Group settings"
         >
-          <Text className="text-sm font-semibold text-brand-400">+ Add</Text>
+          <GearIcon color="#e4e4e7" />
         </Pressable>
       </View>
 
@@ -741,7 +893,13 @@ export default function GroupDetailScreen() {
       </View>
 
       <KeyboardAwareScreen
-        contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 14 }}
+        contentContainerStyle={{
+          padding: 16,
+          paddingTop: 8,
+          gap: 14,
+          // Room for the add-expense FAB so it never covers the last row.
+          paddingBottom: tab === "active" ? 96 + insets.bottom : 16,
+        }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
         }
@@ -752,17 +910,24 @@ export default function GroupDetailScreen() {
           </View>
         ) : tab === "active" ? (
           <>
-            {/* Members + balances */}
+            {/* Members + balances. Read-only here — adding and removing
+                people lives in the settings sheet. */}
             <View className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <Text className="mb-3 text-sm font-semibold text-zinc-100">Members</Text>
+              <View className="mb-3 flex-row items-center justify-between">
+                <Text className="text-sm font-semibold text-zinc-100">Members</Text>
+                <Pressable
+                  onPress={() => setSettingsVisible(true)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage members"
+                >
+                  <Text className="text-xs font-semibold text-brand-400">Manage</Text>
+                </Pressable>
+              </View>
               <View className="flex-row flex-wrap gap-2">
                 {group?.members.map((m) => {
                   const bal = balances.find((b) => b.memberId === m.userId);
                   const net = bal?.netBalance ?? 0;
-                  const canRemove =
-                    user?.userId === group.createdBy &&
-                    m.isActive &&
-                    m.userId !== group.createdBy;
                   return (
                     <View
                       key={m.userId}
@@ -794,105 +959,31 @@ export default function GroupDetailScreen() {
                           {net > 0 ? "+" : ""}{baseMoney(net)}
                         </Text>
                       )}
-                      {canRemove && (
-                        <Pressable
-                          onPress={() => confirmRemoveMember(m)}
-                          hitSlop={8}
-                          disabled={removingMemberId !== null}
-                        >
-                          <Text className="text-xs text-zinc-600">
-                            {removingMemberId === m.userId ? "…" : "✕"}
-                          </Text>
-                        </Pressable>
-                      )}
                     </View>
                   );
                 })}
-              </View>
-
-              <View className="mt-3 flex-row gap-2">
-                <Input
-                  value={newMember}
-                  onChangeText={setNewMember}
-                  onFocus={() => setMemberFocused(true)}
-                  // Delayed so a tap on a suggestion lands before the list
-                  // unmounts — otherwise the blur removes it mid-press.
-                  onBlur={() => setTimeout(() => setMemberFocused(false), 150)}
-                  placeholder="Invite member by email"
-                  placeholderTextColor="#71717a"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  className="flex-1 rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100"
-                />
-                <Pressable
-                  onPress={handleAddMember}
-                  disabled={addingMember || !newMember.trim()}
-                  className={`items-center justify-center rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 ${
-                    addingMember || !newMember.trim() ? "opacity-50" : ""
-                  }`}
-                >
-                  <Text className="text-xs font-semibold text-brand-400">
-                    {addingMember ? "…" : "Add"}
-                  </Text>
-                </Pressable>
-              </View>
-
-              {/* Suggestions narrow as you type, so the field still accepts
-                  an address nobody in your groups has. */}
-              {memberFocused && suggestions.length > 0 && (
-                <View className="mt-1 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/80">
-                  {suggestions.map((p, i) => (
-                    <Pressable
-                      key={p.userId}
-                      onPress={() => {
-                        setNewMember(p.email);
-                        setMemberFocused(false);
-                      }}
-                      className={`flex-row items-center justify-between px-3 py-2.5 ${
-                        i > 0 ? "border-t border-white/5" : ""
-                      }`}
-                    >
-                      <View className="flex-1">
-                        <Text className="text-[13px] text-zinc-200">{p.name}</Text>
-                        <Text className="text-[11px] text-zinc-500" numberOfLines={1}>
-                          {p.email}
-                        </Text>
-                      </View>
-                      <Text className="text-[11px] text-zinc-600">
-                        {p.sharedGroups} shared
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-              <View className="mt-2 flex-row gap-2">
-                <Input
-                  value={newGuest}
-                  onChangeText={setNewGuest}
-                  placeholder="Add a guest by name (no account)"
-                  placeholderTextColor="#71717a"
-                  className="flex-1 rounded-lg border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100"
-                />
-                <Pressable
-                  onPress={handleAddGuest}
-                  disabled={addingGuest || !newGuest.trim()}
-                  className={`items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800/40 px-3 ${
-                    addingGuest || !newGuest.trim() ? "opacity-50" : ""
-                  }`}
-                >
-                  <Text className="text-xs font-semibold text-zinc-300">
-                    {addingGuest ? "…" : "Guest"}
-                  </Text>
-                </Pressable>
               </View>
             </View>
 
             {/* Settle up */}
             {settlements.length > 0 && (
               <View className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
-                <View className="mb-3 flex-row items-center justify-between">
-                  <Text className="text-sm font-semibold text-amber-300">Settle Up</Text>
+                <View className="flex-row items-center justify-between gap-3">
+                  {/* The title area toggles the panel; "Mark as Settled" is a
+                      sibling, not a child, so tapping it never collapses. */}
+                  <Pressable
+                    onPress={() => setSettleOpen(!settleExpanded)}
+                    hitSlop={8}
+                    className="flex-1 flex-row items-center gap-1.5"
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: settleExpanded }}
+                    accessibilityLabel={
+                      settleExpanded ? "Collapse Settle Up" : "Expand Settle Up"
+                    }
+                  >
+                    <Text className="text-sm font-semibold text-amber-300">Settle Up</Text>
+                    <ChevronIcon up={settleExpanded} color="#fcd34d" />
+                  </Pressable>
                   <Pressable
                     onPress={handleSettle}
                     disabled={settling}
@@ -905,7 +996,13 @@ export default function GroupDetailScreen() {
                     </Text>
                   </Pressable>
                 </View>
-                <View className="gap-2">
+                {!settleExpanded ? (
+                  <Pressable onPress={() => setSettleOpen(true)} className="mt-2">
+                    <Text className="text-[13px] text-zinc-400">{settleSummary}</Text>
+                  </Pressable>
+                ) : (
+                <>
+                <View className="mt-3 gap-2">
                   {settlements.map((s) => {
                     const rowKey = `${s.from.id}→${s.to.id}`;
                     // Only the person owed can nudge, and only someone with
@@ -1006,6 +1103,8 @@ export default function GroupDetailScreen() {
                     owe. The plan above settles everyone with the fewest transfers.
                   </Text>
                 </View>
+                </>
+                )}
               </View>
             )}
 
@@ -1250,33 +1349,7 @@ export default function GroupDetailScreen() {
               </Text>
             )}
 
-            {/* Creating and revoking the public link is creator-only on the
-                server, so offering it to every member only produced a refusal
-                they could not act on. Members can still open an existing link. */}
-            {(user?.userId === group?.createdBy || shareId) && (
-              <Pressable
-                onPress={shareSplit}
-                className="mt-2 items-center rounded-xl border border-brand-500/30 bg-brand-500/10 py-3"
-              >
-                <Text className="text-sm font-medium text-white">
-                  {shareId ? "🔗 Share split link" : "Share split (create link)"}
-                </Text>
-              </Pressable>
-            )}
-            {shareId && user?.userId === group?.createdBy && (
-              <Pressable onPress={stopSharing} className="items-center py-1">
-                <Text className="text-[11px] text-zinc-500">Turn off public link</Text>
-              </Pressable>
-            )}
-
-            <Pressable
-              onPress={handleDeleteGroup}
-              className="mt-2 items-center rounded-xl border border-red-500/30 bg-red-500/5 py-3"
-            >
-              <Text className="text-sm font-medium text-red-400">
-                Delete Group
-              </Text>
-            </Pressable>
+            {/* Share link and Delete group moved to the settings sheet (gear). */}
           </>
         ) : tab === "settled" ? (
           history.length === 0 ? (
@@ -1302,7 +1375,81 @@ export default function GroupDetailScreen() {
         )}
       </KeyboardAwareScreen>
 
-      {/* Rename group */}
+      {/* Add expense — floating, Active tab only. The shadow sits on the
+          outer Pressable because the inner view clips (overflow: hidden) to
+          round the gradient, and a clipped view drops its iOS shadow. */}
+      {tab === "active" && (
+        <Pressable
+          onPress={() =>
+            router.push({ pathname: "/add-expense", params: { groupId } })
+          }
+          accessibilityRole="button"
+          accessibilityLabel="Add expense"
+          style={({ pressed }) => ({
+            position: "absolute",
+            right: 20,
+            bottom: insets.bottom + 20,
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: BRAND_GRADIENT[1],
+            shadowColor: "#000",
+            shadowOpacity: 0.35,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 8,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <View style={{ flex: 1, borderRadius: 28, overflow: "hidden" }}>
+            <LinearGradient
+              colors={BRAND_GRADIENT}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+            >
+              <PlusIcon color="#ffffff" />
+            </LinearGradient>
+          </View>
+        </Pressable>
+      )}
+
+      <GroupSettingsSheet
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        group={group}
+        userId={user?.userId}
+        creatorName={creatorName}
+        onRename={openRename}
+        removingMemberId={removingMemberId}
+        onRemoveMember={confirmRemoveMember}
+        newMember={newMember}
+        onChangeNewMember={setNewMember}
+        memberFocused={memberFocused}
+        onMemberFocusChange={setMemberFocused}
+        suggestions={suggestions}
+        addingMember={addingMember}
+        onAddMember={handleAddMember}
+        newGuest={newGuest}
+        onChangeNewGuest={setNewGuest}
+        addingGuest={addingGuest}
+        onAddGuest={handleAddGuest}
+        muted={muted}
+        muting={muting}
+        onToggleMute={toggleMute}
+        shareId={shareId}
+        sharing={sharing}
+        onShare={shareSplit}
+        onStopSharing={stopSharing}
+        onDeleteGroup={handleDeleteGroup}
+        deleteRequestBusy={deleteRequestBusy}
+        onRequestDelete={confirmRequestDelete}
+        onWithdrawDeleteRequest={() => void sendDeleteRequest("DELETE")}
+        onDismissDeleteRequests={() => void sendDeleteRequest("DELETE")}
+      />
+
+      {/* Rename group — declared after the settings sheet so it presents on
+          top when opened from the sheet's "Rename" row. */}
       <Modal
         visible={renameVisible}
         animationType="slide"

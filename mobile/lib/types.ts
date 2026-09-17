@@ -114,6 +114,8 @@ export type Group = {
   // Newest expense recorded in the group; null when it has none yet. The list
   // API sorts on this, so the most recently used group comes back first.
   lastExpenseAt?: string | null;
+  // Members who asked the creator to delete the group (only the creator can).
+  deleteRequests?: { userId: string; name: string; requestedAt: string }[];
 };
 
 export type Balance = {
