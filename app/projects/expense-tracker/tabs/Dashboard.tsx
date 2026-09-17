@@ -579,10 +579,30 @@ export function Dashboard() {
                   {formatMoney(owed.iOwe, base)} you owe
                 </div>
               )}
+              {/* Money notes are already inside the totals — this only says
+                  how much of them, so the figure isn't a surprise. */}
+              {owed.notes && (owed.notes.owedToMe > 0 || owed.notes.iOwe > 0) && (
+                <div className="mt-0.5 text-[11px] text-zinc-500">
+                  Includes{" "}
+                  {[
+                    owed.notes.owedToMe > 0 &&
+                      `${formatMoney(owed.notes.owedToMe, base)} owed to you`,
+                    owed.notes.iOwe > 0 &&
+                      `${formatMoney(owed.notes.iOwe, base)} you owe`,
+                  ]
+                    .filter(Boolean)
+                    .join(" and ")}{" "}
+                  from money notes
+                </div>
+              )}
             </div>
             <span className="text-[11px] text-zinc-500">
-              across {owed.byGroup.length}{" "}
-              {owed.byGroup.length === 1 ? "group" : "groups"}
+              {(() => {
+                        const hasNotes = (owed.notes?.owedToMe ?? 0) > 0 || (owed.notes?.iOwe ?? 0) > 0;
+                        const g = owed.byGroup.length;
+                        const groups = g > 0 ? `across ${g} ${g === 1 ? "group" : "groups"}` : "";
+                        return groups ? (hasNotes ? `${groups} + notes` : groups) : hasNotes ? "from money notes" : "";
+                      })()}
             </span>
           </div>
           <div className="mt-3 flex flex-col gap-1.5 border-t border-white/10 pt-3">

@@ -8,7 +8,7 @@
  */
 export type NotificationRoute =
   | { pathname: "/group/[id]"; params: { id: string; tab: GroupTab } }
-  | { pathname: "/budgets" | "/expenses" | "/recurring" | "/groups" };
+  | { pathname: "/budgets" | "/expenses" | "/recurring" | "/groups" | "/notes" };
 
 export type GroupTab = "active" | "settled" | "report";
 
@@ -17,6 +17,7 @@ const SCREENS = {
   expenses: "/expenses",
   recurring: "/recurring",
   groups: "/groups",
+  notes: "/notes",
 } as const;
 
 const TABS: readonly GroupTab[] = ["active", "settled", "report"];

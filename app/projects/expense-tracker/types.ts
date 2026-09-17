@@ -82,6 +82,9 @@ export type MyBalances = {
     owedToMe: number;
     iOwe: number;
   }[];
+  /** The part of owedToMe / iOwe that comes from money notes — already
+   *  included in the totals above, not extra. */
+  notes?: { owedToMe: number; iOwe: number };
 };
 
 /** Someone the viewer already shares a group with, for member suggestions. */
