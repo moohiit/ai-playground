@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   Text,
   View,
 } from "react-native";
@@ -22,19 +23,7 @@ import {
   Input,
   KeyboardAwareScreen,
 } from "../../components/ui";
-
-type MoneyNote = {
-  _id: string;
-  direction: "lent" | "borrowed";
-  personName: string;
-  amount: number;
-  currency: string;
-  description: string;
-  givenOn: string;
-  dueBy: string | null;
-  settledAt: string | null;
-  overdue: boolean;
-};
+import type { KnownPerson, MoneyNote } from "../../lib/types";
 
 type TodoItem = {
   _id: string;
@@ -44,6 +33,15 @@ type TodoItem = {
 };
 
 const shortDate = (iso: string) => formatDay(iso, { day: "numeric", month: "short" });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+// The server refuses a second nudge inside 24h; mirror that so the button
+// reads "Reminded" instead of failing on press.
+const remindedRecently = (n: MoneyNote) => {
+  if (!n.remindedAt) return false;
+  const at = Date.parse(n.remindedAt);
+  return !Number.isNaN(at) && Date.now() - at < DAY_MS;
+};
 
 export default function NotesScreen() {
   const { authFetch } = useAuth();
@@ -65,10 +63,24 @@ export default function NotesScreen() {
   const [dueBy, setDueBy] = useState("");
   const [picker, setPicker] = useState<"given" | "due" | null>(null);
   const [saving, setSaving] = useState(false);
+  // Optional link to a Splitzy account. `linkedBefore` is what the note had
+  // when the editor opened, so clearing the field can be sent as null.
+  const [linkedEmail, setLinkedEmail] = useState("");
+  const [linkedBefore, setLinkedBefore] = useState("");
+  const [linkFocused, setLinkFocused] = useState(false);
+  const [people, setPeople] = useState<KnownPerson[]>([]);
+  const peopleRequested = useRef(false);
+  const [remindingId, setRemindingId] = useState<string | null>(null);
 
   // todo input
   const [todoText, setTodoText] = useState("");
   const [addingTodo, setAddingTodo] = useState(false);
+  // inline to-do editor — one row at a time
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editTodoText, setEditTodoText] = useState("");
+  const [editTodoDue, setEditTodoDue] = useState("");
+  const [todoPicker, setTodoPicker] = useState(false);
+  const [savingTodo, setSavingTodo] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -106,14 +118,43 @@ export default function NotesScreen() {
     setDescription("");
     setGivenOn(localISODate(new Date()));
     setDueBy("");
+    setLinkedEmail("");
+    setLinkedBefore("");
+    setLinkFocused(false);
+  }
+
+  // Suggestions for the link field. Fetched the first time the sheet opens;
+  // a failure just means no suggestions, and the next open tries again.
+  async function loadPeople() {
+    if (peopleRequested.current) return;
+    peopleRequested.current = true;
+    try {
+      const res = await authFetch("/api/projects/expense-tracker/people");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        peopleRequested.current = false;
+        return;
+      }
+      setPeople(Array.isArray(data.people) ? data.people : []);
+    } catch {
+      peopleRequested.current = false;
+    }
   }
 
   function openAdd() {
     resetForm();
     setShowAdd(true);
+    loadPeople();
   }
 
   function openEdit(n: MoneyNote) {
+    // Someone else's note about you — theirs to change, not yours.
+    if (n.mirrored) return;
+    const linked = n.linkedEmail ?? "";
+    setLinkedEmail(linked);
+    setLinkedBefore(linked);
+    setLinkFocused(false);
+    loadPeople();
     setEditingId(n._id);
     setDirection(n.direction);
     setPersonName(n.personName);
@@ -129,6 +170,21 @@ export default function NotesScreen() {
     const amt = parseAmount(amount);
     if (!personName.trim()) return showAlert("Who was the money given to?");
     if (!amt || amt <= 0) return showAlert("Enter a valid amount");
+    const email = linkedEmail.trim();
+    const body: Record<string, unknown> = {
+      direction,
+      personName: personName.trim(),
+      amount: amt,
+      description: description.trim(),
+      givenOn,
+      dueBy: dueBy || null,
+    };
+    if (!editingId) {
+      if (email) body.linkedEmail = email;
+    } else if (email.toLowerCase() !== linkedBefore.trim().toLowerCase()) {
+      // PATCH: only when the link actually changed; null unlinks.
+      body.linkedEmail = email || null;
+    }
     setSaving(true);
     try {
       const res = await authFetch(
@@ -138,19 +194,15 @@ export default function NotesScreen() {
         {
           method: editingId ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            direction,
-            personName: personName.trim(),
-            amount: amt,
-            description: description.trim(),
-            givenOn,
-            dueBy: dueBy || null,
-          }),
+          body: JSON.stringify(body),
         }
       );
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        showAlert("Error", data.error ?? "Failed to save note");
+        showAlert(
+          "Error",
+          data.error ?? `Couldn't save the note (HTTP ${res.status})`
+        );
         return;
       }
       resetForm();
@@ -201,6 +253,112 @@ export default function NotesScreen() {
         },
       },
     ]);
+  }
+
+  async function remindNote(n: MoneyNote) {
+    if (remindingId) return;
+    setRemindingId(n._id);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/notes/${n._id}/remind`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showAlert(
+          "Error",
+          data.error ?? `Couldn't send the reminder (HTTP ${res.status})`
+        );
+        return;
+      }
+      showAlert("Reminder sent", `${n.personName} has been nudged.`);
+      await load();
+    } catch {
+      showAlert("Error", "Network error — reminder not sent.");
+    } finally {
+      setRemindingId(null);
+    }
+  }
+
+  function confirmHideNote(n: MoneyNote) {
+    const owner = n.ownerName || n.personName;
+    showAlert(
+      "Hide this note?",
+      `It disappears from your list. ${owner} keeps their copy.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Hide",
+          style: "destructive",
+          onPress: async () => {
+            setBusyId(n._id);
+            try {
+              const res = await authFetch(
+                `/api/projects/expense-tracker/notes/${n._id}/hide`,
+                { method: "POST" }
+              );
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                showAlert(
+                  "Error",
+                  data.error ?? `Couldn't hide the note (HTTP ${res.status})`
+                );
+                return;
+              }
+              await load();
+            } catch {
+              showAlert("Error", "Network error — note not hidden.");
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  function startEditTodo(t: TodoItem) {
+    setEditingTodoId(t._id);
+    setEditTodoText(t.text);
+    setEditTodoDue(t.dueDate ? t.dueDate.slice(0, 10) : "");
+    setTodoPicker(false);
+  }
+
+  function cancelEditTodo() {
+    setEditingTodoId(null);
+    setTodoPicker(false);
+  }
+
+  async function saveTodoEdit() {
+    if (savingTodo || !editingTodoId) return;
+    const text = editTodoText.trim();
+    if (!text) return;
+    setSavingTodo(true);
+    try {
+      const res = await authFetch(
+        `/api/projects/expense-tracker/todos/${editingTodoId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, dueDate: editTodoDue || null }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showAlert(
+          "Error",
+          data.error ?? `Couldn't save the to-do (HTTP ${res.status})`
+        );
+        return;
+      }
+      setEditingTodoId(null);
+      setTodoPicker(false);
+      await load();
+    } catch {
+      showAlert("Error", "Network error — to-do not saved.");
+    } finally {
+      setSavingTodo(false);
+    }
   }
 
   async function addTodo() {
@@ -284,6 +442,20 @@ export default function NotesScreen() {
   };
   const owedToMe = totalsByCurrency("lent");
   const iOwe = totalsByCurrency("borrowed");
+
+  // Same matching as the group invite field: name or address, whichever the
+  // user remembers. Capped low — the sheet is already tall with a keyboard up.
+  const linkSuggestions = useMemo(() => {
+    const q = linkedEmail.trim().toLowerCase();
+    const pool = q
+      ? people.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)
+        )
+      : people;
+    // Nothing to suggest once the field already holds that exact address.
+    return pool.filter((p) => p.email.toLowerCase() !== q).slice(0, 4);
+  }, [people, linkedEmail]);
 
   return (
     <SafeAreaView className="flex-1" edges={["top"]}>
@@ -387,9 +559,12 @@ export default function NotesScreen() {
                     key={n._id}
                     n={n}
                     busy={busyId === n._id}
+                    reminding={remindingId === n._id}
                     onSettle={() => toggleSettled(n)}
                     onEdit={() => openEdit(n)}
                     onDelete={() => confirmDeleteNote(n)}
+                    onRemind={() => remindNote(n)}
+                    onHide={() => confirmHideNote(n)}
                   />
                 ))}
                 {settledNotes.length > 0 && (
@@ -402,9 +577,12 @@ export default function NotesScreen() {
                     key={n._id}
                     n={n}
                     busy={busyId === n._id}
+                    reminding={remindingId === n._id}
                     onSettle={() => toggleSettled(n)}
                     onEdit={() => openEdit(n)}
                     onDelete={() => confirmDeleteNote(n)}
+                    onRemind={() => remindNote(n)}
+                    onHide={() => confirmHideNote(n)}
                   />
                 ))}
                 <Text className="px-1 text-center text-[11px] text-zinc-600">
@@ -443,7 +621,79 @@ export default function NotesScreen() {
                 <Text className="text-sm text-zinc-500">Nothing to do — nice.</Text>
               </View>
             ) : (
-              todos.map((t) => (
+              todos.map((t) =>
+                editingTodoId === t._id ? (
+                  <View
+                    key={t._id}
+                    className="gap-2 rounded-xl border border-brand-500/40 bg-white/[0.04] p-3"
+                  >
+                    <Input
+                      value={editTodoText}
+                      onChangeText={setEditTodoText}
+                      onSubmitEditing={saveTodoEdit}
+                      placeholder="What needs doing?"
+                      returnKeyType="done"
+                      autoFocus
+                      className="rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2.5 text-zinc-100"
+                    />
+                    <View className="flex-row items-center gap-2">
+                      <Pressable
+                        onPress={() => setTodoPicker(true)}
+                        className="flex-1 rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2.5"
+                      >
+                        <Text
+                          className={`text-[13px] ${
+                            editTodoDue ? "text-zinc-100" : "text-zinc-500"
+                          }`}
+                        >
+                          {editTodoDue ? `Due ${editTodoDue}` : "Due date (optional)"}
+                        </Text>
+                      </Pressable>
+                      {editTodoDue !== "" && (
+                        <Pressable
+                          onPress={() => setEditTodoDue("")}
+                          className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-2.5 py-2"
+                        >
+                          <Text className="text-[11px] font-semibold text-zinc-400">
+                            Clear
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                    {todoPicker && (
+                      <DateTimePicker
+                        value={editTodoDue ? new Date(editTodoDue) : new Date()}
+                        mode="date"
+                        onChange={(_, d) => {
+                          setTodoPicker(false);
+                          if (d) setEditTodoDue(localISODate(d));
+                        }}
+                      />
+                    )}
+                    <View className="flex-row justify-end gap-2">
+                      <Pressable
+                        onPress={cancelEditTodo}
+                        disabled={savingTodo}
+                        className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-1.5"
+                      >
+                        <Text className="text-xs font-semibold text-zinc-400">
+                          Cancel
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={saveTodoEdit}
+                        disabled={savingTodo || !editTodoText.trim()}
+                        className={`rounded-lg border border-brand-500/40 bg-brand-600 px-3 py-1.5 ${
+                          savingTodo || !editTodoText.trim() ? "opacity-50" : ""
+                        }`}
+                      >
+                        <Text className="text-xs font-semibold text-white">
+                          {savingTodo ? "…" : "Save"}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
                 <Pressable
                   key={t._id}
                   onPress={() => toggleTodo(t)}
@@ -463,15 +713,32 @@ export default function NotesScreen() {
                   >
                     {t.done && <Text className="text-[11px] text-emerald-400">✓</Text>}
                   </View>
-                  <Text
-                    className={`flex-1 text-sm ${
-                      t.done ? "text-zinc-500 line-through" : "text-zinc-200"
-                    }`}
+                  <View className="min-w-0 flex-1">
+                    <Text
+                      className={`text-sm ${
+                        t.done ? "text-zinc-500 line-through" : "text-zinc-200"
+                      }`}
+                    >
+                      {t.text}
+                    </Text>
+                    {t.dueDate && (
+                      <Text className="mt-0.5 text-[11px] text-zinc-500">
+                        due {shortDate(t.dueDate)}
+                      </Text>
+                    )}
+                  </View>
+                  <Pressable
+                    onPress={() => startEditTodo(t)}
+                    hitSlop={8}
+                    className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-2.5 py-1.5"
                   >
-                    {t.text}
-                  </Text>
+                    <Text className="text-[11px] font-semibold text-zinc-300">
+                      Edit
+                    </Text>
+                  </Pressable>
                 </Pressable>
-              ))
+                )
+              )
             )}
             {todos.length > 0 && (
               <Text className="px-1 text-center text-[11px] text-zinc-600">
@@ -494,7 +761,23 @@ export default function NotesScreen() {
           style={{ flex: 1 }}
         >
           <View className="flex-1 justify-end bg-black/60">
-            <View className="rounded-t-3xl border-t border-white/10 bg-zinc-950 px-5 pb-10 pt-5">
+            {/* Capped + scrollable: with the link field and its suggestions the
+                sheet is taller than a small screen with the keyboard up.
+                "handled" lets a suggestion take the tap while the keyboard
+                is open instead of the tap only dismissing it. */}
+            <View
+              className="rounded-t-3xl border-t border-white/10 bg-zinc-950"
+              style={{ maxHeight: "92%" }}
+            >
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{
+                  paddingHorizontal: 20,
+                  paddingTop: 20,
+                  paddingBottom: 40,
+                }}
+              >
               <Text className="mb-4 text-base font-bold text-zinc-100">
                 {editingId ? "Edit money note" : "New money note"}
               </Text>
@@ -533,6 +816,49 @@ export default function NotesScreen() {
                   placeholder={direction === "lent" ? "Given to (name)" : "Taken from (name)"}
                   className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
                 />
+                <View>
+                  <Text className="mb-1.5 text-[13px] uppercase tracking-wider text-zinc-500">
+                    Link to a Splitzy user (optional)
+                  </Text>
+                  <Input
+                    value={linkedEmail}
+                    onChangeText={setLinkedEmail}
+                    onFocus={() => setLinkFocused(true)}
+                    // Delayed so a tap on a suggestion lands before the list
+                    // unmounts — otherwise the blur removes it mid-press.
+                    onBlur={() => setTimeout(() => setLinkFocused(false), 150)}
+                    placeholder="Their email"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    className="rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-zinc-100"
+                  />
+                  {linkFocused && linkSuggestions.length > 0 && (
+                    <View className="mt-1 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/80">
+                      {linkSuggestions.map((p, i) => (
+                        <Pressable
+                          key={p.userId}
+                          onPress={() => {
+                            setLinkedEmail(p.email);
+                            if (!personName.trim()) setPersonName(p.name);
+                            setLinkFocused(false);
+                          }}
+                          className={`px-3 py-2.5 ${
+                            i > 0 ? "border-t border-white/5" : ""
+                          }`}
+                        >
+                          <Text className="text-[13px] text-zinc-200">{p.name}</Text>
+                          <Text className="text-[11px] text-zinc-500" numberOfLines={1}>
+                            {p.email}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                  <Text className="mt-1.5 text-[11px] text-zinc-500">
+                    They'll see this note in their own list and can be reminded.
+                  </Text>
+                </View>
                 <Input
                   value={amount}
                   onChangeText={setAmount}
@@ -602,6 +928,7 @@ export default function NotesScreen() {
                   <Text className="text-sm text-zinc-500">Cancel</Text>
                 </Pressable>
               </View>
+              </ScrollView>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -613,21 +940,31 @@ export default function NotesScreen() {
 function NoteCard({
   n,
   busy,
+  reminding,
   onSettle,
   onEdit,
   onDelete,
+  onRemind,
+  onHide,
 }: {
   n: MoneyNote;
   busy: boolean;
+  reminding: boolean;
   onSettle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onRemind: () => void;
+  onHide: () => void;
 }) {
   const lent = n.direction === "lent";
+  // Written by someone else about the viewer: read-only, can only be hidden.
+  const mirrored = n.mirrored === true;
+  const canRemind = !mirrored && lent && !n.settledAt && !!n.linkedUserId;
+  const reminded = remindedRecently(n);
   return (
     <Pressable
-      onPress={onEdit}
-      onLongPress={onDelete}
+      onPress={mirrored ? undefined : onEdit}
+      onLongPress={mirrored ? undefined : onDelete}
       className={`rounded-2xl border p-4 ${
         n.settledAt
           ? "border-white/5 bg-zinc-950/30 opacity-70"
@@ -644,6 +981,16 @@ function NoteCard({
             <Text className="text-sm font-semibold text-zinc-100">
               {n.personName}
             </Text>
+            {!mirrored && !!n.linkedUserId && (
+              <Text className="rounded-full border border-brand-500/40 bg-brand-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-brand-400">
+                on Splitzy
+              </Text>
+            )}
+            {mirrored && (
+              <Text className="rounded-full border border-white/15 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-semibold text-zinc-300">
+                Added by {n.ownerName || n.personName}
+              </Text>
+            )}
             <Text className={`text-sm ${lent ? "text-emerald-400" : "text-red-400"}`}>
               {lent ? "owes you" : "you owe"} {formatMoney(n.amount, n.currency)}
             </Text>
@@ -660,24 +1007,61 @@ function NoteCard({
             {n.settledAt ? ` · settled ${shortDate(n.settledAt)}` : ""}
           </Text>
         </View>
-        <Pressable
-          onPress={onSettle}
-          disabled={busy}
-          className={`rounded-lg border px-2.5 py-1.5 ${
-            n.settledAt
-              ? "border-zinc-700 bg-zinc-900/40"
-              : "border-emerald-500/40 bg-emerald-500/10"
-          } ${busy ? "opacity-50" : ""}`}
-        >
-          <Text
-            className={`text-[11px] font-semibold ${
-              n.settledAt ? "text-zinc-400" : "text-emerald-300"
+        {mirrored ? (
+          <Pressable
+            onPress={onHide}
+            disabled={busy}
+            className={`rounded-lg border border-zinc-700 bg-zinc-900/40 px-2.5 py-1.5 ${
+              busy ? "opacity-50" : ""
             }`}
           >
-            {busy ? "…" : n.settledAt ? "Reopen" : lent ? "Returned" : "Repaid"}
-          </Text>
-        </Pressable>
+            <Text className="text-[11px] font-semibold text-zinc-400">
+              {busy ? "…" : "Hide"}
+            </Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={onSettle}
+            disabled={busy}
+            className={`rounded-lg border px-2.5 py-1.5 ${
+              n.settledAt
+                ? "border-zinc-700 bg-zinc-900/40"
+                : "border-emerald-500/40 bg-emerald-500/10"
+            } ${busy ? "opacity-50" : ""}`}
+          >
+            <Text
+              className={`text-[11px] font-semibold ${
+                n.settledAt ? "text-zinc-400" : "text-emerald-300"
+              }`}
+            >
+              {busy ? "…" : n.settledAt ? "Reopen" : lent ? "Returned" : "Repaid"}
+            </Text>
+          </Pressable>
+        )}
       </View>
+      {!mirrored && (
+        <View className="mt-3 flex-row items-center justify-end gap-2">
+          {canRemind && (
+            <Pressable
+              onPress={onRemind}
+              disabled={reminding || reminded}
+              className={`rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 ${
+                reminding || reminded ? "opacity-50" : ""
+              }`}
+            >
+              <Text className="text-[11px] font-semibold text-amber-300">
+                {reminding ? "…" : reminded ? "Reminded" : "Remind"}
+              </Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={onEdit}
+            className="rounded-md border border-zinc-700 bg-zinc-900/40 px-2 py-1"
+          >
+            <Text className="text-[11px] font-semibold text-zinc-300">Edit</Text>
+          </Pressable>
+        </View>
+      )}
     </Pressable>
   );
 }

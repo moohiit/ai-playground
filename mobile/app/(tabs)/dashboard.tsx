@@ -378,8 +378,12 @@ export default function Dashboard() {
                       {owed.net >= 0 ? "You're owed" : "You owe"}
                     </Text>
                     <Text className="text-[11px] text-zinc-500">
-                      across {owed.byGroup.length}{" "}
-                      {owed.byGroup.length === 1 ? "group" : "groups"} ›
+                      {(() => {
+                        const hasNotes = (owed.notes?.owedToMe ?? 0) > 0 || (owed.notes?.iOwe ?? 0) > 0;
+                        const g = owed.byGroup.length;
+                        const groups = g > 0 ? `across ${g} ${g === 1 ? "group" : "groups"}` : "";
+                        return groups ? (hasNotes ? `${groups} + notes` : groups) : hasNotes ? "from money notes" : "";
+                      })()}{" "}›
                     </Text>
                   </View>
                   <Text
@@ -396,6 +400,24 @@ export default function Dashboard() {
                       {fmt(owed.owedToMe)} owed to you · {fmt(owed.iOwe)} you owe
                     </Text>
                   )}
+                  {/* Money notes are already inside the totals; say so, or the
+                      figure won't match what the groups screen adds up to. */}
+                  {(() => {
+                    const parts = [
+                      (owed.notes?.owedToMe ?? 0) > 0
+                        ? `${fmt(owed.notes!.owedToMe)} owed to you`
+                        : null,
+                      (owed.notes?.iOwe ?? 0) > 0
+                        ? `${fmt(owed.notes!.iOwe)} you owe`
+                        : null,
+                    ].filter(Boolean);
+                    if (parts.length === 0) return null;
+                    return (
+                      <Text className="mt-0.5 text-[11px] text-zinc-500">
+                        Includes {parts.join(" and ")} from money notes
+                      </Text>
+                    );
+                  })()}
                   <View className="mt-3 gap-1.5 border-t border-white/10 pt-3">
                     {owed.byPerson.slice(0, 4).map((p) => (
                       <View

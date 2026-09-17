@@ -250,6 +250,32 @@ export type MyBalances = {
     owedToMe: number;
     iOwe: number;
   }[];
+  /** The part of the totals above that comes from money notes (already included). */
+  notes?: { owedToMe: number; iOwe: number };
+};
+
+/**
+ * A personal "I lent / I borrowed" note. A MIRRORED note was written by someone
+ * else about the viewer: the server has already flipped `direction` to the
+ * viewer's side and put the other person's name in `personName`.
+ */
+export type MoneyNote = {
+  _id: string;
+  direction: "lent" | "borrowed";
+  personName: string;
+  amount: number;
+  currency: string;
+  description: string;
+  givenOn: string;
+  dueBy: string | null;
+  settledAt: string | null;
+  overdue: boolean;
+  linkedUserId?: string | null;
+  linkedName?: string | null;
+  linkedEmail?: string | null;
+  mirrored?: boolean;
+  ownerName?: string | null;
+  remindedAt?: string | null;
 };
 
 /** Someone the viewer already shares a group with, for member suggestions. */
