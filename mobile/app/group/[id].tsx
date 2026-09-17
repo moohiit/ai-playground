@@ -155,6 +155,7 @@ export default function GroupDetailScreen() {
   const { user, authFetch } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [fabPressed, setFabPressed] = useState(false);
 
   const [group, setGroup] = useState<Group | null>(null);
   const [balances, setBalances] = useState<Balance[]>([]);
@@ -1375,17 +1376,16 @@ export default function GroupDetailScreen() {
         )}
       </KeyboardAwareScreen>
 
-      {/* Add expense — floating, Active tab only. The shadow sits on the
-          outer Pressable because the inner view clips (overflow: hidden) to
-          round the gradient, and a clipped view drops its iOS shadow. */}
+      {/* Add expense — floating, Active tab only. Position and size live on a
+          plain View with an OBJECT style: NativeWind wraps Pressable and drops
+          function styles (style={({ pressed }) => …}), which left this button
+          with no size at all — it rendered, invisibly, as nothing. The shadow
+          is on the outer view because the inner one clips to round the
+          gradient, and a clipped view loses its iOS shadow. */}
       {tab === "active" && (
-        <Pressable
-          onPress={() =>
-            router.push({ pathname: "/add-expense", params: { groupId } })
-          }
-          accessibilityRole="button"
-          accessibilityLabel="Add expense"
-          style={({ pressed }) => ({
+        <View
+          pointerEvents="box-none"
+          style={{
             position: "absolute",
             right: 20,
             bottom: insets.bottom + 20,
@@ -1398,10 +1398,19 @@ export default function GroupDetailScreen() {
             shadowRadius: 8,
             shadowOffset: { width: 0, height: 4 },
             elevation: 8,
-            opacity: pressed ? 0.85 : 1,
-          })}
+            opacity: fabPressed ? 0.85 : 1,
+          }}
         >
-          <View style={{ flex: 1, borderRadius: 28, overflow: "hidden" }}>
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: "/add-expense", params: { groupId } })
+            }
+            onPressIn={() => setFabPressed(true)}
+            onPressOut={() => setFabPressed(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Add expense"
+            style={{ flex: 1, borderRadius: 28, overflow: "hidden" }}
+          >
             <LinearGradient
               colors={BRAND_GRADIENT}
               start={{ x: 0, y: 0 }}
@@ -1410,8 +1419,8 @@ export default function GroupDetailScreen() {
             >
               <PlusIcon color="#ffffff" />
             </LinearGradient>
-          </View>
-        </Pressable>
+          </Pressable>
+        </View>
       )}
 
       <GroupSettingsSheet
