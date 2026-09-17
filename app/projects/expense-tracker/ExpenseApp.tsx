@@ -15,6 +15,7 @@ import { SettingsTab } from "./tabs/SettingsTab";
 import { WarrantyTab } from "./tabs/WarrantyTab";
 import { NotesTab } from "./tabs/NotesTab";
 import { DialogHost } from "./dialog";
+import { PushBanner } from "./components/PushBanner";
 
 const TABS = [
   { id: "Dashboard", icon: DashboardIcon },
@@ -117,6 +118,9 @@ export function ExpenseApp() {
           </button>
         ))}
       </nav>
+
+      {/* Outside the keyed wrapper below, so switching tabs does not remount it. */}
+      {tab === "Dashboard" && <PushBanner />}
 
       <div key={tab} className="animate-fade-up">
         {tab === "Dashboard" && <Dashboard />}
