@@ -258,6 +258,19 @@ A feature is **done** only when all of these are true:
 
 ## 7. Changelog (append newest at top)
 
+- 2026-09-18 — **v1.13.0 — settings for groups, notes that reach the other person, Expo SDK 57.**
+  Tapping a notification opens what it is about: a group push opens that group on the right tab
+  (settled -> Settled, digest -> Report), including a tap that cold-starts the app
+  (`lib/notificationRoute.ts`). Group screen: a settings sheet (rename, members, mute, share,
+  danger zone), a floating add-expense button, a collapsible Settle Up. Only the creator can delete
+  a group; members ask via `POST /groups/:id/delete-request`. Money notes can be linked to a
+  registered user (`linkedEmail`): they see it mirrored and read-only, can hide it, and can be
+  reminded once a day (`/notes/:id/remind`, `/hide`); open notes count in `getMyBalances`.
+  To-dos are editable. Web only: browser push through a service worker (`public/sw.js`,
+  `/api/push/web`, VAPID), fanned out by one `deliver()` beside Expo push, with a one-time banner.
+  Fixes: budget alert only when a threshold is crossed; unusual-spend baseline is personal only;
+  deleting a group tells its members. Platform: Expo SDK 54 -> 57 (React Native 0.86). R8 stays off.
+
 - 2026-09-11 — **v1.12.0 — links open the app.** Android app links for aiplayground.mohitpatel.org:
   share links (/share/<id>) and the web app (/projects/expense-tracker) open in Splitzy when it
   is installed, the browser otherwise. Domain proof at public/.well-known/assetlinks.json (Play
