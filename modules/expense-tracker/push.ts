@@ -707,3 +707,45 @@ export async function notifyGroupDeleteRequest(opts: {
     data: groupLink("delete-request", opts.groupId),
   }));
 }
+
+/**
+ * Something happened on a money note that names the reader: it was written,
+ * they are being reminded, or it was marked returned. `amount` is in the
+ * note's own currency and is shown in it — a note is a record of what was
+ * actually handed over, not a figure to re-price.
+ */
+export async function notifyMoneyNote(opts: {
+  recipientId: string;
+  actorName: string;
+  kind: "created" | "reminder" | "settled";
+  /** From the ACTOR's side: "lent" means the actor gave the reader money. */
+  direction: "lent" | "borrowed";
+  amount: number;
+  currency: string;
+  description?: string;
+  dueBy?: Date | null;
+}) {
+  const config = await getUserPushConfig(opts.recipientId);
+  if (!config) return;
+  const money = fmt(opts.amount, opts.currency);
+  const what = opts.description ? ` for "${opts.description}"` : "";
+  const due = opts.dueBy
+    ? ` — due ${new Date(opts.dueBy).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" })}`
+    : "";
+  let title: string;
+  let body: string;
+  if (opts.kind === "reminder") {
+    title = "Money reminder 💸";
+    body = `${opts.actorName} is reminding you about ${money}${what} you took${due}.`;
+  } else if (opts.kind === "settled") {
+    title = "Money note settled ✅";
+    body = `${opts.actorName} marked ${money}${what} as settled.`;
+  } else {
+    title = "New money note 📝";
+    body =
+      opts.direction === "lent"
+        ? `${opts.actorName} noted giving you ${money}${what}${due}.`
+        : `${opts.actorName} noted taking ${money}${what} from you${due}.`;
+  }
+  await sendExpoPush(config.token, title, body, { type: `note-${opts.kind}`, screen: "notes" });
+}

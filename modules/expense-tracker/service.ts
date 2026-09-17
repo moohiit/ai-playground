@@ -39,6 +39,7 @@ import {
   notifyDebtNudge,
   notifyGroupDeleted,
   notifyGroupDeleteRequest,
+  notifyMoneyNote,
   notifyGroupMemberEvent,
   notifyGroupDigest,
   notifySettleUpSuggestion,
@@ -1961,6 +1962,73 @@ export async function getGroupBalances(
  * amountBase), which is what makes netting across groups meaningful at all.
  */
 export async function getMyBalances(auth: JWTPayload) {
+  const fromGroups = await getGroupBalancesForMe(auth);
+  const base = await getBaseCurrency(auth.userId);
+
+  // Open money notes are debts too: the ones the viewer wrote, and the ones
+  // written about them. A linked person is keyed by their user id so a
+  // flatmate who owes on a note and is owed in a group nets to one line.
+  const [own, aboutMe] = await Promise.all([
+    MoneyNote.find({ userId: auth.userId, settledAt: null }).lean(),
+    MoneyNote.find({
+      linkedUserId: auth.userId,
+      hiddenByLinked: { $ne: true },
+      settledAt: null,
+    }).lean(),
+  ]);
+  if (own.length === 0 && aboutMe.length === 0) {
+    return { ...fromGroups, notes: { owedToMe: 0, iOwe: 0 } };
+  }
+
+  const owners = aboutMe.length
+    ? await User.find({ _id: { $in: aboutMe.map((n) => n.userId) } }).select("name").lean()
+    : [];
+  const ownerName = new Map(owners.map((u) => [u._id.toString(), u.name]));
+
+  const perPerson = new Map(fromGroups.byPerson.map((p) => [p.id, { ...p }]));
+  const notes = { owedToMe: 0, iOwe: 0 };
+  const add = async (id: string, name: string, amount: number, currency: string, owedToViewer: boolean) => {
+    const value = await convert(amount, currency || base, base).catch(() => amount);
+    const delta = owedToViewer ? value : -value;
+    if (owedToViewer) notes.owedToMe += value;
+    else notes.iOwe += value;
+    const row = perPerson.get(id) ?? { id, name, net: 0 };
+    row.net += delta;
+    perPerson.set(id, row);
+  };
+  for (const n of own) {
+    await add(
+      n.linkedUserId ?? `note:${n.personName.trim().toLowerCase()}`,
+      n.personName,
+      n.amount,
+      n.currency,
+      n.direction === "lent"
+    );
+  }
+  for (const n of aboutMe) {
+    // Their "lent" is money the viewer took.
+    await add(n.userId, ownerName.get(n.userId) ?? "Someone", n.amount, n.currency, n.direction !== "lent");
+  }
+
+  const round = (v: number) => Math.round(v * 100) / 100;
+  const people = Array.from(perPerson.values())
+    .map((p) => ({ ...p, net: round(p.net) }))
+    .filter((p) => Math.abs(p.net) > 0.01)
+    .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
+  const owedToMe = people.filter((p) => p.net > 0).reduce((t, p) => t + p.net, 0);
+  const iOwe = people.filter((p) => p.net < 0).reduce((t, p) => t - p.net, 0);
+  return {
+    owedToMe: round(owedToMe),
+    iOwe: round(iOwe),
+    net: round(owedToMe - iOwe),
+    byPerson: people,
+    byGroup: fromGroups.byGroup,
+    notes: { owedToMe: round(notes.owedToMe), iOwe: round(notes.iOwe) },
+  };
+}
+
+/** The group half of getMyBalances: every group's transfer plan, netted by person. */
+async function getGroupBalancesForMe(auth: JWTPayload) {
   await connectDB();
 
   const groups = await Group.find(activeMemberFilter(auth.userId)).lean();
@@ -2646,6 +2714,8 @@ export async function deleteAccount(auth: JWTPayload) {
   await Goal.deleteMany({ userId });
   await Warranty.deleteMany({ userId });
   await MoneyNote.deleteMany({ userId });
+  // Notes other people linked to this account go back to being plain notes.
+  await MoneyNote.updateMany({ linkedUserId: userId }, { $set: { linkedUserId: null } });
   await Todo.deleteMany({ userId });
   await GroupInvite.deleteMany({
     $or: [{ invitedUserId: userId }, { "invitedBy.id": userId }],
@@ -3807,9 +3877,78 @@ export async function removeGoal(id: string, auth: JWTPayload) {
 
 // ── Money notes (informal lent/borrowed) ────────────
 
+/** Resolve the email on a note form to a registered user other than the caller. */
+async function resolveLinkedUser(email: string, auth: JWTPayload) {
+  const user = await User.findOne({ email: email.trim().toLowerCase() })
+    .select("name email")
+    .lean();
+  // Carries its own status: handleRouteError keys on the words "not found",
+  // which this message does not contain, and it would surface as a 500.
+  if (!user) {
+    throw Object.assign(new Error("No Splitzy user found with that email"), { status: 404 });
+  }
+  const id = user._id.toString();
+  if (id === auth.userId) {
+    throw Object.assign(new Error("You can't link a note to yourself"), { status: 400 });
+  }
+  return { id, name: user.name };
+}
+
+/**
+ * The viewer's money notes: the ones they wrote, plus the ones other people
+ * wrote ABOUT them and linked to their account.
+ *
+ * A linked note is one fact seen from two sides, so the second kind is
+ * mirrored before it leaves the server: "Mohit lent Rahul 500" reaches Rahul
+ * as a borrowed note from Mohit. It stays Mohit's note — Rahul cannot edit,
+ * settle or delete it, only hide it from his own list.
+ */
 export async function listMoneyNotes(auth: JWTPayload) {
   await connectDB();
-  const notes = await MoneyNote.find({ userId: auth.userId }).lean();
+  const [own, aboutMe] = await Promise.all([
+    MoneyNote.find({ userId: auth.userId }).lean(),
+    MoneyNote.find({
+      linkedUserId: auth.userId,
+      hiddenByLinked: { $ne: true },
+    }).lean(),
+  ]);
+
+  const otherIds = Array.from(
+    new Set([
+      ...own.map((n) => n.linkedUserId).filter((id): id is string => !!id),
+      ...aboutMe.map((n) => n.userId),
+    ])
+  );
+  const users = otherIds.length
+    ? await User.find({ _id: { $in: otherIds } }).select("name email").lean()
+    : [];
+  const userById = new Map(users.map((u) => [u._id.toString(), u]));
+
+  const notes = [
+    ...own.map((n) => {
+      const linked = n.linkedUserId ? userById.get(n.linkedUserId) : undefined;
+      return {
+        ...n,
+        mirrored: false,
+        ownerName: null as string | null,
+        linkedName: linked?.name ?? null,
+        linkedEmail: linked?.email ?? null,
+      };
+    }),
+    ...aboutMe.map((n) => {
+      const owner = userById.get(n.userId);
+      return {
+        ...n,
+        mirrored: true,
+        direction: n.direction === "lent" ? ("borrowed" as const) : ("lent" as const),
+        personName: owner?.name ?? "Someone",
+        ownerName: owner?.name ?? "Someone",
+        linkedName: null as string | null,
+        linkedEmail: null as string | null,
+      };
+    }),
+  ];
+
   const now = Date.now();
   // Outstanding first (soonest due at the top, no-due-date last), then
   // settled ones newest-first.
@@ -3845,6 +3984,9 @@ export async function createMoneyNote(
 ) {
   await connectDB();
   const currency = input.currency ?? (await getBaseCurrency(auth.userId));
+  const linked = input.linkedEmail
+    ? await resolveLinkedUser(input.linkedEmail, auth)
+    : null;
   const note = await MoneyNote.create({
     userId: auth.userId,
     direction: input.direction,
@@ -3854,8 +3996,45 @@ export async function createMoneyNote(
     description: input.description,
     givenOn: new Date(input.givenOn),
     dueBy: input.dueBy ? new Date(input.dueBy) : null,
+    linkedUserId: linked?.id ?? null,
   });
+  if (linked) await tellLinkedUser(note.toObject(), "created", auth);
   return note.toObject();
+}
+
+/** Best effort: a note about someone should not reach them as a surprise. */
+async function tellLinkedUser(
+  note: {
+    linkedUserId?: string | null;
+    hiddenByLinked?: boolean;
+    direction: "lent" | "borrowed";
+    amount: number;
+    currency: string;
+    description: string;
+    dueBy: Date | null;
+  },
+  kind: "created" | "reminder" | "settled",
+  auth: JWTPayload
+) {
+  if (!note.linkedUserId) return;
+  // Hidden means "leave me out of this one" — except a reminder, which the
+  // owner sends on purpose and expects to land.
+  if (note.hiddenByLinked && kind !== "reminder") return;
+  try {
+    const me = await User.findById(auth.userId).select("name").lean();
+    await notifyMoneyNote({
+      recipientId: note.linkedUserId,
+      actorName: me?.name ?? auth.name,
+      kind,
+      direction: note.direction,
+      amount: note.amount,
+      currency: note.currency,
+      description: note.description,
+      dueBy: note.dueBy,
+    });
+  } catch {
+    /* notifications are optional */
+  }
 }
 
 export async function updateMoneyNote(
@@ -3879,11 +4058,74 @@ export async function updateMoneyNote(
   if (input.dueBy !== undefined)
     note.dueBy = input.dueBy ? new Date(input.dueBy) : null;
   // settled: true stamps now (idempotent); false re-opens the note.
+  const wasSettled = !!note.settledAt;
   if (input.settled !== undefined)
     note.settledAt = input.settled ? note.settledAt ?? new Date() : null;
 
+  // Linking to someone new starts that person off fresh: not hidden, not
+  // recently reminded.
+  const previousLink = note.linkedUserId ?? null;
+  if (input.linkedEmail !== undefined) {
+    const linked = input.linkedEmail
+      ? await resolveLinkedUser(input.linkedEmail, auth)
+      : null;
+    if ((linked?.id ?? null) !== previousLink) {
+      note.linkedUserId = linked?.id ?? null;
+      note.hiddenByLinked = false;
+      note.remindedAt = null;
+    }
+  }
+
   await note.save();
-  return note.toObject();
+  const saved = note.toObject();
+  if (saved.linkedUserId && saved.linkedUserId !== previousLink) {
+    await tellLinkedUser(saved, "created", auth);
+  } else if (!wasSettled && saved.settledAt) {
+    await tellLinkedUser(saved, "settled", auth);
+  }
+  return saved;
+}
+
+/** The owner nudges the linked person about money they took. Once a day. */
+export async function remindMoneyNote(id: string, auth: JWTPayload) {
+  await connectDB();
+  const note = await MoneyNote.findOne({
+    _id: toObjectId(id, "noteId"),
+    userId: auth.userId,
+  });
+  if (!note) throw new Error("Money note not found");
+  if (!note.linkedUserId) {
+    throw Object.assign(
+      new Error("Link this note to a Splitzy user to send reminders"),
+      { status: 400 }
+    );
+  }
+  if (note.settledAt) throw new Error("This note is already settled");
+  if (note.direction !== "lent") {
+    throw Object.assign(
+      new Error("Reminders are for money you gave, not money you took"),
+      { status: 400 }
+    );
+  }
+  const DAY = 86_400_000;
+  if (note.remindedAt && Date.now() - new Date(note.remindedAt).getTime() < DAY) {
+    throw new Error("Already reminded in the last 24 hours");
+  }
+  note.remindedAt = new Date();
+  await note.save();
+  await tellLinkedUser(note.toObject(), "reminder", auth);
+  return { ok: true, remindedAt: note.remindedAt.toISOString() };
+}
+
+/** The linked person removes someone else's note from their own list. */
+export async function hideMoneyNote(id: string, auth: JWTPayload) {
+  await connectDB();
+  const res = await MoneyNote.updateOne(
+    { _id: toObjectId(id, "noteId"), linkedUserId: auth.userId },
+    { $set: { hiddenByLinked: true } }
+  );
+  if (res.matchedCount === 0) throw new Error("Money note not found");
+  return { hidden: true };
 }
 
 export async function removeMoneyNote(id: string, auth: JWTPayload) {

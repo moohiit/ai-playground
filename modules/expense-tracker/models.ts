@@ -537,6 +537,13 @@ export type MoneyNoteDoc = {
   givenOn: Date;
   dueBy: Date | null;
   settledAt: Date | null;
+  // The other person, when they have an account. They then see this note in
+  // their own list — mirrored, read-only — and it counts in their balances.
+  linkedUserId?: string | null;
+  // The linked person removed it from their list. The owner's copy is
+  // untouched; it just stops showing up, and counting, on the other side.
+  hiddenByLinked?: boolean;
+  remindedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -552,6 +559,9 @@ const moneyNoteSchema = new Schema<MoneyNoteDoc>(
     givenOn: { type: Date, required: true },
     dueBy: { type: Date, default: null },
     settledAt: { type: Date, default: null, index: true },
+    linkedUserId: { type: String, default: null, index: true },
+    hiddenByLinked: { type: Boolean, default: false },
+    remindedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

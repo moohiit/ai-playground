@@ -616,6 +616,8 @@ export const createMoneyNoteSchema = z
     description: z.string().max(500).default(""),
     givenOn: isoDateRequired,
     dueBy: isoDateOpt,
+    // Email of a registered user to link the note to.
+    linkedEmail: z.string().email("That doesn't look like an email").optional(),
   })
   .strict();
 
@@ -631,6 +633,8 @@ export const updateMoneyNoteSchema = z
     givenOn: isoDateRequired.optional(),
     dueBy: isoDateOpt.optional(),
     settled: z.boolean().optional(),
+    // null unlinks.
+    linkedEmail: z.string().email("That doesn't look like an email").nullable().optional(),
   })
   .strict();
 
