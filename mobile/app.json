@@ -6,13 +6,7 @@
     "version": "1.12.0",
     "orientation": "default",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "backgroundColor": "#05060a",
-      "resizeMode": "contain"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.moohiit.expensetracker"
@@ -78,6 +72,17 @@
             "enableMinifyInReleaseBuilds": false,
             "enableShrinkResourcesInReleaseBuilds": false
           }
+        }
+      ],
+      "expo-sharing",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#05060a",
+          "resizeMode": "contain",
+          "imageWidth": 200
         }
       ]
     ],
