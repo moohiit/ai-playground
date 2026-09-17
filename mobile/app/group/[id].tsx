@@ -86,7 +86,8 @@ function BellIcon({ off, color }: { off: boolean; color: string }) {
 }
 
 export default function GroupDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // `tab` comes from a tapped notification (lib/notificationRoute.ts).
+  const { id, tab: initialTab } = useLocalSearchParams<{ id: string; tab?: string }>();
   const groupId = id ?? "";
   const { user, authFetch } = useAuth();
   const router = useRouter();
@@ -107,7 +108,9 @@ export default function GroupDetailScreen() {
   const [pair, setPair] = useState<PairBalance | null>(null);
   const [baseCurrency, setBaseCurrency] = useState("INR");
   const [history, setHistory] = useState<SettlementRecord[]>([]);
-  const [tab, setTab] = useState<Tab>("active");
+  const [tab, setTab] = useState<Tab>(
+    initialTab === "settled" || initialTab === "report" ? initialTab : "active"
+  );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [settling, setSettling] = useState(false);

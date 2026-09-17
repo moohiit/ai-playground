@@ -1,30 +1,24 @@
 import "../global.css";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Constants, { ExecutionEnvironment } from "expo-constants";
-import { Stack, useRouter, type Href } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { AuthProvider, useAuth } from "../lib/auth";
 import { AppDialog } from "../components/AppDialog";
 import { useInAppUpdates } from "../lib/inAppUpdates";
 import { setupNotificationHandler, registerPushToken } from "../lib/push";
+import { routeForNotification } from "../lib/notificationRoute";
 
 // Initialize notification handler before any screen renders
 setupNotificationHandler();
 
-// The only `data.screen` values the backend attaches to a push (see
-// modules/expense-tracker/push.ts). Anything else — group invites carry no
-// screen — leaves the app wherever the user last was.
-const PUSH_SCREEN_ROUTES: Record<string, Href> = {
-  budgets: "/budgets",
-  expenses: "/expenses",
-  recurring: "/recurring",
-  groups: "/groups",
-};
-
 function PushSetup() {
-  const { user, authFetch } = useAuth();
+  const { user, loading, authFetch } = useAuth();
   const router = useRouter();
+  // One navigation per tap: the cold-start read and the live listener can
+  // both report the same response.
+  const handled = useRef<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -38,13 +32,28 @@ function PushSetup() {
     if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const N = require("expo-notifications") as typeof import("expo-notifications");
-    const sub = N.addNotificationResponseReceivedListener((response) => {
-      const screen = response.notification.request.content.data?.screen;
-      const route = typeof screen === "string" ? PUSH_SCREEN_ROUTES[screen] : undefined;
+    // Wait for the session: every target screen needs a user, and routing
+    // before auth settles would bounce through /login and lose the target.
+    if (loading || !user) return;
+
+    const open = (response: import("expo-notifications").NotificationResponse | null) => {
+      if (!response) return;
+      const id = response.notification.request.identifier;
+      if (handled.current === id) return;
+      handled.current = id;
+      const route = routeForNotification(response.notification.request.content.data);
       if (route) router.push(route);
-    });
+    };
+
+    // The tap that LAUNCHED the app is not delivered to the listener below —
+    // it happened before any JS ran — so it is read once here, then cleared
+    // so a later ordinary launch does not replay it.
+    open(N.getLastNotificationResponse());
+    N.clearLastNotificationResponse();
+
+    const sub = N.addNotificationResponseReceivedListener(open);
     return () => sub.remove();
-  }, [router]);
+  }, [router, user, loading]);
 
   return null;
 }
